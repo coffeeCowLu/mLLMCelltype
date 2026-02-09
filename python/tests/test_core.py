@@ -14,7 +14,6 @@ import pytest
 
 # Import utility functions
 from mllmcelltype.utils import (
-    clean_annotation,
     create_cache_key,
     format_results,
     load_api_key,
@@ -180,28 +179,6 @@ def test_format_results_mismatched():
     assert "Cluster 1: T cells" in formatted["1"]
     assert "Cluster 2: B cells" in formatted["2"]
     assert formatted["3"] == "Unknown"
-
-
-# Test clean_annotation function
-def test_clean_annotation():
-    """Test cleaning cell type annotations."""
-    test_cases = [
-        ("T cells", "T cells"),
-        # Current implementation does not replace hyphens
-        ("T-cells", "T-cells"),
-        ("T-cell", "T-cell"),
-        ("CD4+ T cells", "CD4+ T cells"),
-        ("B-cells (naive)", "B-cells (naive)"),
-        # The following are cleaning operations supported by the current implementation
-        ("Cluster 1: T cells", "T cells"),
-        ("1. T cells", "T cells"),
-        ("T cells.", "T cells"),
-        ('"T cells"', "T cells"),
-        ("T cells (CD4+)", "T cells (CD4+)"),
-    ]
-
-    for input_str, expected in test_cases:
-        assert clean_annotation(input_str) == expected
 
 
 # Test format_results with JSON responses

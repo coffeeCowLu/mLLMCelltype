@@ -79,10 +79,13 @@ def process_gemini(
             return [line.rstrip(",") for line in result]
 
         except Exception as e:
-            write_log(f"Error during API call (attempt {attempt + 1}/{max_retries}): {e!s}")
+            write_log(
+                f"Error during API call (attempt {attempt + 1}/{max_retries}): {e!s}",
+                level="error",
+            )
             if attempt < max_retries - 1:
                 wait_time = retry_delay * (2**attempt)
-                write_log(f"Waiting {wait_time} seconds before retrying...")
+                write_log(f"Waiting {wait_time} seconds before retrying...", level="warning")
                 time.sleep(wait_time)
             else:
                 raise

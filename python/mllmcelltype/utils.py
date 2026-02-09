@@ -63,39 +63,48 @@ def load_api_key(provider: str) -> str:
                     break
                 current_dir = parent_dir
 
-            # Also check for a .env file in the package directory
-            package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            package_env_path = os.path.join(package_dir, ".env")
-            if os.path.isfile(package_env_path):
-                env_path = package_env_path
+            # Fall back to a .env in the package directory only if no
+            # project-level .env was found (project takes priority).
+            if env_path is None:
+                package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                package_env_path = os.path.join(package_dir, ".env")
+                if os.path.isfile(package_env_path):
+                    env_path = package_env_path
 
             if env_path:
                 write_log(f"Found .env file at {env_path}")
                 with open(env_path) as f:
                     for line in f:
                         line = line.strip()
-                        if line and not line.startswith("#"):
-                            key, value = line.split("=", 1)
-                            if key == env_var:
-                                api_key = value
-                                write_log(f"Loaded API key for {provider} from .env file")
-                                break
-        except (OSError, ValueError) as e:
+                        if not line or line.startswith("#") or "=" not in line:
+                            continue
+                        key, value = line.split("=", 1)
+                        if key.strip() == env_var:
+                            # Strip surrounding quotes (common .env convention)
+                            api_key = value.strip().strip("\"'")
+                            write_log(f"Loaded API key for {provider} from .env file")
+                            break
+        except OSError as e:
             write_log(f"Error loading .env file: {e!s}", level="warning")
 
     if not api_key:
-        write_log(f"API key not found for provider: {env_var}", level="warning")
+        write_log(f"API key not found for provider: {env_var}", level="debug")
 
     return api_key
 
 
-def create_cache_key(prompt: str, model: str, provider: str) -> str:
+def create_cache_key(
+    prompt: str, model: str, provider: str, base_url: str | None = None
+) -> str:
     """Create a cache key for a specific request.
 
     Args:
         prompt: The prompt text
         model: The model name
         provider: The provider name
+        base_url: Optional custom base URL. When provided, it becomes part of
+                  the cache key so that different endpoints produce distinct
+                  cache entries.
 
     Returns:
         str: The cache key
@@ -115,6 +124,10 @@ def create_cache_key(prompt: str, model: str, provider: str) -> str:
     hash_string = (
         f"provider:{normalized_provider}||model:{normalized_model}||prompt:{normalized_prompt}"
     )
+
+    # Include base_url when explicitly set (None = default endpoint, no change)
+    if base_url:
+        hash_string += f"||base_url:{base_url.strip().rstrip('/')}"
 
     # Create hash
     hash_object = hashlib.sha256(hash_string.encode("utf-8"))
@@ -212,22 +225,30 @@ def parse_marker_genes(marker_genes_df: pd.DataFrame) -> dict[str, list[str]]:
         write_log("Empty marker genes dataframe", level="warning")
         return result
 
-    # Get column names
-    columns = marker_genes_df.columns.tolist()
+    # Resolve column names case-insensitively
+    col_lower_map = {col.lower(): col for col in marker_genes_df.columns}
 
-    # Check if 'cluster' column exists
-    if "cluster" not in columns:
+    cluster_col = col_lower_map.get("cluster")
+    if cluster_col is None:
         write_log("'cluster' column not found in marker genes dataframe", level="error")
-        raise ValueError("'cluster' column not found in marker genes dataframe")
+        raise ValueError(
+            "'cluster' column not found in marker genes dataframe. "
+            f"Available columns: {list(marker_genes_df.columns)}"
+        )
 
-    # Check if 'gene' column exists
-    if "gene" not in columns:
+    gene_col = col_lower_map.get("gene")
+    if gene_col is None:
         write_log("'gene' column not found in marker genes dataframe", level="error")
-        raise ValueError("'gene' column not found in marker genes dataframe")
+        raise ValueError(
+            "'gene' column not found in marker genes dataframe. "
+            f"Available columns: {list(marker_genes_df.columns)}"
+        )
 
-    # Group by cluster and get list of genes
-    for cluster, group in marker_genes_df.groupby("cluster"):
-        result[str(cluster)] = group["gene"].tolist()
+    # Group by cluster and get list of genes (drop None/NaN values)
+    for cluster, group in marker_genes_df.groupby(cluster_col):
+        genes = [str(g) for g in group[gene_col] if g is not None and g == g and str(g).strip()]
+        if genes:
+            result[str(cluster)] = genes
 
     return result
 
@@ -248,20 +269,24 @@ def format_results(results: list[str], clusters: list[str]) -> dict[str, str]:
 
     # Case 1: Try to parse the format "Cluster X: Annotation" (most common format from our prompts)
     result = {}
-    cluster_pattern = r"Cluster\s+(\d+):\s*(.*)"
+    cluster_pattern = r"Cluster\s+(.+?):\s*(.*)"
 
     # First pass: try to find annotations for each cluster by ID
     for cluster in clusters:
         cluster_str = str(cluster)
 
-        # Extract numeric ID from cluster name (e.g., "Cluster_0" -> "0", "0" -> "0")
-        cluster_id_match = re.search(r"(\d+)", cluster_str)
-        cluster_id = cluster_id_match.group(1) if cluster_id_match else cluster_str
+        # Build candidate IDs that this cluster name might appear as in model output.
+        # The prompt sends "Cluster <key>: genes", so the model should echo the key.
+        # For prefixed names like "Cluster_0" the model may shorten to just "0".
+        candidate_ids = {cluster_str}
+        stripped = re.sub(r"^[Cc]luster[_\s]", "", cluster_str)
+        if stripped != cluster_str:
+            candidate_ids.add(stripped)
 
-        # Look for exact matches (e.g., "Cluster 0: T cells")
+        # Look for matching cluster annotation
         for line in clean_results:
             match = re.match(cluster_pattern, line)
-            if match and match.group(1) == cluster_id:
+            if match and match.group(1).strip() in candidate_ids:
                 result[cluster_str] = match.group(2).strip()
                 break
 
@@ -307,7 +332,7 @@ def format_results(results: list[str], clusters: list[str]) -> dict[str, str]:
 
             for annotation in data["annotations"]:
                 if "cluster" in annotation and "cell_type" in annotation:
-                    cluster_id = annotation["cluster"]
+                    cluster_id = str(annotation["cluster"])
                     json_result[cluster_id] = annotation["cell_type"]
 
             # If we found annotations for all clusters, return the result
@@ -357,159 +382,6 @@ def format_results(results: list[str], clusters: list[str]) -> dict[str, str]:
         )
 
     return result
-
-
-def clean_annotation(annotation: str) -> str:
-    """Clean up cell type annotation from LLM response.
-
-    Args:
-        annotation: Raw annotation string
-
-    Returns:
-        str: Cleaned annotation
-
-    """
-    # If input is empty or None, return an empty string
-    if not annotation:
-        return ""
-
-    # Basic cleanup
-    annotation = annotation.strip()
-
-    # Step 1: Remove common prefixes
-    # Remove "Cluster X:" prefix if present
-    if annotation.lower().startswith("cluster ") and ":" in annotation:
-        annotation = annotation.split(":", 1)[1].strip()
-
-    # Remove number prefix if present (e.g. "1. T cells" -> "T cells")
-    if ". " in annotation and annotation[0].isdigit():
-        parts = annotation.split(". ", 1)
-        if parts[0].isdigit():
-            annotation = parts[1]
-
-    # Remove common prefixes
-    prefixes = ["cell type:", "cell type", "annotation:", "annotation"]
-    for prefix in prefixes:
-        if annotation.lower().startswith(prefix):
-            annotation = annotation[len(prefix) :].strip()
-
-    # Step 2: Extract cell type from descriptive text
-    patterns = [
-        r"([\w\s-]+)\s+(?:is|are)\s+the\s+most\s+accurate\s+cell\s+type",
-        r"([\w\s-]+)\s+(?:is|are)\s+the\s+best\s+annotation",
-        r"final\s+cell\s+type\s*:?\s*([\w\s-]+)",
-        r"final\s+decision\s*:?\s*([\w\s-]+)",
-        r"majority\s+prediction\s*:?\s*([\w\s-]+)",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, annotation.lower())
-        if match:
-            annotation = match.group(1).strip()
-            break
-
-    # Step 3: Clean formatting marks and symbols
-    # Remove quotes
-    if annotation.startswith('"') and annotation.endswith('"'):
-        annotation = annotation[1:-1]
-
-    # Remove markdown emphasis marks
-    annotation = annotation.replace("**:", "").replace("**", "").replace("*", "")
-
-    # Remove common prefix markers
-    if annotation.startswith("-"):
-        annotation = annotation[1:].strip()
-
-    # Remove prefixes like "Final Cell Type:"
-    if ":" in annotation and any(
-        x in annotation.lower() for x in ["final", "type", "determination", "conclusion"]
-    ):
-        parts = annotation.split(":", 1)
-        annotation = parts[1].strip()
-
-    # Remove trailing punctuation
-    if annotation and annotation[-1] in [".", ",", ";"]:
-        annotation = annotation[:-1]
-
-    # Remove LaTeX formatting
-    annotation = re.sub(r"\$\\boxed\{(.+?)\}\$", r"\1", annotation)
-    annotation = re.sub(r"\$.+?\$", "", annotation)
-
-    # Truncate long descriptions
-    if len(annotation) > 50:
-        short_version = annotation.split(",")[0].split("(")[0].strip()
-        if len(short_version) >= 10:
-            annotation = short_version
-
-    return annotation
-
-
-def normalize_annotation_for_comparison(annotation: str) -> str:
-    """Normalize cell type annotation for comparison purposes.
-
-    This function mirrors the R implementation's normalize_annotation function:
-    1. Converts to lowercase
-    2. Trims whitespace
-    3. Converts multiple spaces to single space
-    4. Removes punctuation
-    5. Handles plurals (cells→cell, cytes→cyte) - using singular form for consistency
-    6. Applies specific cell type mappings
-
-    Args:
-        annotation: Cell type annotation string
-
-    Returns:
-        str: Normalized annotation for comparison
-    """
-    if not annotation:
-        return ""
-
-    # Start with basic cleaning
-    normalized = clean_annotation(annotation)
-
-    # Convert to lowercase for comparison (mirrors R's tolower)
-    normalized = normalized.lower()
-
-    # Trim whitespace (mirrors R's trimws)
-    normalized = normalized.strip()
-
-    # Convert multiple spaces to single (mirrors R's gsub("\\s+", " ", ...))
-    normalized = " ".join(normalized.split())
-
-    # Remove punctuation (mirrors R's gsub("[[:punct:]]", "", ...))
-    # But preserve '+' as it's meaningful for cell markers
-    # Replace with space first to avoid joining words
-    normalized = re.sub(r"[^\w\s+]", " ", normalized)
-    normalized = " ".join(normalized.split())
-
-    # Handle plurals - convert to singular for consistency (mirrors R's logic)
-    # cells → cell, cytes → cyte
-    normalized = re.sub(r"cells\b", "cell", normalized)
-    normalized = re.sub(r"cytes\b", "cyte", normalized)
-
-    # Common cell type variations (mirrors R's specific mappings)
-    # t lymphocyte → t cell
-    normalized = re.sub(r"\bt lymphocyte\b", "t cell", normalized)
-    # b lymphocyte → b cell
-    normalized = re.sub(r"\bb lymphocyte\b", "b cell", normalized)
-    # natural killer → nk
-    normalized = re.sub(r"\bnatural killer\b", "nk", normalized)
-
-    # Additional normalizations for common variations
-    # naive/naïve normalization
-    normalized = normalized.replace("naïve", "naive")
-    # tumour/tumor normalization
-    normalized = normalized.replace("tumour", "tumor")
-
-    # Handle CD markers - normalize spacing
-    # cd4+ t cell, cd4 positive t cell → cd4+ t cell
-    normalized = re.sub(r"\bcd(\d+)\s+positive\b", r"cd\1+", normalized)
-    # cd 4 → cd4
-    normalized = re.sub(r"\bcd\s+(\d+)", r"cd\1", normalized)
-
-    # Remove extra whitespace again after all transformations
-    normalized = " ".join(normalized.split())
-
-    return normalized
 
 
 def clear_cache(cache_dir: str | None = None, older_than: int | None = None) -> int:

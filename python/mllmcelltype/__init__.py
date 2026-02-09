@@ -1,71 +1,35 @@
 """mLLMCelltype: A Python module for cell type annotation using various LLMs."""
 
+from __future__ import annotations
+
+from importlib.metadata import PackageNotFoundError, version
+
+# --- Public API (user-facing) ---
 from .annotate import annotate_clusters, get_model_response
-from .config import (
-    DEFAULT_CONSENSUS_CONFIG,
-    PROVIDER_CONFIGS,
-    get_api_key_env_var,
-    get_default_api_url,
-    get_default_model,
-    get_supported_providers,
-)
+from .config import get_supported_providers
 from .consensus import (
-    check_consensus,
     format_discussion_report,
     interactive_consensus_annotation,
-    process_controversial_clusters,
 )
 from .functions import get_provider
-from .logger import setup_logging, write_log
-from .prompts import (
-    create_consensus_check_prompt,
-    create_discussion_prompt,
-    create_prompt,
-)
-from .url_utils import (
-    resolve_provider_base_url,
-    validate_base_url,
-)
-from .utils import (
-    clean_annotation,
-    clear_cache,
-    create_cache_key,
-    format_results,
-    get_cache_stats,
-    load_api_key,
-    load_from_cache,
-    save_to_cache,
-)
+from .logger import get_current_log_file, setup_logging
+from .utils import clear_cache, get_cache_stats, parse_marker_genes
 
-__version__ = "2.0.2"
+try:
+    __version__ = version("mllmcelltype")
+except PackageNotFoundError:
+    __version__ = "0.0.0-dev"
 
 __all__ = [
-    "DEFAULT_CONSENSUS_CONFIG",
-    "PROVIDER_CONFIGS",
     "annotate_clusters",
-    "check_consensus",
-    "clean_annotation",
     "clear_cache",
-    "create_cache_key",
-    "create_consensus_check_prompt",
-    "create_discussion_prompt",
-    "create_prompt",
     "format_discussion_report",
-    "format_results",
-    "get_api_key_env_var",
     "get_cache_stats",
-    "get_default_api_url",
-    "get_default_model",
+    "get_current_log_file",
     "get_model_response",
     "get_provider",
     "get_supported_providers",
     "interactive_consensus_annotation",
-    "load_api_key",
-    "load_from_cache",
-    "process_controversial_clusters",
-    "resolve_provider_base_url",
-    "save_to_cache",
+    "parse_marker_genes",
     "setup_logging",
-    "validate_base_url",
-    "write_log",
 ]

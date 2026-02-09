@@ -43,14 +43,27 @@ def setup_logging(log_dir: str | None = None, log_level: str = "INFO") -> None:
         log_dir = DEFAULT_LOG_DIR
 
     # Set log level
-    level = getattr(logging, log_level.upper())
+    valid_levels = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+    level_name = log_level.upper()
+    if level_name not in valid_levels:
+        raise ValueError(
+            f"Invalid log level: {log_level!r}. Must be one of: {', '.join(valid_levels)}"
+        )
+    level = getattr(logging, level_name)
 
-    # If already initialized, just update level and return
+    # If already initialized with the same directory, just update level
     if _logging_initialized:
-        logger.setLevel(level)
-        for handler in logger.handlers:
-            handler.setLevel(level)
-        return
+        current_dir = os.path.dirname(_current_log_file) if _current_log_file else None
+        if current_dir == log_dir:
+            logger.setLevel(level)
+            for handler in logger.handlers:
+                handler.setLevel(level)
+            return
+        # Different directory requested: clean up old handler and fall through
+        for handler in logger.handlers[:]:
+            if isinstance(handler, logging.FileHandler):
+                handler.close()
+                logger.removeHandler(handler)
 
     # Create log directory if it doesn't exist
     os.makedirs(log_dir, exist_ok=True)

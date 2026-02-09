@@ -170,5 +170,74 @@ class TestConsensus:
         assert result["entropy"]["2"] == 0.40
 
 
+    @patch("mllmcelltype.consensus.annotate_clusters")
+    @patch("mllmcelltype.consensus.check_consensus")
+    def test_same_model_name_different_providers_not_overwritten(
+        self,
+        mock_check_consensus,
+        mock_annotate_clusters,
+    ):
+        """Test that same model name from different providers produces distinct keys."""
+        mock_annotate_clusters.side_effect = [
+            {"1": "T cells"},
+            {"1": "B cells"},
+        ]
+        mock_check_consensus.return_value = (
+            {"1": "T cells"},
+            {"1": 0.5},
+            {"1": 0.7},
+            [],
+        )
+
+        result = interactive_consensus_annotation(
+            marker_genes={"1": ["CD3D"]},
+            species="human",
+            models=[
+                {"provider": "openai", "model": "gpt-5.2"},
+                {"provider": "openrouter", "model": "gpt-5.2"},
+            ],
+            api_keys={
+                "openai": "test-key",
+                "openrouter": "test-key",
+            },
+            use_cache=False,
+        )
+
+        # Both models must be preserved — no silent overwrite
+        assert len(result["model_annotations"]) == 2
+        assert "openai:gpt-5.2" in result["model_annotations"]
+        assert "openrouter:gpt-5.2" in result["model_annotations"]
+        # Results should differ (first call → T cells, second → B cells)
+        assert (
+            result["model_annotations"]["openai:gpt-5.2"]
+            != result["model_annotations"]["openrouter:gpt-5.2"]
+        )
+
+    def test_check_consensus_mixed_key_types(self):
+        """Test that mixed int/str cluster keys are normalized to str."""
+        # Model A returns int keys, Model B returns str keys
+        mixed_predictions = {
+            "model_a": {0: "T cells", 1: "B cells"},
+            "model_b": {"0": "T cells", "1": "B cells"},
+            "model_c": {0: "T cells", 1: "B cells"},
+        }
+
+        consensus, consensus_proportion, _entropy, _controversial = check_consensus(
+            predictions=mixed_predictions,
+            api_keys={},
+        )
+
+        # Should have exactly 2 clusters, not 4
+        assert len(consensus) == 2
+        assert "0" in consensus
+        assert "1" in consensus
+        # int keys should NOT appear
+        assert 0 not in consensus
+        assert 1 not in consensus
+        # Full agreement across all 3 models
+        assert consensus_proportion["0"] == 1.0
+        assert consensus_proportion["1"] == 1.0
+
+
 if __name__ == "__main__":
     pytest.main(["-xvs", __file__])

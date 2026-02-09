@@ -67,11 +67,15 @@ def process_openai(
 
             # Check for errors
             if response.status_code != 200:
-                error_message = response.json()
-                write_log(
-                    f"OpenAI API request failed: {error_message.get('error', {}).get('message', 'Unknown error')}",
-                    level="error",
-                )
+                try:
+                    error_message = response.json()
+                    error_detail = error_message.get('error', {}).get('message', 'Unknown error')
+                    write_log(f"OpenAI API request failed: {error_detail}", level="error")
+                except (ValueError, KeyError, json.JSONDecodeError):
+                    write_log(
+                        f"OpenAI API request failed with status {response.status_code}",
+                        level="error",
+                    )
 
                 # If rate limited, wait and retry
                 if response.status_code == 429 and attempt < max_retries - 1:
@@ -92,10 +96,20 @@ def process_openai(
             return [line.rstrip(",") for line in res]
 
         except Exception as e:
-            write_log(f"Error during API call (attempt {attempt + 1}/{max_retries}): {e!s}")
+            # Non-retryable HTTP client errors — fail immediately
+            if (
+                isinstance(e, requests.exceptions.HTTPError)
+                and e.response is not None
+                and e.response.status_code < 500
+            ):
+                raise
+            write_log(
+                f"Error during API call (attempt {attempt + 1}/{max_retries}): {e!s}",
+                level="error",
+            )
             if attempt < max_retries - 1:
                 wait_time = retry_delay * (2**attempt)
-                write_log(f"Waiting {wait_time} seconds before retrying...")
+                write_log(f"Waiting {wait_time} seconds before retrying...", level="warning")
                 time.sleep(wait_time)
             else:
                 raise

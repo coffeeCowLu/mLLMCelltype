@@ -19,7 +19,7 @@ def _format_marker_genes_for_prompt(
     """
     marker_lines = []
     for cluster, genes in marker_genes.items():
-        genes_str = ", ".join(genes)
+        genes_str = ", ".join(str(g) for g in genes)
         marker_lines.append(cluster_format.format(cluster, genes_str))
     return "\n".join(marker_lines)
 
@@ -265,3 +265,90 @@ CONSENSUS STATUS: [Agree/Disagree with emerging consensus]"""
 
     write_log(f"Generated discussion prompt with {len(prompt)} characters")
     return prompt
+
+
+def create_cell_type_extraction_prompt(text: str) -> str:
+    """Create a prompt to extract a concise cell type label from free-text.
+
+    When model responses contain natural-language sentences instead of concise
+    cell type labels (e.g., "This cluster is likely CD4+ T cells"), this prompt
+    asks an LLM to produce a clean label (e.g., "CD4+ T cells").
+
+    Args:
+        text: Free-text containing a cell type reference
+
+    Returns:
+        str: Prompt for LLM to extract the cell type label
+    """
+    return (
+        "Extract ONLY the cell type name from the text below.\n"
+        'Reply with just the cell type (e.g., "CD4+ T cells", "NK cells", '
+        '"B lymphocytes").\n'
+        "Do not include any explanation or extra words.\n\n"
+        f"Text: {text}"
+    )
+
+
+def create_discussion_consensus_prompt(
+    round_responses: dict[str, str],
+    consensus_threshold: float = 2 / 3,
+    entropy_threshold: float = 1.0,
+) -> str:
+    """Create a prompt for LLM to extract cell types and check consensus.
+
+    Unlike create_consensus_check_prompt which takes pre-extracted annotations,
+    this function takes raw discussion responses and asks the LLM to perform
+    both cell-type extraction and consensus checking in a single call.
+
+    This mirrors the R implementation (check_consensus.R:488) where the LLM
+    receives full discussion responses and produces clean labels + metrics.
+
+    Args:
+        round_responses: Dictionary mapping model identifiers to raw responses
+        consensus_threshold: Agreement threshold for consensus determination
+        entropy_threshold: Entropy threshold for consensus determination
+
+    Returns:
+        str: Formatted prompt for LLM consensus check
+    """
+    # Use anonymous model IDs (Model 1, 2, ...) to prevent provider-name bias
+    responses_text = "\n\n".join(
+        f"Model {i + 1}:\n{response}"
+        for i, (_, response) in enumerate(round_responses.items())
+    )
+
+    return (
+        "You are a cell type annotation expert. Below are different models' "
+        "discussion responses for the same cell cluster.\n\n"
+        "Your task:\n"
+        "1. Extract the predicted cell type from each model's response\n"
+        "2. Determine if the predictions reach consensus\n\n"
+        f"RESPONSES:\n{responses_text}\n\n"
+        "IMPORTANT GUIDELINES:\n"
+        "1. Extract ONLY the cell type name from each response "
+        '(e.g., "CD4+ T cells", not full sentences)\n'
+        "2. Responses may contain structured predictions (with "
+        '"CELL TYPE:" prefix) or free-text predictions\n'
+        "3. Consider predictions as matching if they refer to the same "
+        "cell type, ignoring:\n"
+        '   - Formatting (e.g., "NK cells" vs "Natural Killer cells")\n'
+        "   - Capitalization\n"
+        '   - Additional qualifiers (e.g., "activated", "mature")\n'
+        '4. If any prediction is "Unknown" or "Unclear", treat it as '
+        "a separate group\n\n"
+        "CALCULATE:\n"
+        "1. Consensus Proportion = Number of models supporting the majority "
+        "prediction / Total number of models\n"
+        "2. Shannon Entropy = -sum(p_i * log2(p_i)) where p_i is the "
+        "proportion of each unique prediction\n"
+        f"3. Consensus is reached if Consensus Proportion >= "
+        f"{consensus_threshold:.2f} AND Entropy <= "
+        f"{entropy_threshold:.2f}\n\n"
+        "RESPOND WITH EXACTLY 4 LINES:\n"
+        "Line 1: 1 if consensus is reached, 0 if not\n"
+        "Line 2: Consensus Proportion (a decimal between 0 and 1)\n"
+        "Line 3: Shannon Entropy (a decimal number)\n"
+        "Line 4: The majority cell type (concise label only, "
+        'e.g., "CD4+ T cells")\n\n'
+        "RESPOND WITH EXACTLY FOUR LINES AS SPECIFIED ABOVE."
+    )

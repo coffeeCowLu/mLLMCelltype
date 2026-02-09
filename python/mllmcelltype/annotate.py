@@ -72,6 +72,13 @@ def annotate_clusters(
     clusters = list(marker_genes.keys())
     write_log(f"Found {len(clusters)} clusters")
 
+    # Validate provider first — catch typos before misleading "API key not found"
+    provider_func = PROVIDER_FUNCTIONS.get(provider.lower())
+    if not provider_func:
+        error_msg = f"Unknown provider: {provider}"
+        write_log(error_msg, level="error")
+        raise ValueError(error_msg)
+
     # Set default model based on provider
     if not model:
         model = get_default_model(provider)
@@ -94,23 +101,16 @@ def annotate_clusters(
         prompt_template=prompt_template,
     )
 
+    # Resolve base URL (before cache check — base_url is part of the cache key)
+    base_url = resolve_provider_base_url(provider, base_urls)
+
     # Check cache
     if use_cache:
-        cache_key = create_cache_key(prompt, model, provider)
+        cache_key = create_cache_key(prompt, model, provider, base_url)
         cached_results = load_from_cache(cache_key, cache_dir)
         if cached_results:
             write_log("Using cached results")
             return format_results(cached_results, clusters)
-
-    # Resolve base URL
-    base_url = resolve_provider_base_url(provider, base_urls)
-
-    # Get provider function
-    provider_func = PROVIDER_FUNCTIONS.get(provider.lower())
-    if not provider_func:
-        error_msg = f"Unknown provider: {provider}"
-        write_log(error_msg, level="error")
-        raise ValueError(error_msg)
 
     # Process request
     try:
@@ -161,9 +161,15 @@ def get_model_response(
 
     """
 
-    # Check if provider is valid
+    # Validate provider first — catch typos before misleading "API key not found"
     if not provider:
         raise ValueError("Provider name is required")
+
+    provider_func = PROVIDER_FUNCTIONS.get(provider.lower())
+    if not provider_func:
+        error_msg = f"Unknown provider: {provider}"
+        write_log(error_msg, level="error")
+        raise ValueError(error_msg)
 
     # Set default model if not provided
     if not model:
@@ -180,20 +186,13 @@ def get_model_response(
 
     # Check cache
     if use_cache:
-        cache_key = create_cache_key(prompt, model, provider)
+        cache_key = create_cache_key(prompt, model, provider, base_url)
         cached_result = load_from_cache(cache_key, cache_dir)
         if cached_result:
             write_log(f"Using cached result for {model}")
             if isinstance(cached_result, list):
                 return "\n".join(cached_result)
             return cached_result
-
-    # Get provider function
-    provider_func = PROVIDER_FUNCTIONS.get(provider.lower())
-    if not provider_func:
-        error_msg = f"Unknown provider: {provider}"
-        write_log(error_msg, level="error")
-        raise ValueError(error_msg)
 
     # Call provider function
     try:

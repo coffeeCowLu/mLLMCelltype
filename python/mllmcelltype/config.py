@@ -80,39 +80,6 @@ PROVIDER_CONFIGS: dict[str, ProviderConfig] = {
 }
 
 
-@dataclass(frozen=True)
-class ConsensusConfig:
-    """Configuration for consensus checking behavior.
-
-    This defines which models to use for LLM-assisted consensus checking
-    and what to fall back to when the primary fails.
-
-    Design rationale:
-    - Primary uses Qwen: Good cost-performance ratio, fast response, sufficient reasoning
-    - Fallback uses Anthropic Sonnet: High stability, reliable as safety net
-    """
-
-    # Primary provider for consensus checking (used for LLM double-check)
-    primary_provider: str = "qwen"
-
-    # Fallback when primary fails
-    # Using Sonnet (not Opus) for fallback because:
-    # 1. Fallback should be reliable and fast, not necessarily the most powerful
-    # 2. Sonnet has excellent stability and is cost-effective for this role
-    fallback_provider: str = "anthropic"
-    fallback_model: str = "claude-sonnet-4-5-20250929"
-
-    @property
-    def primary_model(self) -> str:
-        """Get primary model from provider config.
-
-        This ensures consistency with get_default_model().
-        """
-        return get_default_model(self.primary_provider)
-
-
-# Default consensus configuration instance
-DEFAULT_CONSENSUS_CONFIG = ConsensusConfig()
 
 # Default fallback values when parsing fails or result is inconclusive
 # These conservative values ensure discussion will be triggered
