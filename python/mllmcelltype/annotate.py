@@ -12,6 +12,7 @@ from .logger import setup_logging, write_log
 from .prompts import create_prompt
 from .url_utils import resolve_provider_base_url
 from .utils import (
+    cluster_sort_key,
     create_cache_key,
     format_results,
     load_api_key,
@@ -62,18 +63,22 @@ def annotate_clusters(
     """
     # Setup logging
     setup_logging(log_dir=log_dir, log_level=log_level)
+
+    # Normalize provider to lowercase early so all downstream code
+    # (base_urls lookup, cache key, API key resolution) is consistent.
+    provider = provider.lower()
     write_log(f"Starting annotation with provider: {provider}")
 
     # Parse marker genes if DataFrame
     if isinstance(marker_genes, pd.DataFrame):
         marker_genes = parse_marker_genes(marker_genes)
 
-    # Get clusters
-    clusters = list(marker_genes.keys())
+    # Get clusters in natural numerical order (consistent with prompt)
+    clusters = sorted(marker_genes.keys(), key=cluster_sort_key)
     write_log(f"Found {len(clusters)} clusters")
 
     # Validate provider first — catch typos before misleading "API key not found"
-    provider_func = PROVIDER_FUNCTIONS.get(provider.lower())
+    provider_func = PROVIDER_FUNCTIONS.get(provider)
     if not provider_func:
         error_msg = f"Unknown provider: {provider}"
         write_log(error_msg, level="error")
@@ -161,11 +166,11 @@ def get_model_response(
 
     """
 
-    # Validate provider first — catch typos before misleading "API key not found"
     if not provider:
         raise ValueError("Provider name is required")
 
-    provider_func = PROVIDER_FUNCTIONS.get(provider.lower())
+    provider = provider.lower()
+    provider_func = PROVIDER_FUNCTIONS.get(provider)
     if not provider_func:
         error_msg = f"Unknown provider: {provider}"
         write_log(error_msg, level="error")

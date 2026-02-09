@@ -26,7 +26,7 @@ from .prompts import (
     create_initial_discussion_prompt,
 )
 from .url_utils import resolve_provider_base_url
-from .utils import load_api_key
+from .utils import cluster_sort_key, load_api_key
 
 # Default result structure for discussion round consensus check
 # Used when consensus check fails or has insufficient data
@@ -36,18 +36,6 @@ DEFAULT_CONSENSUS_RESULT = {
     "entropy": DEFAULT_FALLBACK_ENTROPY,
     "majority_prediction": "Unknown",
 }
-
-
-def _cluster_sort_key(cluster_id: str) -> tuple[int, int, str]:
-    """Sort key for deterministic, natural ordering of cluster IDs.
-
-    Numeric IDs sort first by value (0, 1, 2, …, 10, 11);
-    non-numeric IDs follow in lexicographic order.
-    """
-    try:
-        return (0, int(cluster_id), cluster_id)
-    except ValueError:
-        return (1, 0, cluster_id)
 
 
 def _call_llm_with_retry(
@@ -382,7 +370,7 @@ def check_consensus(
     all_clusters_set: set[str] = set()
     for model_results in predictions.values():
         all_clusters_set.update(model_results.keys())
-    all_clusters = sorted(all_clusters_set, key=_cluster_sort_key)
+    all_clusters = sorted(all_clusters_set, key=cluster_sort_key)
 
     # Process each cluster
     for cluster in all_clusters:
@@ -482,7 +470,7 @@ def check_consensus(
             for cluster, score in consensus_proportion.items()
             if score < consensus_threshold or entropy.get(cluster, 0) > entropy_threshold
         ),
-        key=_cluster_sort_key,
+        key=cluster_sort_key,
     )
     return consensus, consensus_proportion, entropy, controversial
 
@@ -1363,7 +1351,7 @@ def format_discussion_report(
     if cluster_id is not None:
         clusters_to_report = [cluster_id] if cluster_id in consensus else []
     else:
-        clusters_to_report = sorted(consensus.keys(), key=_cluster_sort_key)
+        clusters_to_report = sorted(consensus.keys(), key=cluster_sort_key)
 
     for cid in clusters_to_report:
         lines.append(sep)

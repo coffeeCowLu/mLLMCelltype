@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from .logger import write_log
+from .utils import cluster_sort_key
 
 
 def _format_marker_genes_for_prompt(
     marker_genes: dict[str, list[str]], cluster_format: str = "Cluster {}: {}"
 ) -> str:
     """Format marker genes consistently for prompts.
+
+    Clusters are sorted in natural numerical order to match the
+    "IN NUMERICAL ORDER" instruction in the prompt template.
 
     Args:
         marker_genes: Dictionary mapping cluster names to marker gene lists
@@ -18,8 +22,8 @@ def _format_marker_genes_for_prompt(
         str: Formatted marker genes text
     """
     marker_lines = []
-    for cluster, genes in marker_genes.items():
-        genes_str = ", ".join(str(g) for g in genes)
+    for cluster in sorted(marker_genes.keys(), key=cluster_sort_key):
+        genes_str = ", ".join(str(g) for g in marker_genes[cluster])
         marker_lines.append(cluster_format.format(cluster, genes_str))
     return "\n".join(marker_lines)
 

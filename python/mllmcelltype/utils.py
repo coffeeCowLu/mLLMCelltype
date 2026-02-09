@@ -15,6 +15,18 @@ from .config import get_api_key_env_var
 from .logger import write_log
 
 
+def cluster_sort_key(cluster_id: str) -> tuple[int, int, str]:
+    """Sort key for deterministic, natural ordering of cluster IDs.
+
+    Numeric IDs sort first by value (0, 1, 2, …, 10, 11);
+    non-numeric IDs follow in lexicographic order.
+    """
+    try:
+        return (0, int(cluster_id), cluster_id)
+    except ValueError:
+        return (1, 0, cluster_id)
+
+
 def _get_cache_dir(cache_dir: str | None = None) -> str:
     """Get cache directory path with consistent handling.
 

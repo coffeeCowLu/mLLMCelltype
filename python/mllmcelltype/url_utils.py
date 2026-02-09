@@ -28,8 +28,12 @@ def resolve_provider_base_url(provider: str, base_urls: str | dict | None) -> st
     if isinstance(base_urls, str):
         return base_urls  # Single URL applies to all providers
 
-    if isinstance(base_urls, dict) and provider in base_urls:
-        return base_urls[provider]  # Provider-specific URL
+    if isinstance(base_urls, dict):
+        # Case-insensitive lookup: try original, then lowercase
+        if provider in base_urls:
+            return base_urls[provider]
+        if provider.lower() in base_urls:
+            return base_urls[provider.lower()]
 
     return None
 
