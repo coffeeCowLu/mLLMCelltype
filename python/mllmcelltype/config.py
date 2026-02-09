@@ -63,9 +63,9 @@ PROVIDER_CONFIGS: dict[str, ProviderConfig] = {
         default_api_url="https://open.bigmodel.cn/api/paas/v4/chat/completions",
     ),
     "minimax": ProviderConfig(
-        default_model="minimax-m2.1",
+        default_model="MiniMax-M2.1",
         api_key_env_var="MINIMAX_API_KEY",
-        default_api_url="https://api.minimaxi.chat/v1/text/chatcompletion_v2",
+        default_api_url="https://api.minimaxi.com/v1/chat/completions",
     ),
     "grok": ProviderConfig(
         default_model="grok-4",

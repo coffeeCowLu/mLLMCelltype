@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 
 import requests
 
 from ..logger import write_log
-from ..url_utils import get_default_api_url, validate_base_url
+from ..url_utils import get_working_minimax_endpoint, validate_base_url
 
 
 def process_minimax(
@@ -34,15 +35,15 @@ def process_minimax(
         write_log(error_msg, level="error")
         raise ValueError(error_msg)
 
-    # Use custom URL or default URL
+    # Use custom URL or smart selection
     if base_url:
         if not validate_base_url(base_url):
             raise ValueError(f"Invalid base URL: {base_url}")
         url = base_url
         write_log(f"Using custom base URL: {url}")
     else:
-        url = get_default_api_url("minimax")
-        write_log(f"Using default URL: {url}")
+        url = get_working_minimax_endpoint(api_key)
+        write_log(f"Using smart-selected endpoint: {url}")
 
     write_log(f"Using model: {model}")
     write_log(f"API URL: {url}")
@@ -119,6 +120,10 @@ def process_minimax(
                 and "content" in choices[0]["message"]
             ):
                 response_content = choices[0]["message"]["content"]
+                # Strip <think>...</think> reasoning block (MiniMax M2.1 Coding Plan)
+                response_content = re.sub(
+                    r"<think>[\s\S]*?</think>\s*", "", response_content
+                )
                 res = response_content.strip().split("\n")
             else:
                 write_log(f"Unexpected response format: {content}")

@@ -9,7 +9,13 @@ from .logger import write_log
 
 # Re-export get_default_api_url for backward compatibility
 # The actual implementation is in config.py (Single Source of Truth)
-__all__ = ["get_default_api_url", "get_working_qwen_endpoint", "resolve_provider_base_url", "validate_base_url"]
+__all__ = [
+    "get_default_api_url",
+    "get_working_minimax_endpoint",
+    "get_working_qwen_endpoint",
+    "resolve_provider_base_url",
+    "validate_base_url",
+]
 
 
 def resolve_provider_base_url(provider: str, base_urls: str | dict | None) -> str | None:
@@ -52,6 +58,64 @@ def validate_base_url(url: str) -> bool:
 
     # Basic URL format check
     return url.startswith("http://") or url.startswith("https://")
+
+
+def get_working_minimax_endpoint(api_key: str) -> str:
+    """Smart endpoint selection for MiniMax.
+
+    MiniMax has region-specific endpoints that only accept keys issued for
+    that region (e.g. Coding Plan ``sk-cp-`` keys work on the domestic
+    ``.com`` endpoint but not on the international ``.chat`` endpoint).
+    Unlike Qwen where any key works on any reachable endpoint, MiniMax
+    requires matching the key to its endpoint, so we test authentication
+    rather than mere connectivity.
+
+    Args:
+        api_key: MiniMax API key
+
+    Returns:
+        Working endpoint URL
+    """
+    endpoints = [
+        "https://api.minimaxi.com/v1/chat/completions",   # Domestic (China)
+        "https://api.minimaxi.chat/v1/chat/completions",  # International
+    ]
+
+    write_log("Testing MiniMax endpoint compatibility...", level="debug")
+
+    for endpoint in endpoints:
+        try:
+            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+            test_body = {
+                "model": "MiniMax-M2.1",
+                "messages": [{"role": "user", "content": "test"}],
+                "max_tokens": 1,
+            }
+            response = requests.post(endpoint, headers=headers, json=test_body, timeout=5)
+
+            # MiniMax returns HTTP 200 even for auth errors; check base_resp
+            if response.status_code == 200:
+                data = response.json()
+                base_resp = data.get("base_resp", {})
+                status_code = base_resp.get("status_code", 0)
+                if status_code == 0:
+                    write_log(f"MiniMax endpoint accepted key: {endpoint}", level="debug")
+                    return endpoint
+                write_log(
+                    f"MiniMax endpoint rejected key ({base_resp.get('status_msg', '')}): {endpoint}",
+                    level="debug",
+                )
+            else:
+                write_log(
+                    f"MiniMax endpoint returned HTTP {response.status_code}: {endpoint}",
+                    level="debug",
+                )
+        except Exception:
+            write_log(f"MiniMax endpoint unreachable: {endpoint}", level="debug")
+
+    # Fallback to domestic endpoint
+    write_log("No MiniMax endpoint accepted the key, using domestic endpoint as fallback")
+    return endpoints[0]
 
 
 def get_working_qwen_endpoint(api_key: str) -> str:
