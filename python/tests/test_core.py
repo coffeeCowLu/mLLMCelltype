@@ -175,9 +175,9 @@ def test_format_results_mismatched():
     assert "2" in formatted
     # The function adds "Unknown" for missing clusters
     assert "3" in formatted
-    # In simple mapping mode, it doesn't clean prefixes
-    assert "Cluster 1: T cells" in formatted["1"]
-    assert "Cluster 2: B cells" in formatted["2"]
+    # Line-by-line mapping strips "Cluster X:" prefix when present
+    assert formatted["1"] == "T cells"
+    assert formatted["2"] == "B cells"
     assert formatted["3"] == "Unknown"
 
 

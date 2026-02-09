@@ -38,6 +38,42 @@ DEFAULT_CONSENSUS_RESULT = {
 }
 
 
+def _resolve_consensus_provider(
+    consensus_model: dict[str, str] | None,
+    api_keys: dict[str, str],
+) -> tuple[str | None, str | None, str | None]:
+    """Resolve provider, model, and API key for consensus checking.
+
+    Resolution order: explicit ``consensus_model`` dict → first available
+    key in ``api_keys``.
+
+    Args:
+        consensus_model: Optional dict with 'provider' and/or 'model' keys
+        api_keys: Dictionary mapping provider names to API keys
+
+    Returns:
+        tuple of (provider, model, api_key) — any element may be None
+    """
+    if consensus_model:
+        provider = consensus_model.get("provider")
+        model = consensus_model.get("model")
+        if not provider and model:
+            provider = get_provider(model)
+        if provider and not model:
+            model = get_default_model(provider)
+    else:
+        provider = None
+        model = None
+        for p, key in api_keys.items():
+            if key:
+                provider = p
+                model = get_default_model(p)
+                break
+
+    api_key = api_keys.get(provider) if provider else None
+    return provider, model, api_key
+
+
 def _call_llm_with_retry(
     prompt: str,
     provider: str,
@@ -188,7 +224,7 @@ def _extract_metrics_from_text(
 
     # Regex patterns (mirroring R's .CONSENSUS_CONSTANTS)
     consensus_indicator_pattern = r"^\s*[01]\s*$"
-    proportion_pattern = r"^\s*(0\.\d+|1\.0*|1)\s*$"
+    proportion_pattern = r"^\s*(0\.\d+|1\.0*|[01])\s*$"
     entropy_pattern = r"^\s*(\d+\.\d+|\d+)\s*$"
     general_numeric_pattern = r"^\s*\d+(\.\d+)?\s*$"
 
@@ -224,7 +260,7 @@ def _extract_metrics_from_text(
             parts = line.split("=")
             if len(parts) > 1:
                 last_part = parts[-1].strip()
-                value_match = re.search(r"(0\.\d+|1\.0*|1)", last_part)
+                value_match = re.search(r"(0\.\d+|1\.0*|[01])", last_part)
                 if value_match:
                     with contextlib.suppress(ValueError):
                         potential_cp = float(value_match.group(1))
@@ -407,26 +443,9 @@ def check_consensus(
         # Use LLM to check consensus among annotations
         prompt = create_consensus_check_prompt(cluster_annotations)
 
-        # Determine which model to use: explicit consensus_model → api_keys
-        if consensus_model:
-            primary_provider = consensus_model.get("provider")
-            primary_model = consensus_model.get("model")
-            if not primary_provider and primary_model:
-                primary_provider = get_provider(primary_model)
-            if primary_provider and not primary_model:
-                primary_model = get_default_model(primary_provider)
-        else:
-            # Pick from user's available api_keys
-            primary_provider = None
-            primary_model = None
-            if api_keys:
-                for provider, key in api_keys.items():
-                    if key:
-                        primary_provider = provider
-                        primary_model = get_default_model(provider)
-                        break
-
-        primary_api_key = api_keys.get(primary_provider) if primary_provider else None
+        primary_provider, primary_model, primary_api_key = _resolve_consensus_provider(
+            consensus_model, api_keys
+        )
 
         llm_response = _call_llm_with_retry(
             prompt=prompt,
@@ -528,7 +547,7 @@ def check_consensus_for_discussion_round(
     consensus_threshold: float = 0.7,
     entropy_threshold: float = 1.0,
     api_keys: dict[str, str] | None = None,
-    consensus_check_model: dict[str, str] | None = None,
+    consensus_model: dict[str, str] | None = None,
     base_urls: str | dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Check consensus among model responses for a single discussion round.
@@ -547,7 +566,7 @@ def check_consensus_for_discussion_round(
         consensus_threshold: Agreement threshold (default: 0.7)
         entropy_threshold: Entropy threshold (default: 1.0)
         api_keys: Dictionary mapping provider names to API keys
-        consensus_check_model: Optional dict with 'provider' and 'model' keys
+        consensus_model: Optional dict with 'provider' and 'model' keys
         base_urls: Custom base URLs for API endpoints
 
     Returns:
@@ -562,28 +581,12 @@ def check_consensus_for_discussion_round(
         write_log("No responses to check consensus", level="warning")
         return DEFAULT_CONSENSUS_RESULT.copy()
 
-    # Resolve LLM parameters: explicit consensus_check_model → api_keys → give up
     if api_keys is None:
         api_keys = {}
 
-    if consensus_check_model:
-        primary_provider = consensus_check_model.get("provider")
-        primary_model = consensus_check_model.get("model")
-        if not primary_provider and primary_model:
-            primary_provider = get_provider(primary_model)
-        if primary_provider and not primary_model:
-            primary_model = get_default_model(primary_provider)
-    else:
-        # Pick from user's available api_keys
-        primary_provider = None
-        primary_model = None
-        for provider, key in api_keys.items():
-            if key:
-                primary_provider = provider
-                primary_model = get_default_model(provider)
-                break
-
-    primary_api_key = api_keys.get(primary_provider) if primary_provider else None
+    primary_provider, primary_model, primary_api_key = _resolve_consensus_provider(
+        consensus_model, api_keys
+    )
 
     # Single response — extract label but cannot establish consensus
     if len(round_responses) == 1:
@@ -669,7 +672,7 @@ def process_controversial_clusters(
     cache_dir: str | None = None,
     base_urls: str | dict[str, str] | None = None,
     force_rerun: bool = False,
-    consensus_check_model: dict[str, str] | None = None,
+    consensus_model: dict[str, str] | None = None,
 ) -> tuple[dict[str, str], dict[str, list[dict]], dict[str, float], dict[str, float]]:
     """Process controversial clusters through multi-model discussion.
 
@@ -694,7 +697,7 @@ def process_controversial_clusters(
         cache_dir: Directory to store cache files
         base_urls: Custom base URLs for API endpoints
         force_rerun: If True, ignore cached results
-        consensus_check_model: Optional dict with 'provider' and 'model' keys
+        consensus_model: Optional dict with 'provider' and 'model' keys
             to specify which model to use for consensus checking with LLM.
             If not provided, picks from the caller's api_keys.
 
@@ -872,7 +875,7 @@ def process_controversial_clusters(
                     consensus_threshold=consensus_threshold,
                     entropy_threshold=entropy_threshold,
                     api_keys=api_keys,
-                    consensus_check_model=consensus_check_model,
+                    consensus_model=consensus_model,
                     base_urls=base_urls,
                 )
 
@@ -906,7 +909,7 @@ def process_controversial_clusters(
                         consensus_threshold=consensus_threshold,
                         entropy_threshold=entropy_threshold,
                         api_keys=api_keys,
-                        consensus_check_model=consensus_check_model,
+                        consensus_model=consensus_model,
                         base_urls=base_urls,
                     )
                     final_decision = last_consensus["majority_prediction"]
@@ -926,7 +929,7 @@ def process_controversial_clusters(
                         consensus_threshold=consensus_threshold,
                         entropy_threshold=entropy_threshold,
                         api_keys=api_keys,
-                        consensus_check_model=consensus_check_model,
+                        consensus_model=consensus_model,
                         base_urls=base_urls,
                     )
                     cell_type = last_consensus["majority_prediction"]
@@ -1241,7 +1244,7 @@ def interactive_consensus_annotation(
                 cache_dir=cache_dir,
                 base_urls=base_urls,
                 force_rerun=force_rerun,
-                consensus_check_model=consensus_model_dict,  # Pass consensus model for LLM verification
+                consensus_model=consensus_model_dict,
             )
 
             # Update consensus proportion and entropy for resolved clusters

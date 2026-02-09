@@ -22,7 +22,7 @@ def resolve_provider_base_url(provider: str, base_urls: str | dict | None) -> st
     Returns:
         Resolved base URL or None
     """
-    if base_urls is None:
+    if base_urls is None or provider is None:
         return None
 
     if isinstance(base_urls, str):

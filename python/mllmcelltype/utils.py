@@ -281,7 +281,7 @@ def format_results(results: list[str], clusters: list[str]) -> dict[str, str]:
 
     # Case 1: Try to parse the format "Cluster X: Annotation" (most common format from our prompts)
     result = {}
-    cluster_pattern = r"Cluster\s+(.+?):\s*(.*)"
+    cluster_pattern = r"(?i)Cluster\s+(.+?):\s*(.*)"
 
     # First pass: try to find annotations for each cluster by ID
     for cluster in clusters:
@@ -354,45 +354,27 @@ def format_results(results: list[str], clusters: list[str]) -> dict[str, str]:
     except (json.JSONDecodeError, ValueError, KeyError, TypeError, AttributeError) as e:
         write_log(f"Failed to parse JSON response: {e!s}", level="debug")
 
-    # Case 3: Check if this is a simple response where each line corresponds to a cluster
-    # This is the expected format from the R version
-    if len(clean_results) >= len(clusters):
-        # Simple case: one result per cluster
-        simple_result = {}
-        for i, cluster in enumerate(clusters):
-            if i < len(clean_results):
-                # Check if this line contains a cluster prefix and remove it
-                line = clean_results[i]
-                match = re.match(cluster_pattern, line)
-                if match:
-                    simple_result[str(cluster)] = match.group(2).strip()
-                else:
-                    simple_result[str(cluster)] = line.strip()
-            else:
-                simple_result[str(cluster)] = "Unknown"
-
-        write_log("Successfully parsed response as simple line-by-line format", level="info")
-        return simple_result
-
-    # Case 4: Fall back to the original method
-    write_log(
-        "Could not parse complex LLM response, falling back to simple mapping",
-        level="warning",
-    )
-    result = {}
-    for i, cluster in enumerate(clusters):
-        if i < len(clean_results):
-            result[str(cluster)] = clean_results[i]
-        else:
-            result[str(cluster)] = "Unknown"
-
-    # Check if number of results matches number of clusters
-    if len(result) != len(clusters):
+    # Case 3: Line-by-line mapping — each line corresponds to a cluster
+    if len(clean_results) < len(clusters):
         write_log(
-            f"Number of results ({len(result)}) does not match number of clusters ({len(clusters)})",
+            f"Fewer result lines ({len(clean_results)}) than clusters ({len(clusters)}), "
+            "remaining clusters will be marked Unknown",
             level="warning",
         )
 
+    result = {}
+    for i, cluster in enumerate(clusters):
+        if i < len(clean_results):
+            line = clean_results[i]
+            match = re.match(cluster_pattern, line)
+            if match:
+                result[str(cluster)] = match.group(2).strip()
+            else:
+                result[str(cluster)] = line.strip()
+        else:
+            result[str(cluster)] = "Unknown"
+
+    write_log("Parsed response as line-by-line format", level="info")
     return result
 
 
