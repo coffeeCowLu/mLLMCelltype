@@ -102,14 +102,23 @@ def process_minimax(
             # Parse the response
             content = response.json()
 
+            # MiniMax returns HTTP 200 even for business errors (e.g. insufficient
+            # balance).  The real status lives in base_resp.status_code (0 = OK).
+            base_resp = content.get("base_resp", {})
+            if base_resp.get("status_code", 0) != 0:
+                error_msg = base_resp.get("status_msg", "Unknown MiniMax error")
+                write_log(f"MiniMax API error: {error_msg}", level="error")
+                raise ValueError(f"MiniMax API error: {error_msg}")
+
             # Parse response using the same format as in R version
+            choices = content.get("choices")
             if (
-                "choices" in content
-                and len(content["choices"]) > 0
-                and "message" in content["choices"][0]
-                and "content" in content["choices"][0]["message"]
+                choices
+                and len(choices) > 0
+                and "message" in choices[0]
+                and "content" in choices[0]["message"]
             ):
-                response_content = content["choices"][0]["message"]["content"]
+                response_content = choices[0]["message"]["content"]
                 res = response_content.strip().split("\n")
             else:
                 write_log(f"Unexpected response format: {content}")
