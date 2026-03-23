@@ -1,13 +1,9 @@
+name: pkgdown
+
 on:
-  push:
-    branches: [main, master, dev]
-  pull_request:
-    branches: [main, master]
   release:
     types: [published]
   workflow_dispatch:
-
-name: pkgdown
 
 permissions:
   contents: write
@@ -46,19 +42,12 @@ jobs:
           devtools::install("R", upgrade = "never")
         shell: Rscript {0}
 
-      - name: Verify package installation
-        run: |
-          library(mLLMCelltype)
-          packageVersion("mLLMCelltype")
-        shell: Rscript {0}
-
       - name: Build site
         run: |
           pkgdown::build_site("R")
         shell: Rscript {0}
 
-      - name: Deploy to GitHub pages 🚀
-        if: github.event_name != 'pull_request'
+      - name: Deploy to GitHub pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: gh-pages
