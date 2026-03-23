@@ -7,8 +7,8 @@ authors:
     given-names: "Xianyang"
   - family-names: "Chen"
     given-names: "Jun"
-title: "mLLMCelltype: An iterative multi-LLM consensus framework for cell type annotation"
-version: 1.0.0
+title: "mLLMCelltype: Multi-LLM consensus framework for cell type annotation"
+version: 2.0.3
 date-released: 2025-04-10
 url: "https://github.com/cafferychen777/mLLMCelltype"
 repository-code: "https://github.com/cafferychen777/mLLMCelltype"
@@ -20,7 +20,7 @@ keywords:
   - "large language models"
   - "consensus annotation"
   - "bioinformatics"
-abstract: "mLLMCelltype is an iterative multi-LLM consensus framework for cell type annotation in single-cell RNA sequencing data. By combining predictions from multiple large language models, this framework aims to improve annotation accuracy while providing transparent uncertainty quantification."
+abstract: "mLLMCelltype is a multi-LLM consensus framework for cell type annotation in single-cell RNA sequencing data. By combining predictions from multiple large language models, this framework improves annotation accuracy while providing transparent uncertainty quantification."
 preferred-citation:
   type: article
   authors:
