@@ -10,8 +10,6 @@ R/doc/
 R/inst/doc/
 R/vignettes/*.html
 R/vignettes/*.pdf
-R/consensus_cache/
-R/cache/
 R/*_cache/
 R/*.rds
 R/*.pdf
@@ -31,9 +29,6 @@ __pycache__/
 build/
 dist/
 sdist/
-develop-eggs/
-eggs/
-.eggs/
 
 # Environments & secrets
 .env
@@ -50,21 +45,14 @@ env/
 .pytest_cache/
 .ruff_cache/
 
-# Data
+# Data & generated
 data/
-
-# Project-specific
 logs/
 cache/
+
+# Project-specific
 demos/
 examples/
-test_scripts/
-R/tests/testthat/logs/
-R/tests/testthat/consensus_cache/
-python/tests/__pycache__/
-archive/
 mllmcelltype-web/
-mLLMCelltype_visualizations/
-mLLMCelltype-poster/
-dev_tools/
+R/tests/testthat/consensus_cache/
 CLAUDE.md
