@@ -23,7 +23,7 @@ from mllmcelltype import interactive_consensus_annotation
 from mllmcelltype.utils import load_api_key
 
 # Load environment variables
-load_dotenv("/Users/apple/Research/mLLMCelltype/.env")
+load_dotenv()
 
 
 def test_complex_consensus():
