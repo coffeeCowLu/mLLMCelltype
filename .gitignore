@@ -19,6 +19,7 @@ R/*.png
 R/*.jpg
 R/examples/
 R/.Rcheck-ignore
+R/docs/
 
 # Python
 __pycache__/
@@ -48,6 +49,9 @@ env/
 .playwright-mcp/
 .pytest_cache/
 .ruff_cache/
+
+# Data
+data/
 
 # Project-specific
 logs/
