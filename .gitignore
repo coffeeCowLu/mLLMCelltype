@@ -56,3 +56,4 @@ examples/
 mllmcelltype-web/
 R/tests/testthat/consensus_cache/
 CLAUDE.md
+**/settings.local.json
