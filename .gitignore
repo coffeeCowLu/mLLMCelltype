@@ -58,9 +58,10 @@ logs/
 cache/
 demos/
 examples/
-tests/
-R/tests/
 test_scripts/
+R/tests/testthat/logs/
+R/tests/testthat/consensus_cache/
+python/tests/__pycache__/
 archive/
 mllmcelltype-web/
 mLLMCelltype_visualizations/
