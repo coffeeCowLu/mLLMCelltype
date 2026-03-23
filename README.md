@@ -766,7 +766,7 @@ pbmc_markers <- FindAllMarkers(pbmc,
 single_model_results <- annotate_cell_types(
   input = pbmc_markers,
   tissue_name = "human PBMC",  # provide tissue context
-  model = "claude-sonnet-4-5-20250929",  # specify a single model (Claude 4 Opus)
+  model = "claude-sonnet-4-5-20250929",  # specify a single model (Claude Sonnet 4.5)
   api_key = "your-anthropic-key",  # provide the API key directly
   top_gene_count = 10
 )
@@ -1137,7 +1137,7 @@ DoHeatmap(pbmc_data,
 - **Integration**: Works directly with consensus annotation results added to Seurat objects
 - **Standard Seurat Functions**: Uses familiar Seurat visualization functions for consistency
 
-For detailed instructions and advanced customization options, see the [Visualization Guide](R/vignettes/06-visualization-guide.html).
+For detailed instructions and advanced customization options, see the [Visualization Guide](https://cafferyang.com/mLLMCelltype/articles/visualization-guide.html).
 
 ## Citation
 

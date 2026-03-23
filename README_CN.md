@@ -1710,7 +1710,7 @@ DoHeatmap(pbmc_data,
 - **无缝集成**：直接将共识注释结果添加到Seurat对象中使用
 - **标准Seurat函数**：使用熟悉的Seurat可视化函数，保持一致性
 
-有关详细说明和高级自定义选项，请参阅[可视化指南](R/vignettes/06-visualization-guide.html)。
+有关详细说明和高级自定义选项，请参阅[可视化指南](https://cafferyang.com/mLLMCelltype/articles/visualization-guide.html)。
 
 ## 引用
 
