@@ -48,5 +48,5 @@ Thumbs.db
 # Cache
 .cache/
 .pytest_cache/
-.ruff_cache/uv.lock
+.ruff_cache/
 uv.lock
