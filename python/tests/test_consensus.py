@@ -1691,6 +1691,22 @@ class TestConsensus:
         assert consensus["1"] == "T cells"
         assert consensus_proportion["1"] == 1.0
 
+    def test_check_consensus_skips_missing_like_annotation_values(self):
+        """Test consensus normalization ignores NaN/pandas.NA annotation values."""
+        predictions = {
+            "model_a": {"1": pd.NA},  # type: ignore[dict-item]
+            "model_b": {"1": "T cells"},
+        }
+
+        consensus, consensus_proportion, entropy, _controversial = check_consensus(
+            predictions=predictions,
+            api_keys={},
+        )
+
+        assert consensus["1"] == "T cells"
+        assert consensus_proportion["1"] == DEFAULT_FALLBACK_CONSENSUS_PROPORTION
+        assert entropy["1"] == DEFAULT_FALLBACK_ENTROPY
+
     @patch("mllmcelltype.consensus.check_consensus_for_discussion_round")
     @patch("mllmcelltype.consensus.get_model_response")
     def test_process_controversial_clusters_skips_missing_like_cluster_ids(
@@ -1729,6 +1745,51 @@ class TestConsensus:
         assert set(cp.keys()) == {"1"}
         assert set(entropy.keys()) == {"1"}
         assert results["1"] == "T cells"
+
+    @patch("mllmcelltype.consensus.check_consensus_for_discussion_round")
+    @patch("mllmcelltype.consensus.get_model_response")
+    def test_process_controversial_clusters_omits_missing_annotations_from_initial_predictions(
+        self,
+        mock_get_model_response,
+        mock_check_round_consensus,
+    ):
+        """Test missing discussion annotations do not leak as '<NA>'/None into prompts."""
+        captured_prompts: list[str] = []
+
+        def response_side_effect(**kwargs):
+            captured_prompts.append(kwargs["prompt"])
+            return "CELL TYPE: T cells\nGROUNDS: CD3D"
+
+        mock_get_model_response.side_effect = response_side_effect
+        mock_check_round_consensus.return_value = {
+            "reached": True,
+            "consensus_proportion": 0.9,
+            "entropy": 0.1,
+            "majority_prediction": "T cells",
+        }
+
+        results, _history, _cp, _entropy = process_controversial_clusters(
+            marker_genes={"1": ["CD3D"]},
+            controversial_clusters=["1"],
+            model_predictions={
+                "openai:gpt-5.2": {"1": pd.NA},  # type: ignore[dict-item]
+                "anthropic:claude-sonnet-4-5-20250929": {"1": "B cells"},
+            },
+            species="human",
+            models=[
+                {"provider": "openai", "model": "gpt-5.2"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+            ],
+            api_keys={"openai": "key-a", "anthropic": "key-b"},
+            max_discussion_rounds=1,
+            use_cache=False,
+        )
+
+        assert results["1"] == "T cells"
+        assert captured_prompts
+        assert "<NA>" not in captured_prompts[0]
+        assert "None" not in captured_prompts[0]
+        assert "anthropic:claude-sonnet-4-5-20250929" in captured_prompts[0]
 
     def test_check_consensus_whitespace_cluster_keys_are_normalized(self):
         """Test whitespace-padded cluster keys are trimmed and merged."""

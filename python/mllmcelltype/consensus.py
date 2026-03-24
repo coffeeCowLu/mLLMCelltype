@@ -30,6 +30,7 @@ from .prompts import (
 from .url_utils import resolve_provider_base_url
 from .utils import (
     cluster_sort_key,
+    is_missing_value,
     is_unknown_annotation,
     load_api_key,
     normalize_annotation,
@@ -57,17 +58,6 @@ RECOVERABLE_LLM_EXCEPTIONS = (
     TypeError,
     RuntimeError,
 )
-
-
-def _is_missing_value(value: Any) -> bool:
-    """Return True when value should be treated as missing (None/NaN/pandas.NA-like)."""
-    if value is None:
-        return True
-    if type(value).__name__ == "NAType":
-        return True
-    with contextlib.suppress(Exception):
-        return bool(value != value)
-    return False
 
 
 def _normalize_api_keys(api_keys: dict[str, str] | None) -> dict[str, str]:
@@ -201,7 +191,7 @@ def _normalize_single_prediction_map(model_name: str, raw_results: Any) -> dict[
 
     cluster_map: dict[str, str] = {}
     for raw_cluster, raw_annotation in raw_results.items():
-        if _is_missing_value(raw_cluster) or _is_missing_value(raw_annotation):
+        if is_missing_value(raw_cluster) or is_missing_value(raw_annotation):
             continue
         cluster_id = str(raw_cluster).strip()
         if not cluster_id:
@@ -258,7 +248,7 @@ def _collect_valid_round_responses(round_responses: dict[str, Any]) -> dict[str,
 
     valid_responses: dict[str, str] = {}
     for model_key, response in round_responses.items():
-        if _is_missing_value(response):
+        if is_missing_value(response):
             continue
         response_text = response if isinstance(response, str) else str(response)
         response_text = response_text.strip()
@@ -966,7 +956,7 @@ def _collect_candidate_clusters_from_raw_predictions(predictions: dict[str, Any]
         if not isinstance(raw_results, dict):
             continue
         for raw_cluster in raw_results:
-            if _is_missing_value(raw_cluster):
+            if is_missing_value(raw_cluster):
                 continue
             cluster_id = str(raw_cluster).strip()
             if cluster_id:
@@ -1680,7 +1670,7 @@ def _build_cluster_initial_predictions(
 ) -> dict[str, str]:
     """Build initial per-model annotations for a target cluster."""
     return {
-        model_name: str(predictions.get(cluster_id, "Unknown"))
+        model_name: normalize_annotation(predictions.get(cluster_id, "Unknown"))
         for model_name, predictions in model_predictions.items()
         if cluster_id in predictions
     }
@@ -1834,7 +1824,9 @@ def _normalize_discussion_model_predictions(
 
         normalized_cluster_map: dict[str, Any] = {}
         for raw_cluster_id, annotation in raw_predictions.items():
-            if _is_missing_value(raw_cluster_id):
+            if is_missing_value(raw_cluster_id):
+                continue
+            if is_missing_value(annotation):
                 continue
             cluster_id = str(raw_cluster_id).strip()
             if cluster_id:
@@ -1860,7 +1852,7 @@ def _normalize_controversial_cluster_ids(controversial_clusters: list[Any]) -> l
     seen: set[str] = set()
     skipped_invalid = 0
     for raw_cluster_id in controversial_clusters:
-        if _is_missing_value(raw_cluster_id):
+        if is_missing_value(raw_cluster_id):
             skipped_invalid += 1
             continue
         cluster_id = str(raw_cluster_id).strip()

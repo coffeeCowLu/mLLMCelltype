@@ -35,7 +35,7 @@ INCONCLUSIVE_WITH_CONTEXT_PATTERN = re.compile(
 ERROR_ANNOTATION_PATTERN = re.compile(r"(?i)^error(?:\s*:\s*.*|\s*\(.*\))?$")
 
 
-def _is_missing_scalar(value: Any) -> bool:
+def is_missing_value(value: Any) -> bool:
     """Return True for scalar missing markers (None/NaN/pandas.NA)."""
     if value is None:
         return True
@@ -61,7 +61,7 @@ def _unwrap_balanced_wrappers(text: str) -> str:
 
 def is_unknown_annotation(value: Any) -> bool:
     """Whether a value should be treated as missing/unknown annotation."""
-    if value is None:
+    if is_missing_value(value):
         return True
 
     normalized = _unwrap_balanced_wrappers(str(value))
@@ -209,7 +209,7 @@ def _coerce_marker_gene_list(genes: Any) -> list[str]:
 
     cleaned: list[str] = []
     for raw_gene in values:
-        if _is_missing_scalar(raw_gene):
+        if is_missing_value(raw_gene):
             continue
         gene = str(raw_gene).strip()
         if gene:
@@ -219,7 +219,7 @@ def _coerce_marker_gene_list(genes: Any) -> list[str]:
 
 def _normalize_cluster_id(raw_cluster: Any) -> str | None:
     """Normalize raw cluster identifier to a non-empty string."""
-    if _is_missing_scalar(raw_cluster):
+    if is_missing_value(raw_cluster):
         return None
     normalized = str(raw_cluster).strip()
     return normalized or None
@@ -465,7 +465,7 @@ def parse_marker_genes(marker_genes_df: pd.DataFrame) -> dict[str, list[str]]:
             gene_sets[cluster_id] = set()
 
         raw_gene = row[gene_col]
-        if _is_missing_scalar(raw_gene):
+        if is_missing_value(raw_gene):
             continue
         gene = str(raw_gene).strip()
         if not gene:
