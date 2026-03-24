@@ -127,6 +127,21 @@ def test_parse_marker_genes_mixed_incomparable_cluster_types():
     assert parsed["3"] == ["MS4A1"]
 
 
+def test_parse_marker_genes_unhashable_cluster_values_do_not_crash():
+    """Test parse_marker_genes handles unhashable cluster values by robust row-wise parsing."""
+    df = pd.DataFrame(
+        {
+            "cluster": [[1], [1], "2"],
+            "gene": ["CD3D", "IL7R", "MS4A1"],
+        }
+    )
+
+    parsed = parse_marker_genes(df)
+
+    assert parsed["[1]"] == ["CD3D", "IL7R"]
+    assert parsed["2"] == ["MS4A1"]
+
+
 def test_parse_marker_genes_invalid_input_type_raises():
     """Test parse_marker_genes rejects non-DataFrame input with clear message."""
     with pytest.raises(ValueError, match="must be a pandas DataFrame"):

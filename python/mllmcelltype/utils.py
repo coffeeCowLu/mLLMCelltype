@@ -415,26 +415,47 @@ def parse_marker_genes(marker_genes_df: pd.DataFrame) -> dict[str, list[str]]:
             f"Available columns: {list(marker_genes_df.columns)}"
         )
 
-    # Group by cluster and get list of genes (drop None/NaN values)
-    for cluster, group in marker_genes_df.groupby(cluster_col, sort=False):
-        cluster_id = _normalize_cluster_id(cluster)
+    # Parse row-wise to avoid hard failure when cluster values are unhashable
+    # (e.g., accidental list objects from dirty upstream preprocessing).
+    source_variants: dict[str, set[str]] = {}
+    gene_sets: dict[str, set[str]] = {}
+    for _, row in marker_genes_df.iterrows():
+        raw_cluster = row[cluster_col]
+        cluster_id = _normalize_cluster_id(raw_cluster)
         if not cluster_id:
             write_log(
-                f"Skipping marker_genes row group with invalid cluster id: {cluster!r}",
+                f"Skipping marker_genes row with invalid cluster id: {raw_cluster!r}",
                 level="warning",
             )
             continue
-        genes = [
-            str(g).strip()
-            for g in group[gene_col]
-            if g is not None and g == g and str(g).strip()
-        ]
-        if genes:
-            _merge_marker_genes(result, cluster_id, genes, cluster)
-        elif cluster_id not in result:
+
+        raw_cluster_variant = str(raw_cluster).strip()
+        existing_variants = source_variants.setdefault(cluster_id, set())
+        if raw_cluster_variant not in existing_variants:
+            if existing_variants:
+                write_log(
+                    f"Cluster key collision after normalization: {raw_cluster!r} -> '{cluster_id}'",
+                    level="warning",
+                )
+            existing_variants.add(raw_cluster_variant)
+
+        if cluster_id not in result:
             # Preserve explicit cluster rows even when no marker genes are present.
             # Downstream annotation treats these as Unknown without issuing API calls.
             result[cluster_id] = []
+            gene_sets[cluster_id] = set()
+
+        raw_gene = row[gene_col]
+        if raw_gene is None or raw_gene != raw_gene:
+            continue
+        gene = str(raw_gene).strip()
+        if not gene:
+            continue
+
+        known_genes = gene_sets[cluster_id]
+        if gene not in known_genes:
+            known_genes.add(gene)
+            result[cluster_id].append(gene)
 
     return result
 
