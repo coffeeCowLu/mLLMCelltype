@@ -198,6 +198,14 @@ def _coerce_marker_gene_list(genes: Any) -> list[str]:
     return [str(g).strip() for g in values if g is not None and g == g and str(g).strip()]
 
 
+def _normalize_cluster_id(raw_cluster: Any) -> str | None:
+    """Normalize raw cluster identifier to a non-empty string."""
+    if raw_cluster is None or raw_cluster != raw_cluster:
+        return None
+    normalized = str(raw_cluster).strip()
+    return normalized or None
+
+
 def _merge_marker_genes(
     target: dict[str, list[str]],
     normalized_cluster: str,
@@ -236,7 +244,13 @@ def normalize_marker_genes_keys(
 
     normalized: dict[str, list[str]] = {}
     for raw_cluster, genes in marker_genes.items():
-        cluster_id = str(raw_cluster)
+        cluster_id = _normalize_cluster_id(raw_cluster)
+        if not cluster_id:
+            write_log(
+                f"Skipping marker_genes entry with invalid cluster id: {raw_cluster!r}",
+                level="warning",
+            )
+            continue
         cleaned_genes = _coerce_marker_gene_list(genes)
         _merge_marker_genes(normalized, cluster_id, cleaned_genes, raw_cluster)
 
@@ -403,7 +417,13 @@ def parse_marker_genes(marker_genes_df: pd.DataFrame) -> dict[str, list[str]]:
 
     # Group by cluster and get list of genes (drop None/NaN values)
     for cluster, group in marker_genes_df.groupby(cluster_col, sort=False):
-        cluster_id = str(cluster)
+        cluster_id = _normalize_cluster_id(cluster)
+        if not cluster_id:
+            write_log(
+                f"Skipping marker_genes row group with invalid cluster id: {cluster!r}",
+                level="warning",
+            )
+            continue
         genes = [
             str(g).strip()
             for g in group[gene_col]

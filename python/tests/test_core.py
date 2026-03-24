@@ -23,6 +23,7 @@ from mllmcelltype.utils import (
     load_api_key,
     load_from_cache,
     normalize_annotation,
+    normalize_marker_genes_keys,
     parse_marker_genes,
     save_to_cache,
 )
@@ -81,6 +82,21 @@ def test_parse_marker_genes_mixed_cluster_key_types_are_merged():
     assert parsed["1"] == ["CD3D", "IL7R"]
 
 
+def test_parse_marker_genes_strips_cluster_id_whitespace():
+    """Test parse_marker_genes trims cluster IDs and merges collisions."""
+    df = pd.DataFrame(
+        {
+            "cluster": [" 1 ", "1"],
+            "gene": ["CD3D", "IL7R"],
+        }
+    )
+
+    parsed = parse_marker_genes(df)
+
+    assert list(parsed.keys()) == ["1"]
+    assert parsed["1"] == ["CD3D", "IL7R"]
+
+
 def test_parse_marker_genes_mixed_incomparable_cluster_types():
     """Test parse_marker_genes handles incomparable cluster types without sorting crash."""
     df = pd.DataFrame(
@@ -116,6 +132,34 @@ def test_parse_marker_genes_preserves_cluster_with_empty_gene_rows():
 
     assert parsed["1"] == ["CD3D"]
     assert parsed["2"] == []
+
+
+def test_parse_marker_genes_skips_invalid_cluster_ids():
+    """Test parse_marker_genes skips rows with invalid/blank cluster IDs."""
+    df = pd.DataFrame(
+        {
+            "cluster": ["1", "   ", None],  # type: ignore[list-item]
+            "gene": ["CD3D", "IL7R", "MS4A1"],
+        }
+    )
+
+    parsed = parse_marker_genes(df)
+
+    assert parsed == {"1": ["CD3D"]}
+
+
+def test_normalize_marker_genes_keys_strips_and_skips_invalid_cluster_ids():
+    """Test dict marker keys are normalized and invalid IDs are skipped."""
+    parsed = normalize_marker_genes_keys(
+        {
+            " 1 ": ["CD3D"],
+            1: ["IL7R"],
+            "   ": ["MS4A1"],
+            None: ["NKG7"],  # type: ignore[dict-item]
+        }
+    )
+
+    assert parsed == {"1": ["CD3D", "IL7R"]}
 
 
 # Test load_api_key function
