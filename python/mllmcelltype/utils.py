@@ -397,7 +397,7 @@ def parse_marker_genes(marker_genes_df: pd.DataFrame) -> dict[str, list[str]]:
         return result
 
     # Resolve column names case-insensitively
-    col_lower_map = {str(col).lower(): col for col in marker_genes_df.columns}
+    col_lower_map = {str(col).strip().lower(): col for col in marker_genes_df.columns}
 
     cluster_col = col_lower_map.get("cluster")
     if cluster_col is None:

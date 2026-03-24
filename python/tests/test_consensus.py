@@ -1494,6 +1494,32 @@ class TestConsensus:
         assert cp == {}
         assert entropy == {}
 
+    def test_process_controversial_clusters_invalid_controversial_clusters_string_raises(self):
+        """Test string controversial_clusters is rejected to avoid char-wise splitting."""
+        with pytest.raises(ValueError, match="controversial_clusters must be a list/tuple/set"):
+            process_controversial_clusters(
+                marker_genes={"1": ["CD3D"]},
+                controversial_clusters="1",  # type: ignore[arg-type]
+                model_predictions={"openai:gpt-5.2": {"1": "T cells"}},
+                species="human",
+                models=[{"provider": "openai", "model": "gpt-5.2"}],
+                api_keys={"openai": "key-a"},
+                use_cache=False,
+            )
+
+    def test_process_controversial_clusters_invalid_model_predictions_type_raises(self):
+        """Test malformed top-level model_predictions fails fast with clear error."""
+        with pytest.raises(ValueError, match="model_predictions must be a dict"):
+            process_controversial_clusters(
+                marker_genes={"1": ["CD3D"]},
+                controversial_clusters=["1"],
+                model_predictions=["bad-payload"],  # type: ignore[arg-type]
+                species="human",
+                models=[{"provider": "openai", "model": "gpt-5.2"}],
+                api_keys={"openai": "key-a"},
+                use_cache=False,
+            )
+
     @patch("mllmcelltype.consensus.get_model_response")
     def test_process_controversial_clusters_all_round_responses_fail_returns_unknown(
         self,

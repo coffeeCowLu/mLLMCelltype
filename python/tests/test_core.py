@@ -67,6 +67,20 @@ def test_parse_marker_genes_missing_columns():
         parse_marker_genes(df)
 
 
+def test_parse_marker_genes_column_names_strip_whitespace():
+    """Test parse_marker_genes tolerates common CSV header whitespace."""
+    df = pd.DataFrame(
+        {
+            " cluster ": [1, 1, 2],
+            " gene ": ["CD3D", "IL7R", "MS4A1"],
+        }
+    )
+
+    parsed = parse_marker_genes(df)
+
+    assert parsed == {"1": ["CD3D", "IL7R"], "2": ["MS4A1"]}
+
+
 def test_parse_marker_genes_mixed_cluster_key_types_are_merged():
     """Test mixed int/str cluster IDs are merged after string normalization."""
     df = pd.DataFrame(

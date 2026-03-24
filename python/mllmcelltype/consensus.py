@@ -1909,6 +1909,18 @@ def process_controversial_clusters(
         write_log("No models provided for discussion", level="error")
         return {}, {}, {}, {}
 
+    if isinstance(controversial_clusters, (str, bytes)) or not isinstance(
+        controversial_clusters, (list, tuple, set)
+    ):
+        raise ValueError(
+            "controversial_clusters must be a list/tuple/set of cluster IDs, not a string"
+        )
+
+    if not isinstance(model_predictions, dict):
+        raise ValueError(
+            "model_predictions must be a dict mapping model name to cluster predictions"
+        )
+
     _validate_models_spec(models)
 
     api_keys = _normalize_api_keys(api_keys)
