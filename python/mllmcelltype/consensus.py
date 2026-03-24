@@ -1855,9 +1855,23 @@ def _filter_marker_genes_for_clusters(
             "clusters_to_analyze must be a list/tuple/set of cluster IDs, not a string"
         )
 
-    requested_clusters = [str(cluster_id) for cluster_id in clusters_to_analyze]
+    requested_clusters: list[str] = []
+    skipped_empty: list[str] = []
+    for cluster_id in clusters_to_analyze:
+        normalized = str(cluster_id).strip()
+        if not normalized:
+            skipped_empty.append(str(cluster_id))
+            continue
+        requested_clusters.append(normalized)
+
     # Deduplicate while preserving caller-specified order.
     requested_clusters = list(dict.fromkeys(requested_clusters))
+
+    if skipped_empty:
+        write_log(
+            "Ignored empty cluster IDs in clusters_to_analyze",
+            level="warning",
+        )
 
     available_clusters = list(marker_genes.keys())
     valid_clusters = [cluster_id for cluster_id in requested_clusters if cluster_id in available_clusters]

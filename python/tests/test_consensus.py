@@ -1565,6 +1565,46 @@ class TestConsensus:
 
     @patch("mllmcelltype.consensus.annotate_clusters")
     @patch("mllmcelltype.consensus.check_consensus")
+    def test_interactive_consensus_annotation_clusters_to_analyze_strips_whitespace(
+        self,
+        mock_check_consensus,
+        mock_annotate_clusters,
+    ):
+        """Test clusters_to_analyze values are stripped before matching keys."""
+        mock_annotate_clusters.return_value = {"1": "T cells"}
+        mock_check_consensus.return_value = (
+            {"1": "T cells"},
+            {"1": 1.0},
+            {"1": 0.0},
+            [],
+        )
+
+        interactive_consensus_annotation(
+            marker_genes={"1": ["CD3D"], "2": ["MS4A1"]},
+            species="human",
+            models=[{"provider": "openai", "model": "gpt-5.2"}],
+            api_keys={"openai": "test-key"},
+            clusters_to_analyze=[" 1 "],
+            use_cache=False,
+        )
+
+        filtered_marker_genes = mock_annotate_clusters.call_args.kwargs["marker_genes"]
+        assert list(filtered_marker_genes.keys()) == ["1"]
+
+    def test_interactive_consensus_annotation_clusters_to_analyze_only_empty_ids_raises(self):
+        """Test empty/whitespace cluster IDs are ignored and can trigger clear validation error."""
+        with pytest.raises(ValueError, match="None of the specified clusters exist"):
+            interactive_consensus_annotation(
+                marker_genes={"1": ["CD3D"]},
+                species="human",
+                models=[{"provider": "openai", "model": "gpt-5.2"}],
+                api_keys={"openai": "test-key"},
+                clusters_to_analyze=[" ", "\t", ""],
+                use_cache=False,
+            )
+
+    @patch("mllmcelltype.consensus.annotate_clusters")
+    @patch("mllmcelltype.consensus.check_consensus")
     @patch("mllmcelltype.consensus.load_api_key")
     def test_interactive_consensus_annotation_consensus_provider_key_autoloaded(
         self,
