@@ -116,6 +116,11 @@ def resolve_endpoint_url(
             return normalized_base_url
 
     default_url = get_default_api_url(provider_key)
+    if not default_url:
+        raise ValueError(
+            f"No default API URL configured for {provider_name} "
+            f"(provider key: {provider_key})"
+        )
     write_log(f"Using default URL: {default_url}")
     return default_url
 

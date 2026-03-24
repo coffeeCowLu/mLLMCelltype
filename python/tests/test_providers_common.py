@@ -336,3 +336,9 @@ def test_resolve_endpoint_url_rejects_invalid_base_url_type():
     """Test non-string base URL type fails fast with clear error."""
     with pytest.raises(ValueError, match="Invalid base URL type"):
         resolve_endpoint_url("openai", "OpenAI", 123)  # type: ignore[arg-type]
+
+
+def test_resolve_endpoint_url_unknown_provider_without_default_fails_fast():
+    """Test missing provider default URL raises clear error before HTTP layer."""
+    with pytest.raises(ValueError, match="No default API URL configured"):
+        resolve_endpoint_url("unknown_provider", "Unknown Provider", None)
