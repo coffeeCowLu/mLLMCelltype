@@ -2067,9 +2067,26 @@ def _merge_consensus_and_resolved(
     consensus: dict[str, str],
     resolved: dict[str, str],
 ) -> dict[str, str]:
-    """Merge resolved controversial results into base consensus annotations."""
+    """Merge resolved controversial results into base consensus annotations.
+
+    Principle:
+    - Never downgrade a known base consensus label to Unknown.
+    - Still allow Unknown to fill missing clusters when base consensus lacks them.
+    """
     final_annotations = consensus.copy()
-    final_annotations.update(resolved)
+    for cluster_id, resolved_label in resolved.items():
+        normalized_resolved = normalize_annotation(resolved_label)
+        base_label = final_annotations.get(cluster_id)
+
+        if (
+            normalized_resolved == "Unknown"
+            and base_label is not None
+            and not is_unknown_annotation(base_label)
+        ):
+            # Keep known base consensus when discussion adds no better signal.
+            continue
+
+        final_annotations[cluster_id] = normalized_resolved
     return final_annotations
 
 

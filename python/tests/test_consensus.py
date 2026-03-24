@@ -17,6 +17,7 @@ from mllmcelltype.consensus import (
     _call_llm_with_retry,
     _extract_cell_type_via_llm,
     _extract_metrics_from_text,
+    _merge_consensus_and_resolved,
     _normalize_api_keys,
     _normalize_consensus_model_spec,
     check_consensus,
@@ -101,6 +102,18 @@ class TestConsensus:
 
         assert result["controversial_clusters"] == ["1", "2"]
         assert result["discussion_round_counts"] == {"1": 1, "2": 0}
+
+    def test_merge_consensus_and_resolved_does_not_downgrade_known_label(self):
+        """Test Unknown from discussion does not overwrite a known base consensus label."""
+        merged = _merge_consensus_and_resolved(
+            consensus={"1": "T cells", "2": "Unknown"},
+            resolved={"1": "Unknown", "2": "Unknown", "3": "Unknown", "4": "B cells"},
+        )
+
+        assert merged["1"] == "T cells"
+        assert merged["2"] == "Unknown"
+        assert merged["3"] == "Unknown"
+        assert merged["4"] == "B cells"
 
     def test_normalize_api_keys_strips_and_drops_blank(self):
         """Test api key normalization trims and removes blank entries."""
@@ -812,6 +825,41 @@ class TestConsensus:
         assert result["consensus"]["1"] == "T cells"
         assert result["consensus"]["2"] == "Unknown"
         assert result["consensus"]["3"] == "Unknown"
+
+    @patch("mllmcelltype.consensus.annotate_clusters")
+    @patch("mllmcelltype.consensus.check_consensus")
+    @patch("mllmcelltype.consensus.process_controversial_clusters")
+    def test_interactive_consensus_annotation_unknown_resolution_does_not_overwrite_known_base(
+        self,
+        mock_process_controversial,
+        mock_check_consensus,
+        mock_annotate_clusters,
+    ):
+        """Test discussion Unknown fallback does not degrade known base consensus labels."""
+        mock_annotate_clusters.return_value = {"1": "T cells", "2": "B cells"}
+        mock_check_consensus.return_value = (
+            {"1": "T cells", "2": "B cells"},
+            {"1": 1.0, "2": 0.55},
+            {"1": 0.0, "2": 0.9},
+            ["2"],
+        )
+        mock_process_controversial.return_value = (
+            {"2": "Unknown"},
+            {"2": ["round 1"]},
+            {"2": 0.25},
+            {"2": 2.0},
+        )
+
+        result = interactive_consensus_annotation(
+            marker_genes={"1": ["CD3D"], "2": ["MS4A1"]},
+            species="human",
+            models=[{"provider": "openai", "model": "gpt-5.2"}],
+            api_keys={"openai": "test-key"},
+            use_cache=False,
+        )
+
+        assert result["consensus"]["1"] == "T cells"
+        assert result["consensus"]["2"] == "B cells"
 
     @patch("mllmcelltype.consensus.annotate_clusters")
     @patch("mllmcelltype.consensus.check_consensus")
