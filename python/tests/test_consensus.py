@@ -1138,8 +1138,8 @@ class TestConsensus:
         assert cp["1"] == 0.9
         assert entropy["1"] == 0.1
 
-    def test_process_controversial_clusters_missing_markers_returns_unknown_marker_state(self):
-        """Test controversial cluster without marker genes returns explicit unknown reason."""
+    def test_process_controversial_clusters_missing_markers_returns_unknown(self):
+        """Test controversial cluster without marker genes returns canonical Unknown."""
         results, history, cp, entropy = process_controversial_clusters(
             marker_genes={"2": ["MS4A1"]},
             controversial_clusters=["1"],
@@ -1153,7 +1153,7 @@ class TestConsensus:
             use_cache=False,
         )
 
-        assert results["1"] == "Unknown (no markers)"
+        assert results["1"] == "Unknown"
         assert history["1"] == []
         assert cp["1"] == DEFAULT_FALLBACK_CONSENSUS_PROPORTION
         assert entropy["1"] == DEFAULT_FALLBACK_ENTROPY
@@ -1219,11 +1219,11 @@ class TestConsensus:
         assert entropy == {}
 
     @patch("mllmcelltype.consensus.get_model_response")
-    def test_process_controversial_clusters_all_round_responses_fail_returns_inconclusive(
+    def test_process_controversial_clusters_all_round_responses_fail_returns_unknown(
         self,
         mock_get_model_response,
     ):
-        """Test discussion flow returns Inconclusive when all models fail every round."""
+        """Test discussion flow returns Unknown when all models fail every round."""
         mock_get_model_response.side_effect = RuntimeError("upstream timeout")
 
         results, history, cp, entropy = process_controversial_clusters(
@@ -1244,19 +1244,19 @@ class TestConsensus:
         )
 
         assert mock_get_model_response.call_count == 4
-        assert results["1"] == "Inconclusive"
+        assert results["1"] == "Unknown"
         assert cp["1"] == DEFAULT_FALLBACK_CONSENSUS_PROPORTION
         assert entropy["1"] == DEFAULT_FALLBACK_ENTROPY
         assert len(history["1"]) == 2
 
     @patch("mllmcelltype.consensus.check_consensus_for_discussion_round")
     @patch("mllmcelltype.consensus.get_model_response")
-    def test_process_controversial_clusters_last_round_unknown_stays_inconclusive(
+    def test_process_controversial_clusters_last_round_unknown_stays_unknown(
         self,
         mock_get_model_response,
         mock_check_round_consensus,
     ):
-        """Test last-round Unknown majority does not produce a false final label."""
+        """Test last-round Unknown majority remains canonical Unknown."""
         mock_get_model_response.return_value = "ambiguous response"
         mock_check_round_consensus.return_value = {
             "reached": False,
@@ -1282,18 +1282,18 @@ class TestConsensus:
             use_cache=False,
         )
 
-        assert results["1"] == "Inconclusive"
+        assert results["1"] == "Unknown"
         assert cp["1"] == 0.51
         assert entropy["1"] == 1.2
 
     @patch("mllmcelltype.consensus.check_consensus_for_discussion_round")
     @patch("mllmcelltype.consensus.get_model_response")
-    def test_process_controversial_clusters_last_round_unknown_with_context_stays_inconclusive(
+    def test_process_controversial_clusters_last_round_unknown_with_context_stays_unknown(
         self,
         mock_get_model_response,
         mock_check_round_consensus,
     ):
-        """Test unknown-with-context majority does not become a false final label."""
+        """Test unknown-with-context majority remains canonical Unknown."""
         mock_get_model_response.return_value = "ambiguous response"
         mock_check_round_consensus.return_value = {
             "reached": False,
@@ -1319,7 +1319,7 @@ class TestConsensus:
             use_cache=False,
         )
 
-        assert results["1"] == "Inconclusive"
+        assert results["1"] == "Unknown"
         assert cp["1"] == 0.51
         assert entropy["1"] == 1.2
 

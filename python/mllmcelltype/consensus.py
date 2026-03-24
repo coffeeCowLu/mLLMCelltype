@@ -32,6 +32,7 @@ from .utils import (
     cluster_sort_key,
     is_unknown_annotation,
     load_api_key,
+    normalize_annotation,
     normalize_marker_genes_keys,
 )
 
@@ -1676,9 +1677,9 @@ def _store_cluster_discussion_outcome(
 ) -> None:
     """Store final cluster result and metrics into aggregate output dictionaries."""
     if final_decision and not is_unknown_annotation(final_decision):
-        results[cluster_id] = final_decision.strip()
+        results[cluster_id] = normalize_annotation(final_decision)
     else:
-        results[cluster_id] = "Inconclusive"
+        results[cluster_id] = "Unknown"
 
     discussion_history[cluster_id] = rounds_history
     updated_consensus_proportion[cluster_id] = current_cp
@@ -1774,7 +1775,7 @@ def process_controversial_clusters(
         current_marker_genes = marker_genes.get(cluster_id, [])
         if not current_marker_genes:
             write_log(f"No marker genes found for cluster {cluster_id}", level="warning")
-            results[cluster_id] = "Unknown (no markers)"
+            results[cluster_id] = "Unknown"
             discussion_history[cluster_id] = []
             updated_consensus_proportion[cluster_id] = DEFAULT_FALLBACK_CONSENSUS_PROPORTION
             updated_entropy[cluster_id] = DEFAULT_FALLBACK_ENTROPY
@@ -1814,7 +1815,7 @@ def process_controversial_clusters(
 
         except RECOVERABLE_LLM_EXCEPTIONS as e:
             write_log(f"Error during discussion for cluster {cluster_id}: {e!s}", level="error")
-            results[cluster_id] = f"Error: {e!s}"
+            results[cluster_id] = "Unknown"
             discussion_history[cluster_id] = []
             updated_consensus_proportion[cluster_id] = DEFAULT_FALLBACK_CONSENSUS_PROPORTION
             updated_entropy[cluster_id] = DEFAULT_FALLBACK_ENTROPY
