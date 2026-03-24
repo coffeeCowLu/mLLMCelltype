@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-import json
-import time
-
 import requests
 
 from ..logger import write_log
-from ..url_utils import get_default_api_url, validate_base_url
+from .common import (
+    build_chat_completions_body,
+    call_openai_compatible_api,
+    ensure_api_key,
+    resolve_endpoint_url,
+)
 
 
 def process_openai(
@@ -28,88 +30,16 @@ def process_openai(
     """
     write_log(f"Starting OpenAI API request with model: {model}")
 
-    # Check if API key is provided and not empty
-    if not api_key:
-        error_msg = "OpenAI API key is missing or empty"
-        write_log(error_msg, level="error")
-        raise ValueError(error_msg)
-
-    # Use custom URL or default URL
-    if base_url:
-        if not validate_base_url(base_url):
-            raise ValueError(f"Invalid base URL: {base_url}")
-        url = base_url
-        write_log(f"Using custom base URL: {url}")
-    else:
-        url = get_default_api_url("openai")
-        write_log(f"Using default URL: {url}")
+    api_key = ensure_api_key(api_key, "OpenAI")
+    url = resolve_endpoint_url("openai", "OpenAI", base_url)
 
     write_log(f"Using model: {model}")
 
-    # Prepare the request body
-    body = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-    }
-
-    write_log("Sending API request...")
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}",
-    }
-
-    max_retries = 3
-    retry_delay = 2
-
-    for attempt in range(max_retries):
-        try:
-            response = requests.post(url=url, headers=headers, data=json.dumps(body), timeout=30)
-
-            # Check for errors
-            if response.status_code != 200:
-                try:
-                    error_message = response.json()
-                    error_detail = error_message.get('error', {}).get('message', 'Unknown error')
-                    write_log(f"OpenAI API request failed: {error_detail}", level="error")
-                except (ValueError, KeyError, json.JSONDecodeError):
-                    write_log(
-                        f"OpenAI API request failed with status {response.status_code}",
-                        level="error",
-                    )
-
-                # If rate limited, wait and retry
-                if response.status_code == 429 and attempt < max_retries - 1:
-                    wait_time = retry_delay * (2**attempt)
-                    write_log(f"Rate limited. Waiting {wait_time} seconds before retrying...")
-                    time.sleep(wait_time)
-                    continue
-
-                response.raise_for_status()
-
-            # Parse the response
-            content = response.json()
-            res = content["choices"][0]["message"]["content"].strip().split("\n")
-            write_log(f"Got response with {len(res)} lines")
-            write_log(f"Raw response from OpenAI:\n{res}", level="debug")
-
-            # Clean up results (remove commas at the end of lines)
-            return [line.rstrip(",") for line in res]
-
-        except Exception as e:
-            # Non-retryable HTTP client errors — fail immediately
-            if (
-                isinstance(e, requests.exceptions.HTTPError)
-                and e.response is not None
-                and e.response.status_code < 500
-            ):
-                raise
-            write_log(
-                f"Error during API call (attempt {attempt + 1}/{max_retries}): {e!s}",
-                level="error",
-            )
-            if attempt < max_retries - 1:
-                wait_time = retry_delay * (2**attempt)
-                write_log(f"Waiting {wait_time} seconds before retrying...", level="warning")
-                time.sleep(wait_time)
-            else:
-                raise
+    body = build_chat_completions_body(model=model, prompt=prompt)
+    return call_openai_compatible_api(
+        provider_name="OpenAI",
+        api_key=api_key,
+        url=url,
+        body=body,
+        post_func=requests.post,
+    )

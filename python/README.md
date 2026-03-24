@@ -21,7 +21,7 @@ cd mLLMCelltype/python
 pip install -e .
 ```
 
-**Requirements:** Python >= 3.8, internet connection for LLM API access.
+**Requirements:** Python >= 3.9, internet connection for LLM API access.
 
 ## Quick Start
 
@@ -54,7 +54,7 @@ for cluster, annotation in annotations.items():
 |----------|--------|-----------------|
 | OpenAI | GPT-5.2, GPT-5, O3-Pro, etc. | `OPENAI_API_KEY` |
 | Anthropic | Claude 4.6 Opus, Claude 4.5 Sonnet/Haiku, etc. | `ANTHROPIC_API_KEY` |
-| Google | Gemini 3 Pro, Gemini 3 Flash, etc. | `GOOGLE_API_KEY` |
+| Google | Gemini 3 Pro, Gemini 3 Flash, etc. | `GEMINI_API_KEY` (also supports `GOOGLE_API_KEY`) |
 | Alibaba | Qwen3-Max, Qwen-Plus, etc. | `QWEN_API_KEY` |
 | DeepSeek | DeepSeek-Chat, DeepSeek-Reasoner | `DEEPSEEK_API_KEY` |
 | StepFun | Step-3, Step-2-16k, Step-2-Mini | `STEPFUN_API_KEY` |
@@ -77,7 +77,7 @@ API keys can be set via environment variables, passed directly as parameters, or
 ## Multi-LLM Consensus Annotation
 
 ```python
-from mllmcelltype import interactive_consensus_annotation, print_consensus_summary
+from mllmcelltype import format_discussion_report, interactive_consensus_annotation
 
 result = interactive_consensus_annotation(
     marker_genes=marker_genes,
@@ -89,7 +89,8 @@ result = interactive_consensus_annotation(
     verbose=True
 )
 
-print_consensus_summary(result)
+print(result["consensus"])
+print(format_discussion_report(result))
 ```
 
 ### Consensus Model Selection

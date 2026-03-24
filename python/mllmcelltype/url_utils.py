@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+from urllib.parse import urlsplit
+
 import requests
 
 from .config import get_default_api_url
@@ -17,6 +21,16 @@ __all__ = [
     "validate_base_url",
 ]
 
+# In-memory cache for smart endpoint probing results.
+# Keyed by provider + API key fingerprint to avoid repeated probe calls.
+_SMART_ENDPOINT_CACHE: dict[str, str] = {}
+
+
+def _endpoint_cache_key(provider: str, api_key: str) -> str:
+    """Build a deterministic cache key for provider+api_key."""
+    key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+    return f"{provider}:{key_hash}"
+
 
 def resolve_provider_base_url(provider: str, base_urls: str | dict | None) -> str | None:
     """Resolve provider-specific base URL.
@@ -28,23 +42,41 @@ def resolve_provider_base_url(provider: str, base_urls: str | dict | None) -> st
     Returns:
         Resolved base URL or None
     """
+    def normalize_value(value: object, source: str) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError(f"base_urls{source} must be a string URL, got {type(value).__name__}")
+        normalized = value.strip()
+        if normalized and not validate_base_url(normalized):
+            raise ValueError(f"Invalid base URL in base_urls{source}: {value}")
+        return normalized or None
+
     if base_urls is None or provider is None:
         return None
 
+    provider_normalized = str(provider).strip().lower()
+    if not provider_normalized:
+        return None
+
     if isinstance(base_urls, str):
-        return base_urls  # Single URL applies to all providers
+        return normalize_value(base_urls, "")
 
     if isinstance(base_urls, dict):
-        # Case-insensitive lookup: try original, then lowercase
+        # Case-insensitive lookup
         if provider in base_urls:
-            return base_urls[provider]
-        if provider.lower() in base_urls:
-            return base_urls[provider.lower()]
+            return normalize_value(base_urls[provider], f"[{provider!r}]")
+        if provider_normalized in base_urls:
+            return normalize_value(base_urls[provider_normalized], f"[{provider_normalized!r}]")
+        normalized_base_urls = {str(k).strip().lower(): v for k, v in base_urls.items()}
+        return normalize_value(normalized_base_urls.get(provider_normalized), f"[{provider_normalized!r}]")
 
-    return None
+    raise ValueError(
+        f"base_urls must be a string, dict, or None, got {type(base_urls).__name__}"
+    )
 
 
-def validate_base_url(url: str) -> bool:
+def validate_base_url(url: str | None) -> bool:
     """Validate base URL format.
 
     Args:
@@ -53,22 +85,40 @@ def validate_base_url(url: str) -> bool:
     Returns:
         True if valid, False otherwise
     """
-    if not url:
+    if not isinstance(url, str) or not url:
         return False
 
-    # Basic URL format check
-    return url.startswith("http://") or url.startswith("https://")
+    normalized = url.strip()
+    if not normalized:
+        return False
+
+    # Disallow whitespace and URL fragments in endpoint strings.
+    if any(ch.isspace() for ch in normalized):
+        return False
+
+    try:
+        parsed = urlsplit(normalized)
+    except ValueError:
+        return False
+
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    if not parsed.netloc or not parsed.hostname:
+        return False
+    if parsed.username or parsed.password:
+        return False
+    if parsed.query:
+        return False
+    return not parsed.fragment
 
 
 def get_working_minimax_endpoint(api_key: str) -> str:
     """Smart endpoint selection for MiniMax.
 
-    MiniMax has region-specific endpoints that only accept keys issued for
-    that region (e.g. Coding Plan ``sk-cp-`` keys work on the domestic
-    ``.com`` endpoint but not on the international ``.chat`` endpoint).
-    Unlike Qwen where any key works on any reachable endpoint, MiniMax
-    requires matching the key to its endpoint, so we test authentication
-    rather than mere connectivity.
+    MiniMax documents region-based API hosts:
+    - International: api.minimax.io
+    - China mainland: api.minimaxi.com
+    We test both hosts and pick one that accepts the key.
 
     Args:
         api_key: MiniMax API key
@@ -76,9 +126,15 @@ def get_working_minimax_endpoint(api_key: str) -> str:
     Returns:
         Working endpoint URL
     """
+    cache_key = _endpoint_cache_key("minimax", api_key)
+    cached = _SMART_ENDPOINT_CACHE.get(cache_key)
+    if cached:
+        write_log(f"Using cached MiniMax endpoint: {cached}", level="debug")
+        return cached
+
     endpoints = [
-        "https://api.minimaxi.com/v1/chat/completions",   # Domestic (China)
-        "https://api.minimaxi.chat/v1/chat/completions",  # International
+        "https://api.minimax.io/v1/chat/completions",   # International
+        "https://api.minimaxi.com/v1/chat/completions",  # China mainland
     ]
 
     write_log("Testing MiniMax endpoint compatibility...", level="debug")
@@ -100,6 +156,7 @@ def get_working_minimax_endpoint(api_key: str) -> str:
                 status_code = base_resp.get("status_code", 0)
                 if status_code == 0:
                     write_log(f"MiniMax endpoint accepted key: {endpoint}", level="debug")
+                    _SMART_ENDPOINT_CACHE[cache_key] = endpoint
                     return endpoint
                 write_log(
                     f"MiniMax endpoint rejected key ({base_resp.get('status_msg', '')}): {endpoint}",
@@ -110,11 +167,18 @@ def get_working_minimax_endpoint(api_key: str) -> str:
                     f"MiniMax endpoint returned HTTP {response.status_code}: {endpoint}",
                     level="debug",
                 )
-        except Exception:
+        except (
+            requests.RequestException,
+            ValueError,
+            KeyError,
+            TypeError,
+            json.JSONDecodeError,
+        ):
             write_log(f"MiniMax endpoint unreachable: {endpoint}", level="debug")
 
-    # Fallback to domestic endpoint
-    write_log("No MiniMax endpoint accepted the key, using domestic endpoint as fallback")
+    # Fallback to international endpoint
+    write_log("No MiniMax endpoint accepted the key, using international endpoint as fallback")
+    _SMART_ENDPOINT_CACHE[cache_key] = endpoints[0]
     return endpoints[0]
 
 
@@ -127,6 +191,11 @@ def get_working_qwen_endpoint(api_key: str) -> str:
     Returns:
         Working endpoint URL
     """
+    cache_key = _endpoint_cache_key("qwen", api_key)
+    cached = _SMART_ENDPOINT_CACHE.get(cache_key)
+    if cached:
+        write_log(f"Using cached Qwen endpoint: {cached}", level="debug")
+        return cached
 
     def test_endpoint_connectivity(endpoint: str, api_key: str, timeout: int = 5) -> bool:
         """Test endpoint connectivity.
@@ -156,7 +225,7 @@ def get_working_qwen_endpoint(api_key: str) -> str:
             # Only connection failures (timeout, DNS error, etc.) indicate unreachable endpoint
             return response.status_code is not None
 
-        except Exception:
+        except requests.RequestException:
             return False
 
     endpoints = [
@@ -172,10 +241,12 @@ def get_working_qwen_endpoint(api_key: str) -> str:
 
         if test_endpoint_connectivity(endpoint, api_key):
             write_log(f"{endpoint_type} endpoint is accessible", level="debug")
+            _SMART_ENDPOINT_CACHE[cache_key] = endpoint
             return endpoint
         else:
             write_log(f"{endpoint_type} endpoint is not accessible", level="warning")
 
     # If none are reachable, return international endpoint as fallback
     write_log("No endpoints accessible, using international endpoint as fallback")
+    _SMART_ENDPOINT_CACHE[cache_key] = endpoints[0]
     return endpoints[0]

@@ -43,7 +43,8 @@ PROVIDER_CONFIGS: dict[str, ProviderConfig] = {
         default_api_url="https://api.deepseek.com/v1/chat/completions",
     ),
     "gemini": ProviderConfig(
-        default_model="gemini-3-pro",
+        # Use a stable public model id; some preview aliases are not universally available.
+        default_model="gemini-2.5-pro",
         api_key_env_var="GEMINI_API_KEY",
         default_api_url="https://generativelanguage.googleapis.com/v1beta/models",
     ),
@@ -87,6 +88,13 @@ DEFAULT_FALLBACK_CONSENSUS_PROPORTION = 0.25
 DEFAULT_FALLBACK_ENTROPY = 2.0
 
 
+def _normalize_provider_name(provider: object) -> str:
+    """Normalize provider name for case-insensitive lookups."""
+    if not isinstance(provider, str):
+        return ""
+    return provider.strip().lower()
+
+
 def get_default_model(provider: str) -> str:
     """Get default model for a provider.
 
@@ -99,7 +107,8 @@ def get_default_model(provider: str) -> str:
     Returns:
         Default model name for the provider, or 'unknown' if provider not found
     """
-    config = PROVIDER_CONFIGS.get(provider.lower())
+    provider_name = _normalize_provider_name(provider)
+    config = PROVIDER_CONFIGS.get(provider_name)
     if config:
         return config.default_model
     return "unknown"
@@ -114,11 +123,13 @@ def get_api_key_env_var(provider: str) -> str:
     Returns:
         Environment variable name (e.g., 'OPENAI_API_KEY')
     """
-    config = PROVIDER_CONFIGS.get(provider.lower())
+    provider_name = _normalize_provider_name(provider)
+    config = PROVIDER_CONFIGS.get(provider_name)
     if config:
         return config.api_key_env_var
     # Fallback pattern for unknown providers
-    return f"{provider.upper()}_API_KEY"
+    fallback = str(provider).strip().upper() if provider is not None else "UNKNOWN"
+    return f"{fallback}_API_KEY"
 
 
 def get_default_api_url(provider: str) -> str:
@@ -130,7 +141,8 @@ def get_default_api_url(provider: str) -> str:
     Returns:
         Default API URL, or empty string if provider not found
     """
-    config = PROVIDER_CONFIGS.get(provider.lower())
+    provider_name = _normalize_provider_name(provider)
+    config = PROVIDER_CONFIGS.get(provider_name)
     if config:
         return config.default_api_url
     return ""

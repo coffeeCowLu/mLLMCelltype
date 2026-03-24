@@ -4,8 +4,17 @@
 Fixtures and configuration for pytest.
 """
 
+import sys
+from pathlib import Path
+
 import pandas as pd
 import pytest
+
+# Ensure local package import even when tests are run via a globally installed
+# pytest script (which can otherwise prioritize site-packages).
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 # Sample marker genes for testing

@@ -106,7 +106,10 @@ def write_log(message: str, level: str = "INFO") -> None:
         level: Log level (debug, info, warning, error, critical)
 
     """
-    level_method = getattr(logger, level.lower())
+    level_name = level.lower()
+    if not hasattr(logger, level_name):
+        raise ValueError(f"Invalid log level: {level!r}")
+    level_method = getattr(logger, level_name)
     level_method(message)
 
 

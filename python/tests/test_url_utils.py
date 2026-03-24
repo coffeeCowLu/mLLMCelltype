@@ -5,12 +5,22 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
+import mllmcelltype.url_utils as url_utils
 from mllmcelltype.url_utils import (
     get_default_api_url,
+    get_working_minimax_endpoint,
     get_working_qwen_endpoint,
     resolve_provider_base_url,
     validate_base_url,
 )
+
+
+@pytest.fixture(autouse=True)
+def clear_smart_endpoint_cache():
+    """Ensure smart endpoint cache does not leak across tests."""
+    url_utils._SMART_ENDPOINT_CACHE.clear()
+    yield
+    url_utils._SMART_ENDPOINT_CACHE.clear()
 
 
 class TestResolveProviderBaseUrl:
@@ -27,6 +37,11 @@ class TestResolveProviderBaseUrl:
         result = resolve_provider_base_url("openai", base_url)
         assert result == base_url
 
+    def test_resolve_with_string_trims_whitespace(self):
+        """Test resolving with string base_urls trims leading/trailing spaces."""
+        result = resolve_provider_base_url("openai", "  https://proxy.example.com/v1  ")
+        assert result == "https://proxy.example.com/v1"
+
     def test_resolve_with_dict_existing_provider(self):
         """Test resolving with dict base_urls for existing provider."""
         base_urls = {
@@ -42,10 +57,48 @@ class TestResolveProviderBaseUrl:
         result = resolve_provider_base_url("openai", base_urls)
         assert result is None
 
+    def test_resolve_with_dict_mixed_case_provider_key(self):
+        """Test case-insensitive matching for mixed-case dict keys."""
+        base_urls = {"OpenAI": "https://openai-proxy.com/v1/chat/completions"}
+        result = resolve_provider_base_url("openai", base_urls)
+        assert result == "https://openai-proxy.com/v1/chat/completions"
+
+    def test_resolve_with_whitespace_provider_name(self):
+        """Test provider name with whitespace is normalized."""
+        base_urls = {"openai": "https://openai-proxy.com/v1/chat/completions"}
+        result = resolve_provider_base_url("  OPENAI  ", base_urls)
+        assert result == "https://openai-proxy.com/v1/chat/completions"
+
+    def test_resolve_with_whitespace_provider_key(self):
+        """Test provider key with whitespace in dict is normalized."""
+        base_urls = {"  openai  ": "https://openai-proxy.com/v1/chat/completions"}
+        result = resolve_provider_base_url("openai", base_urls)
+        assert result == "https://openai-proxy.com/v1/chat/completions"
+
     def test_resolve_with_empty_dict(self):
         """Test resolving with empty dict base_urls."""
         result = resolve_provider_base_url("openai", {})
         assert result is None
+
+    def test_resolve_with_non_string_value_raises(self):
+        """Test resolving with non-string base URL value raises clear error."""
+        with pytest.raises(ValueError, match="must be a string URL"):
+            resolve_provider_base_url("openai", {"openai": 123})  # type: ignore[dict-item]
+
+    def test_resolve_with_invalid_base_url_string_raises(self):
+        """Test invalid URL string is rejected early with clear error."""
+        with pytest.raises(ValueError, match="Invalid base URL"):
+            resolve_provider_base_url("openai", "not-a-url")
+
+    def test_resolve_with_invalid_target_provider_url_in_dict_raises(self):
+        """Test provider-specific invalid URL is rejected early."""
+        with pytest.raises(ValueError, match="Invalid base URL"):
+            resolve_provider_base_url("openai", {"openai": "notaurl"})
+
+    def test_resolve_with_invalid_base_urls_type_raises(self):
+        """Test unsupported base_urls container types fail fast."""
+        with pytest.raises(ValueError, match="must be a string, dict, or None"):
+            resolve_provider_base_url("openai", ["https://proxy.example.com"])  # type: ignore[arg-type]
 
 
 class TestGetDefaultApiUrl:
@@ -134,6 +187,22 @@ class TestValidateBaseUrl:
         """Test validating URL without protocol."""
         assert validate_base_url("api.example.com") is False
 
+    def test_validate_missing_hostname(self):
+        """Test validating URL with scheme but no hostname."""
+        assert validate_base_url("https:///v1/chat/completions") is False
+
+    def test_validate_url_with_credentials(self):
+        """Test rejecting URLs embedding credentials."""
+        assert validate_base_url("https://user:pass@example.com/v1/chat/completions") is False
+
+    def test_validate_url_with_fragment(self):
+        """Test rejecting URLs containing fragments."""
+        assert validate_base_url("https://api.example.com/v1#fragment") is False
+
+    def test_validate_url_with_query(self):
+        """Test rejecting URLs containing query parameters."""
+        assert validate_base_url("https://api.example.com/v1?token=abc") is False
+
 
 class TestGetWorkingQwenEndpoint:
     """Test get_working_qwen_endpoint function."""
@@ -199,6 +268,85 @@ class TestGetWorkingQwenEndpoint:
 
         assert result == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
         mock_post.assert_called_once()
+
+    @patch("mllmcelltype.url_utils.requests.post")
+    @patch("mllmcelltype.url_utils.write_log")
+    def test_endpoint_selection_is_cached_per_api_key(self, mock_log, mock_post):
+        """Test smart endpoint probing is cached for repeated calls with same key."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+
+        first = get_working_qwen_endpoint("test-api-key")
+        second = get_working_qwen_endpoint("test-api-key")
+
+        assert first == second
+        assert mock_post.call_count == 1
+
+
+class TestGetWorkingMiniMaxEndpoint:
+    """Test get_working_minimax_endpoint function."""
+
+    @patch("mllmcelltype.url_utils.requests.post")
+    @patch("mllmcelltype.url_utils.write_log")
+    def test_international_endpoint_works(self, mock_log, mock_post):
+        """Test when international endpoint is accepted."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"base_resp": {"status_code": 0, "status_msg": ""}}
+        mock_post.return_value = mock_response
+
+        result = get_working_minimax_endpoint("test-api-key")
+
+        assert result == "https://api.minimax.io/v1/chat/completions"
+        mock_post.assert_called_once()
+
+    @patch("mllmcelltype.url_utils.requests.post")
+    @patch("mllmcelltype.url_utils.write_log")
+    def test_fallback_to_domestic_when_international_rejected(self, mock_log, mock_post):
+        """Test fallback to domestic endpoint when international rejects key."""
+        intl_response = MagicMock()
+        intl_response.status_code = 200
+        intl_response.json.return_value = {
+            "base_resp": {"status_code": 1001, "status_msg": "Invalid API key"}
+        }
+
+        domestic_response = MagicMock()
+        domestic_response.status_code = 200
+        domestic_response.json.return_value = {"base_resp": {"status_code": 0, "status_msg": ""}}
+
+        mock_post.side_effect = [intl_response, domestic_response]
+
+        result = get_working_minimax_endpoint("test-api-key")
+
+        assert result == "https://api.minimaxi.com/v1/chat/completions"
+        assert mock_post.call_count == 2
+
+    @patch("mllmcelltype.url_utils.requests.post")
+    @patch("mllmcelltype.url_utils.write_log")
+    def test_both_endpoints_fail(self, mock_log, mock_post):
+        """Test fallback when both endpoints are unreachable."""
+        mock_post.side_effect = requests.RequestException("Connection failed")
+
+        result = get_working_minimax_endpoint("test-api-key")
+
+        assert result == "https://api.minimax.io/v1/chat/completions"
+        assert mock_post.call_count == 2
+
+    @patch("mllmcelltype.url_utils.requests.post")
+    @patch("mllmcelltype.url_utils.write_log")
+    def test_endpoint_selection_is_cached_per_api_key(self, mock_log, mock_post):
+        """Test MiniMax endpoint probing is cached for repeated calls with same key."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"base_resp": {"status_code": 0, "status_msg": ""}}
+        mock_post.return_value = mock_response
+
+        first = get_working_minimax_endpoint("test-api-key")
+        second = get_working_minimax_endpoint("test-api-key")
+
+        assert first == second
+        assert mock_post.call_count == 1
 
 
 if __name__ == "__main__":

@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-import json
-import time
+from typing import Any
 
 import requests
 
 from ..logger import write_log
-from ..url_utils import get_default_api_url, validate_base_url
+from .common import (
+    call_http_api_with_retry,
+    ensure_api_key,
+    resolve_endpoint_url,
+)
 
 # Model alias mapping: user-friendly names -> official API model IDs
 MODEL_ALIASES = {
@@ -46,6 +49,21 @@ def _resolve_model_name(model: str) -> str:
     return MODEL_ALIASES.get(model, model)
 
 
+def _parse_anthropic_response(content: dict[str, Any]) -> list[str]:
+    """Parse Anthropic response payload into clean lines."""
+    try:
+        text = content["content"][0]["text"]
+    except (KeyError, IndexError, TypeError) as e:
+        raise ValueError(f"Unexpected response format from Anthropic: {content}") from e
+
+    if not isinstance(text, str):
+        write_log("Unexpected non-string response content from Anthropic, coercing to string", level="warning")
+        text = str(text)
+
+    lines = text.strip().split("\n")
+    return [line.rstrip(",") for line in lines]
+
+
 def process_anthropic(
     prompt: str, model: str, api_key: str, base_url: str | None = None
 ) -> list[str]:
@@ -62,25 +80,13 @@ def process_anthropic(
     """
     write_log(f"Starting Anthropic API request with model: {model}")
 
-    # Validate API key
-    if not api_key:
-        error_msg = "Anthropic API key is missing or empty"
-        write_log(error_msg, level="error")
-        raise ValueError(error_msg)
+    api_key = ensure_api_key(api_key, "Anthropic")
 
     # Resolve model aliases (e.g., claude-opus-4.5 -> claude-opus-4-5-20251101)
     model = _resolve_model_name(model)
     write_log(f"Using model: {model}")
 
-    # Determine API URL
-    if base_url:
-        if not validate_base_url(base_url):
-            raise ValueError(f"Invalid base URL: {base_url}")
-        url = base_url
-        write_log(f"Using custom base URL: {url}")
-    else:
-        url = get_default_api_url("anthropic")
-        write_log(f"Using default URL: {url}")
+    url = resolve_endpoint_url("anthropic", "Anthropic", base_url)
 
     # Prepare request
     headers = {
@@ -95,61 +101,15 @@ def process_anthropic(
         "max_tokens": 4096,
     }
 
-    # Retry configuration
-    max_retries = 3
-    retry_delay = 2
-
-    write_log("Sending API request...")
-
-    for attempt in range(max_retries):
-        try:
-            response = requests.post(url=url, headers=headers, data=json.dumps(body), timeout=30)
-
-            # Handle errors
-            if response.status_code != 200:
-                try:
-                    error_message = response.json()
-                    error_detail = error_message.get("error", {}).get("message", f"model: {model}")
-                    write_log(f"Anthropic API request failed: {error_detail}", level="error")
-                except (ValueError, KeyError, json.JSONDecodeError):
-                    write_log(
-                        f"Anthropic API request failed with status {response.status_code}",
-                        level="error",
-                    )
-
-                # Retry on rate limit
-                if response.status_code == 429 and attempt < max_retries - 1:
-                    wait_time = retry_delay * (2**attempt)
-                    write_log(f"Rate limited. Waiting {wait_time} seconds before retrying...")
-                    time.sleep(wait_time)
-                    continue
-
-                response.raise_for_status()
-
-            # Parse response
-            content = response.json()
-            res = content["content"][0]["text"].strip().split("\n")
-            write_log(f"Got response with {len(res)} lines")
-            write_log(f"Raw response from Anthropic:\n{res}", level="debug")
-
-            # Clean up results
-            return [line.rstrip(",") for line in res]
-
-        except Exception as e:
-            # Non-retryable HTTP client errors — fail immediately
-            if (
-                isinstance(e, requests.exceptions.HTTPError)
-                and e.response is not None
-                and e.response.status_code < 500
-            ):
-                raise
-            write_log(
-                f"Error during API call (attempt {attempt + 1}/{max_retries}): {e!s}",
-                level="error",
-            )
-            if attempt < max_retries - 1:
-                wait_time = retry_delay * (2**attempt)
-                write_log(f"Waiting {wait_time} seconds before retrying...", level="warning")
-                time.sleep(wait_time)
-            else:
-                raise
+    return call_http_api_with_retry(
+        provider_name="Anthropic",
+        url=url,
+        body=body,
+        headers=headers,
+        post_func=requests.post,
+        response_parser=_parse_anthropic_response,
+        max_retries=3,
+        retry_delay=2,
+        timeout=30,
+        request_json=False,
+    )

@@ -5,6 +5,7 @@ Tests for annotation functionality in mLLMCelltype.
 """
 
 import os
+import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -76,6 +77,42 @@ class TestAnnotation:
         assert result["1"] == "T cells"
         assert result["2"] == "B cells"
 
+    @patch("mllmcelltype.annotate.load_api_key")
+    @patch("mllmcelltype.annotate.get_default_model")
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
+    def test_annotate_clusters_mixed_cluster_key_types_are_merged(
+        self,
+        mock_get_default_model,
+        mock_load_api_key,
+    ):
+        """Test mixed int/str cluster keys are merged before prompt generation."""
+        from mllmcelltype.annotate import PROVIDER_FUNCTIONS
+
+        captured = {}
+
+        def mock_provider_func(prompt, *_args, **_kwargs):
+            captured["prompt"] = prompt
+            return ["Cluster 1: T cells"]
+
+        PROVIDER_FUNCTIONS["mock_provider"] = mock_provider_func
+        mock_load_api_key.return_value = "test-key"
+        mock_get_default_model.return_value = "mock_model"
+
+        result = annotate_clusters(
+            marker_genes={1: ["CD3D"], "1": ["IL7R"]},
+            species="human",
+            provider="mock_provider",
+            model="mock_model",
+            use_cache=False,
+        )
+
+        assert result == {"1": "T cells"}
+        assert "prompt" in captured
+        marker_section = captured["prompt"].split("Here are the marker genes for each cluster:")[-1]
+        assert marker_section.count("Cluster 1:") == 1
+        assert "CD3D" in captured["prompt"]
+        assert "IL7R" in captured["prompt"]
+
     # Fix parameter name issues
     @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS")
     @patch("mllmcelltype.utils.load_api_key")
@@ -141,6 +178,359 @@ class TestAnnotation:
                 provider="openai",
                 model="gpt-4o",
                 api_key=None,
+                use_cache=False,
+            )
+
+    def test_get_model_response_invalid_provider_type(self):
+        """Test get_model_response with non-string provider."""
+        with pytest.raises(ValueError, match="Provider name must be a string"):
+            get_model_response(
+                prompt="Test prompt",
+                provider=123,  # type: ignore[arg-type]
+                model="gpt-4o",
+                api_key="test-key",
+                use_cache=False,
+            )
+
+    def test_get_model_response_unknown_provider(self):
+        """Test get_model_response rejects unknown provider names."""
+        with pytest.raises(ValueError, match="Unknown provider"):
+            get_model_response(
+                prompt="Test prompt",
+                provider="unknown_provider",
+                model="gpt-5.2",
+                api_key="test-key",
+                use_cache=False,
+            )
+
+    def test_annotate_clusters_unknown_provider(self):
+        """Test annotate_clusters rejects unknown provider names."""
+        with pytest.raises(ValueError, match="Unknown provider"):
+            annotate_clusters(
+                marker_genes={"1": ["CD3D"]},
+                species="human",
+                provider="unknown_provider",
+                model="gpt-5.2",
+                api_key="test-key",
+                use_cache=False,
+            )
+
+    def test_annotate_clusters_blank_provider_name(self):
+        """Test annotate_clusters rejects blank provider names."""
+        with pytest.raises(ValueError, match="Provider name is required"):
+            annotate_clusters(
+                marker_genes={"1": ["CD3D"]},
+                species="human",
+                provider="   ",
+                model="gpt-5.2",
+                api_key="test-key",
+                use_cache=False,
+            )
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
+    def test_annotate_clusters_provider_error_is_propagated(self):
+        """Test provider-side runtime errors are surfaced to caller for observability."""
+        from mllmcelltype.annotate import PROVIDER_FUNCTIONS
+
+        PROVIDER_FUNCTIONS["mock_provider"] = MagicMock(side_effect=RuntimeError("upstream timeout"))
+
+        with pytest.raises(RuntimeError, match="upstream timeout"):
+            annotate_clusters(
+                marker_genes={"1": ["CD3D"]},
+                species="human",
+                provider="mock_provider",
+                model="mock_model",
+                api_key="test-key",
+                use_cache=False,
+            )
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
+    def test_annotate_clusters_empty_input_returns_empty_result_without_provider_call(self):
+        """Test empty marker set returns empty mapping and skips provider call."""
+        from mllmcelltype.annotate import PROVIDER_FUNCTIONS
+
+        provider_mock = MagicMock(return_value=["Cluster 1: T cells"])
+        PROVIDER_FUNCTIONS["mock_provider"] = provider_mock
+
+        result = annotate_clusters(
+            marker_genes={},
+            species="human",
+            provider="mock_provider",
+            model="mock_model",
+            api_key="test-key",
+            use_cache=False,
+        )
+
+        assert result == {}
+        provider_mock.assert_not_called()
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS")
+    @patch("mllmcelltype.annotate.get_default_model")
+    def test_get_model_response_provider_with_whitespace(
+        self,
+        mock_get_default_model,
+        mock_provider_functions,
+    ):
+        """Test provider normalization trims whitespace."""
+
+        def mock_provider_func(*args, **kwargs):
+            return "Cluster 1: T cells"
+
+        mock_provider_functions.get.return_value = mock_provider_func
+        mock_get_default_model.return_value = "gpt-5.2"
+
+        result = get_model_response(
+            prompt="Test prompt",
+            provider="  openai  ",
+            model="gpt-5.2",
+            api_key="test-key",
+            use_cache=False,
+        )
+        assert "T cells" in result
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS")
+    @patch("mllmcelltype.annotate.get_default_model")
+    def test_get_model_response_model_with_whitespace_uses_default(
+        self,
+        mock_get_default_model,
+        mock_provider_functions,
+    ):
+        """Test whitespace-only model falls back to provider default model."""
+        captured = {}
+
+        def mock_provider_func(_prompt, model, _api_key, _base_url):
+            captured["model"] = model
+            return "Cluster 1: T cells"
+
+        mock_provider_functions.get.return_value = mock_provider_func
+        mock_get_default_model.return_value = "gpt-5.2"
+
+        result = get_model_response(
+            prompt="Test prompt",
+            provider="openai",
+            model="   ",
+            api_key="test-key",
+            use_cache=False,
+        )
+        assert "T cells" in result
+        assert captured["model"] == "gpt-5.2"
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS")
+    @patch("mllmcelltype.annotate.load_api_key")
+    def test_get_model_response_api_key_with_whitespace_uses_loaded_key(
+        self,
+        mock_load_api_key,
+        mock_provider_functions,
+    ):
+        """Test whitespace-only API key falls back to loaded key."""
+        captured = {}
+
+        def mock_provider_func(_prompt, _model, api_key, _base_url):
+            captured["api_key"] = api_key
+            return "Cluster 1: T cells"
+
+        mock_provider_functions.get.return_value = mock_provider_func
+        mock_load_api_key.return_value = "  loaded-key  "
+
+        result = get_model_response(
+            prompt="Test prompt",
+            provider="openai",
+            model="gpt-5.2",
+            api_key="   ",
+            use_cache=False,
+        )
+        assert "T cells" in result
+        assert captured["api_key"] == "loaded-key"
+
+    def test_get_model_response_invalid_api_key_type(self):
+        """Test get_model_response rejects non-string api_key types."""
+        with pytest.raises(ValueError, match="api_key must be a string"):
+            get_model_response(
+                prompt="Test prompt",
+                provider="openai",
+                model="gpt-5.2",
+                api_key=123,  # type: ignore[arg-type]
+                use_cache=False,
+            )
+
+    def test_get_model_response_invalid_model_type(self):
+        """Test get_model_response rejects non-string model types."""
+        with pytest.raises(ValueError, match="model must be a string"):
+            get_model_response(
+                prompt="Test prompt",
+                provider="openai",
+                model=123,  # type: ignore[arg-type]
+                api_key="test-key",
+                use_cache=False,
+            )
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
+    def test_annotate_clusters_invalid_marker_genes_type(self):
+        """Test annotate_clusters rejects non-dict/non-DataFrame marker input."""
+        with pytest.raises(ValueError, match="marker_genes must be a dict"):
+            annotate_clusters(
+                marker_genes=["CD3D", "IL7R"],  # type: ignore[arg-type]
+                species="human",
+                provider="mock_provider",
+                model="mock_model",
+                api_key="test-key",
+                use_cache=False,
+            )
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
+    def test_annotate_clusters_all_empty_marker_lists_returns_unknown_without_api_call(self):
+        """Test no-marker clusters skip API call and deterministically return Unknown."""
+        from mllmcelltype.annotate import PROVIDER_FUNCTIONS
+
+        provider_mock = MagicMock(return_value=["Cluster 1: T cells"])
+        PROVIDER_FUNCTIONS["mock_provider"] = provider_mock
+
+        result = annotate_clusters(
+            marker_genes={"1": [], "2": []},
+            species="human",
+            provider="mock_provider",
+            model="mock_model",
+            api_key="test-key",
+            use_cache=False,
+        )
+
+        assert result == {"1": "Unknown", "2": "Unknown"}
+        provider_mock.assert_not_called()
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
+    def test_annotate_clusters_mixed_empty_and_nonempty_markers_merge_unknown(self):
+        """Test empty-marker clusters are Unknown while valid clusters are model-annotated."""
+        from mllmcelltype.annotate import PROVIDER_FUNCTIONS
+
+        captured = {}
+
+        def provider_func(prompt, *_args, **_kwargs):
+            captured["prompt"] = prompt
+            return ["Cluster 1: T cells"]
+
+        PROVIDER_FUNCTIONS["mock_provider"] = provider_func
+
+        result = annotate_clusters(
+            marker_genes={"1": ["CD3D"], "2": []},
+            species="human",
+            provider="mock_provider",
+            model="mock_model",
+            api_key="test-key",
+            use_cache=False,
+        )
+
+        assert result["1"] == "T cells"
+        assert result["2"] == "Unknown"
+        assert "Cluster 1:" in captured["prompt"]
+        assert "Cluster 2:" not in captured["prompt"]
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
+    def test_annotate_clusters_dataframe_preserves_empty_marker_cluster_as_unknown(self):
+        """Test DataFrame input with empty-marker cluster returns Unknown for that cluster."""
+        from mllmcelltype.annotate import PROVIDER_FUNCTIONS
+
+        captured = {}
+
+        def provider_func(prompt, *_args, **_kwargs):
+            captured["prompt"] = prompt
+            return ["Cluster 1: T cells"]
+
+        PROVIDER_FUNCTIONS["mock_provider"] = provider_func
+
+        import pandas as pd
+
+        df = pd.DataFrame(
+            {
+                "cluster": ["1", "2"],
+                "gene": ["CD3D", None],
+            }
+        )
+
+        result = annotate_clusters(
+            marker_genes=df,
+            species="human",
+            provider="mock_provider",
+            model="mock_model",
+            api_key="test-key",
+            use_cache=False,
+        )
+
+        assert result == {"1": "T cells", "2": "Unknown"}
+        assert "Cluster 1:" in captured["prompt"]
+        assert "Cluster 2:" not in captured["prompt"]
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
+    def test_annotate_clusters_cache_hit_skips_second_provider_call(self):
+        """Test cache hit avoids repeat provider call and returns same annotations."""
+        from mllmcelltype.annotate import PROVIDER_FUNCTIONS
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider_mock = MagicMock(return_value=["Cluster 1: T cells"])
+            PROVIDER_FUNCTIONS["mock_provider"] = provider_mock
+
+            first = annotate_clusters(
+                marker_genes={"1": ["CD3D"]},
+                species="human",
+                provider="mock_provider",
+                model="mock_model",
+                api_key="test-key",
+                use_cache=True,
+                cache_dir=temp_dir,
+            )
+            assert first == {"1": "T cells"}
+            assert provider_mock.call_count == 1
+
+            provider_mock.side_effect = RuntimeError("provider should not be called on cache hit")
+            second = annotate_clusters(
+                marker_genes={"1": ["CD3D"]},
+                species="human",
+                provider="mock_provider",
+                model="mock_model",
+                api_key="test-key",
+                use_cache=True,
+                cache_dir=temp_dir,
+            )
+            assert second == {"1": "T cells"}
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS")
+    def test_get_model_response_cache_hit_skips_second_provider_call(self, mock_provider_functions):
+        """Test get_model_response serves cached value without second provider call."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider_mock = MagicMock(return_value=["line one", "line two"])
+            mock_provider_functions.get.return_value = provider_mock
+
+            first = get_model_response(
+                prompt="test prompt",
+                provider="openai",
+                model="gpt-5.2",
+                api_key="test-key",
+                use_cache=True,
+                cache_dir=temp_dir,
+            )
+            assert "line one" in first
+            assert provider_mock.call_count == 1
+
+            provider_mock.side_effect = RuntimeError("provider should not be called on cache hit")
+            second = get_model_response(
+                prompt="test prompt",
+                provider="openai",
+                model="gpt-5.2",
+                api_key="test-key",
+                use_cache=True,
+                cache_dir=temp_dir,
+            )
+            assert second == first
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
+    def test_annotate_clusters_rejects_mapping_marker_values(self):
+        """Test marker gene values must be sequence-like genes, not dictionaries."""
+        with pytest.raises(ValueError, match="marker_genes values must be gene lists"):
+            annotate_clusters(
+                marker_genes={"1": {"gene": "CD3D"}},  # type: ignore[dict-item]
+                species="human",
+                provider="mock_provider",
+                model="mock_model",
+                api_key="test-key",
                 use_cache=False,
             )
 

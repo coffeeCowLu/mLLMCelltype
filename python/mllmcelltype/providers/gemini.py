@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 from ..logger import write_log
+from .common import ensure_api_key
 
 
 def process_gemini(
@@ -44,11 +45,7 @@ def process_gemini(
             level="warning",
         )
 
-    # Check if API key is provided and not empty
-    if not api_key:
-        error_msg = "Google API key is missing or empty"
-        write_log(error_msg, level="error")
-        raise ValueError(error_msg)
+    api_key = ensure_api_key(api_key, "Google")
 
     # Initialize the client
     client = genai.Client(api_key=api_key)
@@ -71,13 +68,23 @@ def process_gemini(
             )
 
             # Parse the response
-            result = response.text.strip().split("\n")
+            response_text = getattr(response, "text", None)
+            if response_text is None:
+                raise ValueError("Gemini response missing text content")
+            if not isinstance(response_text, str):
+                write_log("Unexpected non-string response content from Gemini, coercing to string", level="warning")
+                response_text = str(response_text)
+
+            result = response_text.strip().split("\n")
             write_log(f"Got response with {len(result)} lines")
             write_log(f"Raw response from Gemini:\n{result}", level="debug")
 
             # Clean up results (remove commas at the end of lines)
             return [line.rstrip(",") for line in result]
 
+        except ValueError:
+            # Response shape/content errors are deterministic; fail fast.
+            raise
         except Exception as e:
             write_log(
                 f"Error during API call (attempt {attempt + 1}/{max_retries}): {e!s}",

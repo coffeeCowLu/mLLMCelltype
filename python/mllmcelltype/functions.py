@@ -58,13 +58,17 @@ def get_provider(model: str) -> str:
     Raises:
         ValueError: If the provider cannot be determined from the model name
     """
-    if not model:
+    if not isinstance(model, str):
+        raise ValueError(f"Model name must be a string, got {type(model).__name__}")
+
+    model_normalized = model.strip()
+    if not model_normalized:
         raise ValueError("Model name cannot be empty")
 
-    model_lower = model.lower()
+    model_lower = model_normalized.lower()
 
     # OpenRouter models contain '/' (e.g., 'anthropic/claude-sonnet-4.5')
-    if "/" in model:
+    if "/" in model_normalized:
         return "openrouter"
 
     # Match by prefix patterns
@@ -79,6 +83,6 @@ def get_provider(model: str) -> str:
         supported_prefixes.extend(f"{p}* ({provider})" for p in prefixes)
 
     raise ValueError(
-        f"Cannot determine provider for model: {model}. "
+        f"Cannot determine provider for model: {model_normalized}. "
         f"Supported model prefixes: {', '.join(supported_prefixes)}"
     )

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
+from typing import Any
 
 import pandas as pd
 
@@ -17,9 +19,98 @@ from .utils import (
     format_results,
     load_api_key,
     load_from_cache,
+    normalize_marker_genes_keys,
     parse_marker_genes,
     save_to_cache,
 )
+
+
+def _resolve_provider(provider: str) -> tuple[str, Callable[..., Any]]:
+    """Normalize provider name and resolve provider callable."""
+    if not isinstance(provider, str):
+        raise ValueError(f"Provider name must be a string, got {type(provider).__name__}")
+    if not provider:
+        raise ValueError("Provider name is required")
+
+    normalized_provider = provider.strip().lower()
+    if not normalized_provider:
+        raise ValueError("Provider name is required")
+    provider_func = PROVIDER_FUNCTIONS.get(normalized_provider)
+    if not provider_func:
+        error_msg = f"Unknown provider: {normalized_provider}"
+        write_log(error_msg, level="error")
+        raise ValueError(error_msg)
+
+    return normalized_provider, provider_func
+
+
+def _resolve_model_and_api_key(
+    provider: str,
+    model: str | None,
+    api_key: str | None,
+) -> tuple[str, str]:
+    """Resolve model and API key with consistent fallback behavior."""
+    def _normalize_optional_text(value: str | None, field_name: str) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError(f"{field_name} must be a string, got {type(value).__name__}")
+        normalized = value.strip()
+        return normalized or None
+
+    resolved_model = _normalize_optional_text(model, "model")
+    if not resolved_model:
+        resolved_model = get_default_model(provider)
+        write_log(f"Using default model for {provider}: {resolved_model}")
+
+    resolved_api_key = _normalize_optional_text(api_key, "api_key")
+    if not resolved_api_key:
+        resolved_api_key = _normalize_optional_text(load_api_key(provider), "api_key")
+    if not resolved_api_key:
+        error_msg = f"API key not found for provider: {provider}"
+        write_log(error_msg, level="error")
+        raise ValueError(error_msg)
+
+    return resolved_model, resolved_api_key
+
+
+def _to_text_response(result: Any) -> str:
+    """Normalize provider response to text."""
+    if isinstance(result, list):
+        return "\n".join(result)
+    if isinstance(result, str):
+        return result
+    return str(result)
+
+
+def _split_analyzable_clusters(
+    marker_genes: dict[str, list[str]],
+) -> tuple[dict[str, list[str]], list[str]]:
+    """Split marker genes into analyzable and empty-marker cluster IDs."""
+    analyzable: dict[str, list[str]] = {}
+    empty_clusters: list[str] = []
+    for cluster_id, genes in marker_genes.items():
+        if genes:
+            analyzable[cluster_id] = genes
+        else:
+            empty_clusters.append(cluster_id)
+    return analyzable, empty_clusters
+
+
+def _merge_annotation_results(
+    *,
+    all_clusters: list[str],
+    analyzed_results: dict[str, str],
+    empty_clusters: list[str],
+) -> dict[str, str]:
+    """Merge model annotations with deterministic Unknown for empty-marker clusters."""
+    empty_cluster_set = set(empty_clusters)
+    return {
+        cluster_id: (
+            "Unknown" if cluster_id in empty_cluster_set else analyzed_results.get(cluster_id, "Unknown")
+        )
+        for cluster_id in all_clusters
+    }
 
 
 def annotate_clusters(
@@ -66,40 +157,44 @@ def annotate_clusters(
 
     # Normalize provider to lowercase early so all downstream code
     # (base_urls lookup, cache key, API key resolution) is consistent.
-    provider = provider.lower()
+    provider, provider_func = _resolve_provider(provider)
     write_log(f"Starting annotation with provider: {provider}")
 
     # Parse marker genes if DataFrame
     if isinstance(marker_genes, pd.DataFrame):
         marker_genes = parse_marker_genes(marker_genes)
+    else:
+        marker_genes = normalize_marker_genes_keys(marker_genes)
 
     # Get clusters in natural numerical order (consistent with prompt)
-    clusters = sorted(marker_genes.keys(), key=cluster_sort_key)
-    write_log(f"Found {len(clusters)} clusters")
+    all_clusters = sorted(marker_genes.keys(), key=cluster_sort_key)
+    write_log(f"Found {len(all_clusters)} clusters")
 
-    # Validate provider first — catch typos before misleading "API key not found"
-    provider_func = PROVIDER_FUNCTIONS.get(provider)
-    if not provider_func:
-        error_msg = f"Unknown provider: {provider}"
-        write_log(error_msg, level="error")
-        raise ValueError(error_msg)
+    if not all_clusters:
+        write_log("No clusters provided; skipping annotation request", level="warning")
+        return {}
 
-    # Set default model based on provider
-    if not model:
-        model = get_default_model(provider)
-        write_log(f"Using default model for {provider}: {model}")
+    analyzable_marker_genes, empty_clusters = _split_analyzable_clusters(marker_genes)
+    analyzable_clusters = sorted(analyzable_marker_genes.keys(), key=cluster_sort_key)
 
-    # Get API key if not provided
-    if not api_key:
-        api_key = load_api_key(provider)
-        if not api_key:
-            error_msg = f"API key not found for provider: {provider}"
-            write_log(error_msg, level="error")
-            raise ValueError(error_msg)
+    if empty_clusters:
+        write_log(
+            f"Skipping {len(empty_clusters)} cluster(s) with empty marker genes: {', '.join(sorted(empty_clusters, key=cluster_sort_key))}",
+            level="warning",
+        )
+
+    if not analyzable_clusters:
+        write_log(
+            "No clusters have non-empty marker genes; returning Unknown for all clusters",
+            level="warning",
+        )
+        return {cluster_id: "Unknown" for cluster_id in all_clusters}
+
+    model, api_key = _resolve_model_and_api_key(provider, model, api_key)
 
     # Create prompt
     prompt = create_prompt(
-        marker_genes=marker_genes,
+        marker_genes=analyzable_marker_genes,
         species=species,
         tissue=tissue,
         additional_context=additional_context,
@@ -113,9 +208,14 @@ def annotate_clusters(
     if use_cache:
         cache_key = create_cache_key(prompt, model, provider, base_url)
         cached_results = load_from_cache(cache_key, cache_dir)
-        if cached_results:
+        if cached_results is not None:
             write_log("Using cached results")
-            return format_results(cached_results, clusters)
+            analyzed_results = format_results(cached_results, analyzable_clusters)
+            return _merge_annotation_results(
+                all_clusters=all_clusters,
+                analyzed_results=analyzed_results,
+                empty_clusters=empty_clusters,
+            )
 
     # Process request
     try:
@@ -133,7 +233,12 @@ def annotate_clusters(
             save_to_cache(cache_key, results, cache_dir)
 
         # Format results
-        return format_results(results, clusters)
+        analyzed_results = format_results(results, analyzable_clusters)
+        return _merge_annotation_results(
+            all_clusters=all_clusters,
+            analyzed_results=analyzed_results,
+            empty_clusters=empty_clusters,
+        )
 
     except Exception as e:
         error_msg = f"Error during annotation: {e!s}"
@@ -166,38 +271,16 @@ def get_model_response(
 
     """
 
-    if not provider:
-        raise ValueError("Provider name is required")
-
-    provider = provider.lower()
-    provider_func = PROVIDER_FUNCTIONS.get(provider)
-    if not provider_func:
-        error_msg = f"Unknown provider: {provider}"
-        write_log(error_msg, level="error")
-        raise ValueError(error_msg)
-
-    # Set default model if not provided
-    if not model:
-        model = get_default_model(provider)
-        write_log(f"Using default model for {provider}: {model}")
-
-    # Get API key if not provided
-    if not api_key:
-        api_key = load_api_key(provider)
-        if not api_key:
-            error_msg = f"API key not found for provider: {provider}"
-            write_log(error_msg, level="error")
-            raise ValueError(error_msg)
+    provider, provider_func = _resolve_provider(provider)
+    model, api_key = _resolve_model_and_api_key(provider, model, api_key)
 
     # Check cache
     if use_cache:
         cache_key = create_cache_key(prompt, model, provider, base_url)
         cached_result = load_from_cache(cache_key, cache_dir)
-        if cached_result:
+        if cached_result is not None:
             write_log(f"Using cached result for {model}")
-            if isinstance(cached_result, list):
-                return "\n".join(cached_result)
-            return cached_result
+            return _to_text_response(cached_result)
 
     # Call provider function
     try:
@@ -209,10 +292,7 @@ def get_model_response(
             save_to_cache(cache_key, result, cache_dir)
 
         # Convert list to string if needed
-        if isinstance(result, list):
-            return "\n".join(result)
-
-        return result
+        return _to_text_response(result)
     except Exception as e:
         error_msg = f"Error getting model response: {e!s}"
         write_log(error_msg, level="error")
