@@ -1669,11 +1669,15 @@ def _build_cluster_initial_predictions(
     cluster_id: str,
 ) -> dict[str, str]:
     """Build initial per-model annotations for a target cluster."""
-    return {
-        model_name: normalize_annotation(predictions.get(cluster_id, "Unknown"))
-        for model_name, predictions in model_predictions.items()
-        if cluster_id in predictions
-    }
+    initial_predictions: dict[str, str] = {}
+    for model_name, predictions in model_predictions.items():
+        if cluster_id not in predictions:
+            continue
+        annotation = normalize_annotation(predictions.get(cluster_id, "Unknown"))
+        if annotation == "Unknown":
+            continue
+        initial_predictions[model_name] = annotation
+    return initial_predictions
 
 
 def _run_cluster_discussion_rounds(
@@ -1830,7 +1834,10 @@ def _normalize_discussion_model_predictions(
                 continue
             cluster_id = str(raw_cluster_id).strip()
             if cluster_id:
-                normalized_cluster_map[cluster_id] = annotation
+                normalized_annotation = normalize_annotation(annotation)
+                if normalized_annotation == "Unknown":
+                    continue
+                normalized_cluster_map[cluster_id] = normalized_annotation
 
         if model_name in normalized_predictions:
             write_log(

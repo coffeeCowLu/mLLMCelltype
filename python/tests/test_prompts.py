@@ -121,6 +121,18 @@ Marker genes: {markers}"""
         assert "NK cells" in prompt
         assert "cluster 1" in prompt or "Cluster 1" in prompt
 
+    def test_create_initial_discussion_prompt_without_initial_predictions(self):
+        """Test initial discussion prompt includes explicit fallback text when predictions are empty."""
+        prompt = create_initial_discussion_prompt(
+            cluster_id="1",
+            marker_genes=["CD3D", "CD3E"],
+            initial_predictions={},
+            species="human",
+            tissue="blood",
+        )
+
+        assert "no confident initial predictions available" in prompt.lower()
+
     def test_create_discussion_prompt(self):
         """Test subsequent discussion prompt creation."""
         cluster_id = "1"

@@ -196,9 +196,12 @@ def create_initial_discussion_prompt(
     marker_genes_text = ", ".join(marker_genes)
 
     # Format initial predictions
-    predictions_text = "\n".join(
-        f"- {model}: {prediction}" for model, prediction in initial_predictions.items()
-    )
+    if initial_predictions:
+        predictions_text = "\n".join(
+            f"- {model}: {prediction}" for model, prediction in initial_predictions.items()
+        )
+    else:
+        predictions_text = "- (no confident initial predictions available)"
 
     prompt = f"""We are analyzing cluster {cluster_id} with the following marker genes: {marker_genes_text}
 Species: {species}

@@ -1773,14 +1773,16 @@ class TestConsensus:
             controversial_clusters=["1"],
             model_predictions={
                 "openai:gpt-5.2": {"1": pd.NA},  # type: ignore[dict-item]
+                "grok:grok-4": {"1": "Unknown (low confidence)"},
                 "anthropic:claude-sonnet-4-5-20250929": {"1": "B cells"},
             },
             species="human",
             models=[
                 {"provider": "openai", "model": "gpt-5.2"},
+                {"provider": "grok", "model": "grok-4"},
                 {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
             ],
-            api_keys={"openai": "key-a", "anthropic": "key-b"},
+            api_keys={"openai": "key-a", "grok": "key-g", "anthropic": "key-b"},
             max_discussion_rounds=1,
             use_cache=False,
         )
@@ -1789,6 +1791,8 @@ class TestConsensus:
         assert captured_prompts
         assert "<NA>" not in captured_prompts[0]
         assert "None" not in captured_prompts[0]
+        assert "openai:gpt-5.2: Unknown" not in captured_prompts[0]
+        assert "grok:grok-4: Unknown" not in captured_prompts[0]
         assert "anthropic:claude-sonnet-4-5-20250929" in captured_prompts[0]
 
     def test_check_consensus_whitespace_cluster_keys_are_normalized(self):
