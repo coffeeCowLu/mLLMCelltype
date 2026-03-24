@@ -513,24 +513,76 @@ def format_results(
         return {alias.strip() for alias in expanded if alias and alias.strip()}
 
     def _build_requested_cluster_lookup(target_clusters: list[str]) -> dict[str, str]:
+        # Exact IDs are authoritative and should never be shadowed by aliases.
         lookup: dict[str, str] = {}
-        # Pass 1: exact IDs take precedence to avoid alias collisions
-        # (e.g., requested clusters ['1', 'Cluster_1']).
+        exact_ids: list[str] = []
         for cluster in target_clusters:
             cluster_str = str(cluster)
             if not cluster_str:
                 continue
-            lookup.setdefault(cluster_str, cluster_str)
-            lookup.setdefault(cluster_str.lower(), cluster_str)
+            if cluster_str not in lookup:
+                lookup[cluster_str] = cluster_str
+                exact_ids.append(cluster_str)
 
-        # Pass 2: add alias forms without overriding exact mappings.
-        for cluster in target_clusters:
-            cluster_str = str(cluster)
-            for candidate in _build_cluster_aliases(cluster_str):
-                if candidate == cluster_str:
+        exact_id_set = set(exact_ids)
+
+        case_sensitive_alias_owner: dict[str, str] = {}
+        case_sensitive_alias_ambiguous: set[str] = set()
+        case_insensitive_alias_owner: dict[str, str] = {}
+        case_insensitive_alias_ambiguous: set[str] = set()
+
+        def _record_alias(
+            owner_map: dict[str, str],
+            ambiguous_set: set[str],
+            alias_key: str,
+            cluster_id: str,
+        ) -> None:
+            if alias_key in ambiguous_set:
+                return
+            existing_owner = owner_map.get(alias_key)
+            if existing_owner is None:
+                owner_map[alias_key] = cluster_id
+                return
+            if existing_owner != cluster_id:
+                owner_map.pop(alias_key, None)
+                ambiguous_set.add(alias_key)
+
+        for cluster_str in exact_ids:
+            # Case-insensitive exact-ID fallback is allowed only when it does not
+            # collide with another exact cluster ID.
+            exact_lower = cluster_str.lower()
+            if exact_lower not in exact_id_set:
+                _record_alias(
+                    case_insensitive_alias_owner,
+                    case_insensitive_alias_ambiguous,
+                    exact_lower,
+                    cluster_str,
+                )
+
+            for alias in _build_cluster_aliases(cluster_str):
+                if not alias or alias == cluster_str or alias in exact_id_set:
                     continue
-                lookup.setdefault(candidate, cluster_str)
-                lookup.setdefault(candidate.lower(), cluster_str)
+                _record_alias(
+                    case_sensitive_alias_owner,
+                    case_sensitive_alias_ambiguous,
+                    alias,
+                    cluster_str,
+                )
+                alias_lower = alias.lower()
+                if alias_lower in exact_id_set:
+                    continue
+                _record_alias(
+                    case_insensitive_alias_owner,
+                    case_insensitive_alias_ambiguous,
+                    alias_lower,
+                    cluster_str,
+                )
+
+        for alias, cluster_id in case_sensitive_alias_owner.items():
+            lookup.setdefault(alias, cluster_id)
+        for alias_lower, cluster_id in case_insensitive_alias_owner.items():
+            lookup.setdefault(alias_lower, cluster_id)
+
         return lookup
 
     def _resolve_target_cluster(raw_cluster_id: Any, lookup: dict[str, str]) -> str | None:

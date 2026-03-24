@@ -548,6 +548,26 @@ def test_format_results_preserves_exact_cluster_id_over_alias_collision_labeled(
     assert formatted == {"1": "T cells", "Cluster_1": "B cells"}
 
 
+def test_format_results_case_variant_cluster_ids_preserve_exact_dict_mapping():
+    """Test exact IDs remain stable when requested clusters differ only by case."""
+    results = {"A": "T cells", "a": "B cells"}
+    clusters = ["A", "a"]
+
+    formatted = format_results(results, clusters)
+
+    assert formatted == {"A": "T cells", "a": "B cells"}
+
+
+def test_format_results_case_variant_cluster_ids_preserve_exact_labeled_mapping():
+    """Test labeled parsing keeps exact case-variant cluster IDs distinct."""
+    results = ["A: T cells", "a: B cells"]
+    clusters = ["A", "a"]
+
+    formatted = format_results(results, clusters)
+
+    assert formatted == {"A": "T cells", "a": "B cells"}
+
+
 def test_format_results_dict_input_strips_whitespace_keys():
     """Test dict keys with surrounding whitespace are normalized."""
     results = {" 1 ": "T cells"}

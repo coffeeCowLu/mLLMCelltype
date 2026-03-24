@@ -989,7 +989,14 @@ def _resolve_llm_cluster_consensus(
 ) -> tuple[str, float, float]:
     """Resolve non-trivial cluster consensus using LLM check and fallback policy."""
     if not has_any_api_key:
-        return "Unknown", DEFAULT_FALLBACK_CONSENSUS_PROPORTION, DEFAULT_FALLBACK_ENTROPY
+        majority, cp_value, entropy_value = _deterministic_consensus_metrics(cluster_annotations)
+        write_log(
+            f"No API key available for cluster {cluster}; "
+            f"using deterministic majority fallback: "
+            f"majority={majority}, CP={cp_value:.2f}, H={entropy_value:.2f}",
+            level="warning",
+        )
+        return majority, cp_value, entropy_value
 
     prompt = create_consensus_check_prompt(cluster_annotations)
     llm_response = _call_llm_with_retry(

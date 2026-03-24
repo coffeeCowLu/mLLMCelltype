@@ -225,9 +225,9 @@ class TestConsensus:
         )
 
         mock_call_llm.assert_not_called()
-        assert consensus["1"] == "Unknown"
-        assert cp["1"] == DEFAULT_FALLBACK_CONSENSUS_PROPORTION
-        assert entropy["1"] == DEFAULT_FALLBACK_ENTROPY
+        assert consensus["1"] == "T cells"
+        assert cp["1"] == 0.5
+        assert entropy["1"] == 1.0
 
     @patch("mllmcelltype.consensus._call_llm_with_retry")
     def test_check_consensus_invalid_llm_payload_falls_back(self, mock_call_llm):
@@ -280,9 +280,9 @@ class TestConsensus:
         )
 
         mock_call_llm.assert_not_called()
-        assert consensus["1"] == "Unknown"
-        assert cp["1"] == DEFAULT_FALLBACK_CONSENSUS_PROPORTION
-        assert entropy["1"] == DEFAULT_FALLBACK_ENTROPY
+        assert consensus["1"] == "T cells"
+        assert cp["1"] == 0.5
+        assert entropy["1"] == 1.0
 
     def test_check_consensus_invalid_predictions_type_raises_clear_error(self):
         """Test non-dict predictions fail fast with a clear ValueError."""
