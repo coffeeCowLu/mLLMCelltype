@@ -177,6 +177,20 @@ def test_parse_marker_genes_skips_invalid_cluster_ids():
     assert parsed == {"1": ["CD3D"]}
 
 
+def test_parse_marker_genes_skips_pandas_na_cluster_and_gene_values():
+    """Test parse_marker_genes treats pandas.NA in cluster/gene columns as missing."""
+    df = pd.DataFrame(
+        {
+            "cluster": [pd.NA, "1", "1"],
+            "gene": ["CD3D", pd.NA, "IL7R"],
+        }
+    )
+
+    parsed = parse_marker_genes(df)
+
+    assert parsed == {"1": ["IL7R"]}
+
+
 def test_normalize_marker_genes_keys_strips_and_skips_invalid_cluster_ids():
     """Test dict marker keys are normalized and invalid IDs are skipped."""
     parsed = normalize_marker_genes_keys(
@@ -189,6 +203,18 @@ def test_normalize_marker_genes_keys_strips_and_skips_invalid_cluster_ids():
     )
 
     assert parsed == {"1": ["CD3D", "IL7R"]}
+
+
+def test_normalize_marker_genes_keys_skips_pandas_na_cluster_and_gene_values():
+    """Test dict marker normalization skips pandas.NA cluster keys and gene entries."""
+    parsed = normalize_marker_genes_keys(
+        {
+            pd.NA: ["CD3D"],  # type: ignore[dict-item]
+            "1": [pd.NA, "IL7R"],
+        }
+    )
+
+    assert parsed == {"1": ["IL7R"]}
 
 
 # Test load_api_key function

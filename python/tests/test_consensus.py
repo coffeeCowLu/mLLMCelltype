@@ -6,6 +6,7 @@ Tests for consensus and comparison functionality in mLLMCelltype.
 
 from unittest.mock import patch
 
+import pandas as pd
 import pytest
 
 from mllmcelltype.config import (
@@ -1673,7 +1674,61 @@ class TestConsensus:
         assert 1 not in consensus
         # Full agreement across all 3 models
         assert consensus_proportion["0"] == 1.0
+
+    def test_check_consensus_skips_missing_like_cluster_ids(self):
+        """Test consensus normalization skips NaN/pandas.NA cluster IDs."""
+        predictions = {
+            "model_a": {float("nan"): "T cells", "1": "T cells"},
+            "model_b": {"1": "T cells", pd.NA: "B cells"},  # type: ignore[dict-item]
+        }
+
+        consensus, consensus_proportion, _entropy, _controversial = check_consensus(
+            predictions=predictions,
+            api_keys={},
+        )
+
+        assert list(consensus.keys()) == ["1"]
+        assert consensus["1"] == "T cells"
         assert consensus_proportion["1"] == 1.0
+
+    @patch("mllmcelltype.consensus.check_consensus_for_discussion_round")
+    @patch("mllmcelltype.consensus.get_model_response")
+    def test_process_controversial_clusters_skips_missing_like_cluster_ids(
+        self,
+        mock_get_model_response,
+        mock_check_round_consensus,
+    ):
+        """Test discussion flow ignores NaN/pandas.NA cluster IDs instead of crashing."""
+        mock_get_model_response.return_value = "T cells"
+        mock_check_round_consensus.return_value = {
+            "reached": True,
+            "consensus_proportion": 0.9,
+            "entropy": 0.1,
+            "majority_prediction": "T cells",
+        }
+
+        results, history, cp, entropy = process_controversial_clusters(
+            marker_genes={"1": ["CD3D"]},
+            controversial_clusters=[pd.NA, "1"],  # type: ignore[list-item]
+            model_predictions={
+                "openai:gpt-5.2": {pd.NA: "Noise", "1": "T cells"},  # type: ignore[dict-item]
+                "anthropic:claude-sonnet-4-5-20250929": {"1": "T cells"},
+            },
+            species="human",
+            models=[
+                {"provider": "openai", "model": "gpt-5.2"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+            ],
+            api_keys={"openai": "key-a", "anthropic": "key-b"},
+            max_discussion_rounds=1,
+            use_cache=False,
+        )
+
+        assert set(results.keys()) == {"1"}
+        assert set(history.keys()) == {"1"}
+        assert set(cp.keys()) == {"1"}
+        assert set(entropy.keys()) == {"1"}
+        assert results["1"] == "T cells"
 
     def test_check_consensus_whitespace_cluster_keys_are_normalized(self):
         """Test whitespace-padded cluster keys are trimmed and merged."""

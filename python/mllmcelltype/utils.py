@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -32,6 +33,17 @@ INCONCLUSIVE_WITH_CONTEXT_PATTERN = re.compile(
     r"(?i)^inconclusive(?:\s*[\(\[\{].*[\)\]\}])?$"
 )
 ERROR_ANNOTATION_PATTERN = re.compile(r"(?i)^error(?:\s*:\s*.*|\s*\(.*\))?$")
+
+
+def _is_missing_scalar(value: Any) -> bool:
+    """Return True for scalar missing markers (None/NaN/pandas.NA)."""
+    if value is None:
+        return True
+    with contextlib.suppress(Exception):
+        missing = pd.isna(value)
+        with contextlib.suppress(Exception):
+            return bool(missing)
+    return False
 
 
 def _unwrap_balanced_wrappers(text: str) -> str:
@@ -195,12 +207,19 @@ def _coerce_marker_gene_list(genes: Any) -> list[str]:
     else:
         values = [genes]
 
-    return [str(g).strip() for g in values if g is not None and g == g and str(g).strip()]
+    cleaned: list[str] = []
+    for raw_gene in values:
+        if _is_missing_scalar(raw_gene):
+            continue
+        gene = str(raw_gene).strip()
+        if gene:
+            cleaned.append(gene)
+    return cleaned
 
 
 def _normalize_cluster_id(raw_cluster: Any) -> str | None:
     """Normalize raw cluster identifier to a non-empty string."""
-    if raw_cluster is None or raw_cluster != raw_cluster:
+    if _is_missing_scalar(raw_cluster):
         return None
     normalized = str(raw_cluster).strip()
     return normalized or None
@@ -446,7 +465,7 @@ def parse_marker_genes(marker_genes_df: pd.DataFrame) -> dict[str, list[str]]:
             gene_sets[cluster_id] = set()
 
         raw_gene = row[gene_col]
-        if raw_gene is None or raw_gene != raw_gene:
+        if _is_missing_scalar(raw_gene):
             continue
         gene = str(raw_gene).strip()
         if not gene:
