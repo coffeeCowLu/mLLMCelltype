@@ -1394,6 +1394,26 @@ class TestConsensus:
         assert cp["1"] == DEFAULT_FALLBACK_CONSENSUS_PROPORTION
         assert entropy["1"] == DEFAULT_FALLBACK_ENTROPY
 
+    def test_process_controversial_clusters_set_input_is_deterministic(self):
+        """Test set-form controversial cluster IDs are processed in stable natural order."""
+        results, history, cp, entropy = process_controversial_clusters(
+            marker_genes={"1": ["CD3D"]},
+            controversial_clusters={"10", "2"},
+            model_predictions={},
+            species="human",
+            models=[
+                {"provider": "openai", "model": "gpt-5.2"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+            ],
+            api_keys={"openai": "key-a", "anthropic": "key-b"},
+            use_cache=False,
+        )
+
+        assert list(results.keys()) == ["2", "10"]
+        assert list(history.keys()) == ["2", "10"]
+        assert list(cp.keys()) == ["2", "10"]
+        assert list(entropy.keys()) == ["2", "10"]
+
     @patch("mllmcelltype.consensus.check_consensus_for_discussion_round")
     @patch("mllmcelltype.consensus.get_model_response")
     def test_process_controversial_clusters_single_valid_last_round_uses_extraction(
@@ -1793,6 +1813,34 @@ class TestConsensus:
 
         filtered_marker_genes = mock_annotate_clusters.call_args.kwargs["marker_genes"]
         assert list(filtered_marker_genes.keys()) == ["2", "1"]
+
+    @patch("mllmcelltype.consensus.annotate_clusters")
+    @patch("mllmcelltype.consensus.check_consensus")
+    def test_interactive_consensus_annotation_clusters_to_analyze_set_is_deterministic(
+        self,
+        mock_check_consensus,
+        mock_annotate_clusters,
+    ):
+        """Test set-form clusters_to_analyze is sorted to deterministic cluster order."""
+        mock_annotate_clusters.return_value = {"2": "B cells", "10": "T cells"}
+        mock_check_consensus.return_value = (
+            {"2": "B cells", "10": "T cells"},
+            {"2": 1.0, "10": 1.0},
+            {"2": 0.0, "10": 0.0},
+            [],
+        )
+
+        interactive_consensus_annotation(
+            marker_genes={"10": ["CD3D"], "2": ["MS4A1"]},
+            species="human",
+            models=[{"provider": "openai", "model": "gpt-5.2"}],
+            api_keys={"openai": "test-key"},
+            clusters_to_analyze={"10", "2"},
+            use_cache=False,
+        )
+
+        filtered_marker_genes = mock_annotate_clusters.call_args.kwargs["marker_genes"]
+        assert list(filtered_marker_genes.keys()) == ["2", "10"]
 
     def test_interactive_consensus_annotation_clusters_to_analyze_all_invalid_raises(self):
         """Test requesting only missing cluster IDs raises a clear validation error."""

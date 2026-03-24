@@ -1830,6 +1830,7 @@ def _normalize_discussion_model_predictions(
 
 def _normalize_controversial_cluster_ids(controversial_clusters: list[Any]) -> list[str]:
     """Normalize controversial cluster IDs with trim/filter/dedup semantics."""
+    is_unordered_input = isinstance(controversial_clusters, set)
     normalized_clusters: list[str] = []
     seen: set[str] = set()
     skipped_invalid = 0
@@ -1850,6 +1851,9 @@ def _normalize_controversial_cluster_ids(controversial_clusters: list[Any]) -> l
             f"Ignored {skipped_invalid} invalid controversial cluster IDs after normalization",
             level="warning",
         )
+
+    if is_unordered_input:
+        normalized_clusters = sorted(normalized_clusters, key=cluster_sort_key)
 
     return normalized_clusters
 
@@ -2015,9 +2019,15 @@ def _filter_marker_genes_for_clusters(
             "clusters_to_analyze must be a list/tuple/set of cluster IDs, not a string"
         )
 
+    raw_cluster_iterable = (
+        sorted((str(cluster_id) for cluster_id in clusters_to_analyze), key=cluster_sort_key)
+        if isinstance(clusters_to_analyze, set)
+        else clusters_to_analyze
+    )
+
     requested_clusters: list[str] = []
     skipped_empty: list[str] = []
-    for cluster_id in clusters_to_analyze:
+    for cluster_id in raw_cluster_iterable:
         normalized = str(cluster_id).strip()
         if not normalized:
             skipped_empty.append(str(cluster_id))
