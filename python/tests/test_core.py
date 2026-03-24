@@ -605,7 +605,10 @@ def test_is_unknown_annotation_supports_common_unknown_variants():
     assert is_unknown_annotation("unknown")
     assert is_unknown_annotation("Unknown (low confidence)")
     assert is_unknown_annotation("Inconclusive")
+    assert is_unknown_annotation("Inconclusive (no consensus)")
     assert is_unknown_annotation("Error: provider timeout")
+    assert is_unknown_annotation("Error(timeout)")
+    assert not is_unknown_annotation("Error-prone T cells")
     assert is_unknown_annotation("[N/A]")
     assert is_unknown_annotation("  none  ")
     assert not is_unknown_annotation("T cells")
@@ -616,7 +619,9 @@ def test_normalize_annotation_maps_unknown_like_values_to_unknown():
     assert normalize_annotation("unknown") == "Unknown"
     assert normalize_annotation(" [unknown] ") == "Unknown"
     assert normalize_annotation("inconclusive") == "Unknown"
+    assert normalize_annotation("Inconclusive (no consensus)") == "Unknown"
     assert normalize_annotation("Error: temporary outage") == "Unknown"
+    assert normalize_annotation("Error-prone T cells") == "Error-prone T cells"
     assert normalize_annotation("CD4+ T cells") == "CD4+ T cells"
 
 

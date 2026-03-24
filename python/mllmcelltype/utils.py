@@ -28,7 +28,10 @@ UNKNOWN_ANNOTATION_TOKENS = {
     "inconclusive",
 }
 UNKNOWN_WITH_CONTEXT_PATTERN = re.compile(r"(?i)^unknown(?:\s*[\(\[\{].*[\)\]\}])?$")
-ERROR_ANNOTATION_PATTERN = re.compile(r"(?i)^error(?:\s*[:\-\(].*)?$")
+INCONCLUSIVE_WITH_CONTEXT_PATTERN = re.compile(
+    r"(?i)^inconclusive(?:\s*[\(\[\{].*[\)\]\}])?$"
+)
+ERROR_ANNOTATION_PATTERN = re.compile(r"(?i)^error(?:\s*:\s*.*|\s*\(.*\))?$")
 
 
 def _unwrap_balanced_wrappers(text: str) -> str:
@@ -57,6 +60,8 @@ def is_unknown_annotation(value: Any) -> bool:
     if lowered in UNKNOWN_ANNOTATION_TOKENS:
         return True
     if UNKNOWN_WITH_CONTEXT_PATTERN.match(normalized):
+        return True
+    if INCONCLUSIVE_WITH_CONTEXT_PATTERN.match(normalized):
         return True
     return bool(ERROR_ANNOTATION_PATTERN.match(normalized))
 
