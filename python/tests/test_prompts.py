@@ -64,6 +64,30 @@ Marker genes: {markers}"""
         # Check that the custom template was used
         assert "Custom template for human cells from blood" in prompt
 
+    def test_create_prompt_with_invalid_placeholder_raises_clear_error(self):
+        """Test invalid custom-template placeholders fail with actionable message."""
+        bad_template = "Custom {species} / {wrong_placeholder} / {markers}"
+
+        with pytest.raises(ValueError, match="Invalid prompt_template placeholder"):
+            create_prompt(
+                marker_genes=self.marker_genes,
+                species="human",
+                tissue="blood",
+                prompt_template=bad_template,
+            )
+
+    def test_create_prompt_with_malformed_template_raises_clear_error(self):
+        """Test malformed custom templates fail with clear formatting guidance."""
+        bad_template = "Custom {species cells: {markers}"
+
+        with pytest.raises(ValueError, match="Invalid prompt_template format"):
+            create_prompt(
+                marker_genes=self.marker_genes,
+                species="human",
+                tissue="blood",
+                prompt_template=bad_template,
+            )
+
     def test_create_initial_discussion_prompt(self):
         """Test initial discussion prompt creation."""
         cluster_id = "1"

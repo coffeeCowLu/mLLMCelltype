@@ -46,6 +46,28 @@ Here are the marker genes for each cluster:
 {markers}
 """
 
+SUPPORTED_PROMPT_PLACEHOLDERS = ("species", "tissue", "markers")
+
+
+def _render_prompt_template(
+    *,
+    prompt_template: str,
+    species: str,
+    tissue_text: str,
+    marker_text: str,
+) -> str:
+    """Render prompt template with clear errors for invalid placeholders/format."""
+    try:
+        return prompt_template.format(species=species, tissue=tissue_text, markers=marker_text)
+    except KeyError as e:
+        placeholder = e.args[0] if e.args else "unknown"
+        raise ValueError(
+            "Invalid prompt_template placeholder "
+            f"'{placeholder}'. Supported placeholders: {', '.join(SUPPORTED_PROMPT_PLACEHOLDERS)}"
+        ) from e
+    except ValueError as e:
+        raise ValueError(f"Invalid prompt_template format: {e!s}") from e
+
 
 def create_consensus_check_prompt(annotations: list[str]) -> str:
     """Create a prompt for checking consensus among different annotations.
@@ -120,8 +142,13 @@ def create_prompt(
     # Add additional context if provided
     context_text = f"\nAdditional context: {additional_context}\n" if additional_context else ""
 
-    # Fill in the template
-    prompt = prompt_template.format(species=species, tissue=tissue_text, markers=marker_text)
+    # Fill in the template with clear validation errors.
+    prompt = _render_prompt_template(
+        prompt_template=prompt_template,
+        species=species,
+        tissue_text=tissue_text,
+        marker_text=marker_text,
+    )
 
     # Add context
     if context_text:
