@@ -2471,9 +2471,25 @@ def _format_metadata_model_name(raw_model: Any) -> str:
     return str(raw_model)
 
 
-def _format_metadata_model_names(raw_models: list[Any]) -> list[str]:
+def _format_metadata_model_names(raw_models: Any) -> list[str]:
     """Format model descriptors from metadata to human-readable names."""
-    return [_format_metadata_model_name(model) for model in raw_models]
+    if raw_models is None:
+        return []
+
+    if isinstance(raw_models, (str, bytes, dict)):
+        models_iterable = [raw_models]
+    elif isinstance(raw_models, set):
+        # Keep deterministic output for unordered containers.
+        models_iterable = sorted(raw_models, key=lambda item: str(item))
+    elif isinstance(raw_models, (list, tuple)):
+        models_iterable = list(raw_models)
+    else:
+        try:
+            models_iterable = list(raw_models)
+        except TypeError:
+            models_iterable = [raw_models]
+
+    return [_format_metadata_model_name(model) for model in models_iterable]
 
 
 def _display_metadata_value(value: Any) -> Any:

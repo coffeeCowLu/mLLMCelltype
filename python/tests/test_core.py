@@ -978,6 +978,61 @@ def test_format_discussion_report_metadata_formats_model_dicts_and_none_fields()
     assert "Tissue: N/A" in report
 
 
+def test_format_discussion_report_metadata_models_string_not_split_by_character():
+    """Test string metadata models value is treated as one model entry."""
+    from mllmcelltype.consensus import format_discussion_report
+
+    mock_results = {
+        "consensus": {"0": "T cells"},
+        "consensus_proportion": {"0": 1.0},
+        "entropy": {"0": 0.0},
+        "controversial_clusters": [],
+        "resolved": {},
+        "model_annotations": {"openai:gpt-5.2": {"0": "T cells"}},
+        "discussion_logs": {},
+        "metadata": {
+            "timestamp": "2026-01-26 12:00:00",
+            "species": "human",
+            "tissue": "blood",
+            "models": "gpt-5.2",
+            "consensus_threshold": 0.7,
+            "max_discussion_rounds": 3,
+        },
+    }
+
+    report = format_discussion_report(mock_results)
+
+    assert "Models: gpt-5.2" in report
+    assert "Models: g, p, t" not in report
+
+
+def test_format_discussion_report_metadata_models_set_is_deterministic():
+    """Test set-form metadata models are rendered in deterministic sorted order."""
+    from mllmcelltype.consensus import format_discussion_report
+
+    mock_results = {
+        "consensus": {"0": "T cells"},
+        "consensus_proportion": {"0": 1.0},
+        "entropy": {"0": 0.0},
+        "controversial_clusters": [],
+        "resolved": {},
+        "model_annotations": {"openai:gpt-5.2": {"0": "T cells"}},
+        "discussion_logs": {},
+        "metadata": {
+            "timestamp": "2026-01-26 12:00:00",
+            "species": "human",
+            "tissue": "blood",
+            "models": {"zeta-model", "alpha-model"},
+            "consensus_threshold": 0.7,
+            "max_discussion_rounds": 3,
+        },
+    }
+
+    report = format_discussion_report(mock_results)
+
+    assert "Models: alpha-model, zeta-model" in report
+
+
 def test_format_discussion_report_save_to_file():
     """Test format_discussion_report saving to file."""
     from mllmcelltype.consensus import format_discussion_report
