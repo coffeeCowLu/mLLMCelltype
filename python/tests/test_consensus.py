@@ -444,6 +444,21 @@ class TestConsensus:
         assert result["majority_prediction"] == "CD4+ T cells"
 
     @patch("mllmcelltype.consensus._extract_cell_type_via_llm")
+    def test_check_consensus_for_discussion_round_single_response_uses_structured_label_without_llm(
+        self, mock_extract
+    ):
+        """Test single structured response avoids unnecessary LLM extraction."""
+        result = check_consensus_for_discussion_round(
+            round_responses={"modelA": "CELL TYPE: T cells\nGROUNDS: CD3D"},
+            api_keys={},
+        )
+        assert result["reached"] is False
+        assert result["majority_prediction"] == "T cells"
+        assert result["consensus_proportion"] == DEFAULT_FALLBACK_CONSENSUS_PROPORTION
+        assert result["entropy"] == DEFAULT_FALLBACK_ENTROPY
+        mock_extract.assert_not_called()
+
+    @patch("mllmcelltype.consensus._extract_cell_type_via_llm")
     def test_check_consensus_for_discussion_round_filters_error_and_blank(self, mock_extract):
         """Test discussion round ignores Error/blank responses before consensus."""
         mock_extract.return_value = "T cells"
@@ -457,6 +472,24 @@ class TestConsensus:
             api_keys={"openai": "test-key"},
         )
 
+        assert result["reached"] is False
+        assert result["majority_prediction"] == "T cells"
+        mock_extract.assert_called_once()
+
+    @patch("mllmcelltype.consensus._extract_cell_type_via_llm")
+    def test_check_consensus_for_discussion_round_filters_error_prefix_case_insensitively(
+        self, mock_extract
+    ):
+        """Test discussion round ignores provider error responses regardless of case."""
+        mock_extract.return_value = "T cells"
+        result = check_consensus_for_discussion_round(
+            round_responses={
+                "modelA": "T cells candidate",
+                "modelB": "error: upstream timeout",
+                "modelC": "ERROR: provider unavailable",
+            },
+            api_keys={"openai": "test-key"},
+        )
         assert result["reached"] is False
         assert result["majority_prediction"] == "T cells"
         mock_extract.assert_called_once()
@@ -825,6 +858,56 @@ class TestConsensus:
         assert result["consensus"]["1"] == "T cells"
         assert result["consensus"]["2"] == "Unknown"
         assert result["consensus"]["3"] == "Unknown"
+
+    @patch("mllmcelltype.consensus._extract_cell_type_via_llm")
+    @patch("mllmcelltype.consensus.get_model_response")
+    @patch("mllmcelltype.consensus.check_consensus")
+    @patch("mllmcelltype.consensus.annotate_clusters")
+    def test_interactive_consensus_annotation_single_valid_discussion_response_uses_structured_label(
+        self,
+        mock_annotate_clusters,
+        mock_check_consensus,
+        mock_get_model_response,
+        mock_extract_cell_type,
+    ):
+        """Test full interactive chain resolves single valid structured response without LLM extraction."""
+        mock_annotate_clusters.side_effect = [
+            {"1": "T cells"},
+            {"1": "B cells"},
+        ]
+        mock_check_consensus.return_value = (
+            {"1": "Unknown"},
+            {"1": 0.4},
+            {"1": 1.3},
+            ["1"],
+        )
+
+        def response_side_effect(**kwargs):
+            if kwargs["provider"] == "openai":
+                return "CELL TYPE: T cells\nGROUNDS: CD3D"
+            raise RuntimeError("provider timeout")
+
+        mock_get_model_response.side_effect = response_side_effect
+        mock_extract_cell_type.side_effect = AssertionError("LLM extraction should not be called")
+
+        result = interactive_consensus_annotation(
+            marker_genes={"1": ["CD3D"]},
+            species="human",
+            models=[
+                {"provider": "openai", "model": "gpt-5.2"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+            ],
+            api_keys={"openai": "key-a", "anthropic": "key-b"},
+            max_discussion_rounds=1,
+            use_cache=False,
+        )
+
+        assert result["consensus"]["1"] == "T cells"
+        assert result["resolved"]["1"] == "T cells"
+        assert result["consensus_proportion"]["1"] == DEFAULT_FALLBACK_CONSENSUS_PROPORTION
+        assert result["entropy"]["1"] == DEFAULT_FALLBACK_ENTROPY
+        assert result["discussion_round_counts"]["1"] == 1
+        mock_extract_cell_type.assert_not_called()
 
     @patch("mllmcelltype.consensus.annotate_clusters")
     @patch("mllmcelltype.consensus.check_consensus")
@@ -1197,6 +1280,81 @@ class TestConsensus:
         assert cp["1"] == 0.9
         assert entropy["1"] == 0.1
 
+    @patch("mllmcelltype.consensus.check_consensus_for_discussion_round")
+    @patch("mllmcelltype.consensus.get_model_response")
+    def test_process_controversial_clusters_normalizes_whitespace_cluster_ids(
+        self,
+        mock_get_model_response,
+        mock_check_round_consensus,
+    ):
+        """Test process_controversial_clusters trims cluster IDs for lookups and outputs."""
+        mock_get_model_response.return_value = "T cells"
+        mock_check_round_consensus.return_value = {
+            "reached": True,
+            "consensus_proportion": 0.9,
+            "entropy": 0.1,
+            "majority_prediction": "T cells",
+        }
+
+        results, _history, cp, entropy = process_controversial_clusters(
+            marker_genes={"1": ["CD3D"]},
+            controversial_clusters=[" 1 "],
+            model_predictions={
+                "openai:gpt-5.2": {" 1 ": "T cells"},
+                "anthropic:claude-sonnet-4-5-20250929": {"1": "T cells"},
+            },
+            species="human",
+            models=[
+                {"provider": "openai", "model": "gpt-5.2"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+            ],
+            api_keys={"openai": "key-a", "anthropic": "key-b"},
+            max_discussion_rounds=1,
+            use_cache=False,
+        )
+
+        assert set(results.keys()) == {"1"}
+        assert results["1"] == "T cells"
+        assert cp["1"] == 0.9
+        assert entropy["1"] == 0.1
+
+    @patch("mllmcelltype.consensus.check_consensus_for_discussion_round")
+    @patch("mllmcelltype.consensus.get_model_response")
+    def test_process_controversial_clusters_skips_invalid_model_prediction_payloads(
+        self,
+        mock_get_model_response,
+        mock_check_round_consensus,
+    ):
+        """Test malformed model_predictions entries are skipped instead of crashing."""
+        mock_get_model_response.return_value = "T cells"
+        mock_check_round_consensus.return_value = {
+            "reached": True,
+            "consensus_proportion": 0.9,
+            "entropy": 0.1,
+            "majority_prediction": "T cells",
+        }
+
+        results, _history, cp, entropy = process_controversial_clusters(
+            marker_genes={"1": ["CD3D"]},
+            controversial_clusters=["1"],
+            model_predictions={
+                "openai:gpt-5.2": ["not-a-dict"],  # type: ignore[dict-item]
+                "anthropic:claude-sonnet-4-5-20250929": {"1": "T cells"},
+            },
+            species="human",
+            models=[
+                {"provider": "openai", "model": "gpt-5.2"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+            ],
+            api_keys={"openai": "key-a", "anthropic": "key-b"},
+            max_discussion_rounds=1,
+            use_cache=False,
+        )
+
+        assert results["1"] == "T cells"
+        assert cp["1"] == 0.9
+        assert entropy["1"] == 0.1
+
     def test_process_controversial_clusters_missing_markers_returns_unknown(self):
         """Test controversial cluster without marker genes returns canonical Unknown."""
         results, history, cp, entropy = process_controversial_clusters(
@@ -1259,6 +1417,46 @@ class TestConsensus:
         assert results["1"] == "CD4+ T cells"
         assert cp["1"] == DEFAULT_FALLBACK_CONSENSUS_PROPORTION
         assert entropy["1"] == DEFAULT_FALLBACK_ENTROPY
+
+    @patch("mllmcelltype.consensus._extract_cell_type_via_llm")
+    @patch("mllmcelltype.consensus.get_model_response")
+    def test_process_controversial_clusters_single_valid_structured_response_skips_llm_extraction(
+        self,
+        mock_get_model_response,
+        mock_extract_cell_type,
+    ):
+        """Test single valid structured response resolves without LLM extraction call."""
+
+        def response_side_effect(**kwargs):
+            if kwargs["provider"] == "openai":
+                return "CELL TYPE: T cells\nGROUNDS: CD3D, IL7R"
+            raise RuntimeError("provider timeout")
+
+        mock_get_model_response.side_effect = response_side_effect
+        mock_extract_cell_type.side_effect = AssertionError("LLM extraction should not be called")
+
+        results, history, cp, entropy = process_controversial_clusters(
+            marker_genes={"1": ["CD3D", "IL7R"]},
+            controversial_clusters=["1"],
+            model_predictions={
+                "openai:gpt-5.2": {"1": "T cells"},
+                "anthropic:claude-sonnet-4-5-20250929": {"1": "T cells"},
+            },
+            species="human",
+            models=[
+                {"provider": "openai", "model": "gpt-5.2"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+            ],
+            api_keys={"openai": "key-a", "anthropic": "key-b"},
+            max_discussion_rounds=1,
+            use_cache=False,
+        )
+
+        assert results["1"] == "T cells"
+        assert cp["1"] == DEFAULT_FALLBACK_CONSENSUS_PROPORTION
+        assert entropy["1"] == DEFAULT_FALLBACK_ENTROPY
+        assert len(history["1"]) == 1
+        mock_extract_cell_type.assert_not_called()
 
     def test_process_controversial_clusters_requires_at_least_two_models(self):
         """Test discussion flow exits early when fewer than 2 runnable models are available."""

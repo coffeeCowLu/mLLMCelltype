@@ -244,7 +244,7 @@ def _collect_valid_round_responses(round_responses: dict[str, Any]) -> dict[str,
     for model_key, response in round_responses.items():
         response_text = response if isinstance(response, str) else str(response)
         response_text = response_text.strip()
-        if not response_text or response_text.startswith("Error:"):
+        if not response_text or response_text.casefold().startswith("error:"):
             continue
         valid_responses[model_key] = response_text
     return valid_responses
@@ -1330,8 +1330,25 @@ def check_consensus_for_discussion_round(
         consensus_model_dict, api_keys
     )
 
-    # Single response — extract label but cannot establish consensus
+    # Single response — first try deterministic structured extraction,
+    # then optionally use LLM extraction as a fallback enhancer.
     if len(valid_round_responses) == 1:
+        deterministic_result = _fallback_discussion_consensus_from_responses(
+            valid_round_responses=valid_round_responses,
+            consensus_threshold=consensus_threshold,
+            entropy_threshold=entropy_threshold,
+        )
+        deterministic_prediction = _normalize_predicted_label(
+            deterministic_result.get("majority_prediction")
+        )
+        if deterministic_prediction:
+            write_log(
+                "Only 1 response, using structured label extraction without LLM",
+                level="info",
+            )
+            deterministic_result["majority_prediction"] = deterministic_prediction
+            return deterministic_result
+
         write_log("Only 1 response, extracting label via LLM", level="warning")
         single_response = next(iter(valid_round_responses.values()))
         cell_type = _extract_cell_type_via_llm(
@@ -1703,6 +1720,68 @@ def _store_cluster_discussion_outcome(
     updated_entropy[cluster_id] = current_h
 
 
+def _normalize_discussion_model_predictions(
+    model_predictions: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Normalize discussion model predictions to trimmed model/cluster keys."""
+    normalized_predictions: dict[str, dict[str, Any]] = {}
+    for raw_model_name, raw_predictions in model_predictions.items():
+        model_name = str(raw_model_name).strip() or str(raw_model_name)
+        if not isinstance(raw_predictions, dict):
+            write_log(
+                f"Model '{model_name}' discussion predictions must be a dict, "
+                f"got {type(raw_predictions).__name__}; skipping",
+                level="warning",
+            )
+            continue
+
+        normalized_cluster_map: dict[str, Any] = {}
+        for raw_cluster_id, annotation in raw_predictions.items():
+            if raw_cluster_id is None or raw_cluster_id != raw_cluster_id:
+                continue
+            cluster_id = str(raw_cluster_id).strip()
+            if cluster_id:
+                normalized_cluster_map[cluster_id] = annotation
+
+        if model_name in normalized_predictions:
+            write_log(
+                f"Duplicate discussion model name after normalization: '{model_name}', "
+                "merging cluster predictions",
+                level="warning",
+            )
+            normalized_predictions[model_name].update(normalized_cluster_map)
+        else:
+            normalized_predictions[model_name] = normalized_cluster_map
+
+    return normalized_predictions
+
+
+def _normalize_controversial_cluster_ids(controversial_clusters: list[Any]) -> list[str]:
+    """Normalize controversial cluster IDs with trim/filter/dedup semantics."""
+    normalized_clusters: list[str] = []
+    seen: set[str] = set()
+    skipped_invalid = 0
+    for raw_cluster_id in controversial_clusters:
+        if raw_cluster_id is None or raw_cluster_id != raw_cluster_id:
+            skipped_invalid += 1
+            continue
+        cluster_id = str(raw_cluster_id).strip()
+        if not cluster_id:
+            skipped_invalid += 1
+            continue
+        if cluster_id not in seen:
+            seen.add(cluster_id)
+            normalized_clusters.append(cluster_id)
+
+    if skipped_invalid:
+        write_log(
+            f"Ignored {skipped_invalid} invalid controversial cluster IDs after normalization",
+            level="warning",
+        )
+
+    return normalized_clusters
+
+
 def process_controversial_clusters(
     marker_genes: dict[str, list[str]],
     controversial_clusters: list[str],
@@ -1762,13 +1841,10 @@ def process_controversial_clusters(
 
     api_keys = _normalize_api_keys(api_keys)
 
-    # Normalize cluster keys to str for consistent lookups
+    # Normalize cluster keys for consistent lookups.
     marker_genes = normalize_marker_genes_keys(marker_genes)
-    model_predictions = {
-        model: {str(k): v for k, v in preds.items()}
-        for model, preds in model_predictions.items()
-    }
-    controversial_clusters = [str(c) for c in controversial_clusters]
+    model_predictions = _normalize_discussion_model_predictions(model_predictions)
+    controversial_clusters = _normalize_controversial_cluster_ids(controversial_clusters)
 
     results = {}
     discussion_history = {}
