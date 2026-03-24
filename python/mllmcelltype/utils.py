@@ -530,13 +530,19 @@ def format_results(
 
     # Fast path: dictionary results (legacy/new cache compatibility).
     if isinstance(results, dict):
-        normalized = {str(k).strip(): _coerce_annotation(v) for k, v in results.items()}
         resolved_annotations: dict[str, str] = {}
-        for raw_cluster_id, annotation in normalized.items():
+        for raw_cluster_id, raw_annotation in results.items():
+            normalized_cluster_id = str(raw_cluster_id).strip()
+            if not normalized_cluster_id:
+                continue
             target_cluster = _resolve_target_cluster(raw_cluster_id, candidate_to_cluster)
             if not target_cluster:
                 continue
-            _store_annotation_if_better(resolved_annotations, target_cluster, annotation)
+            _store_annotation_if_better(
+                resolved_annotations,
+                target_cluster,
+                _coerce_annotation(raw_annotation),
+            )
 
         formatted = {}
         for cluster in clusters:

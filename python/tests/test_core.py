@@ -509,6 +509,21 @@ def test_format_results_dict_input_strips_whitespace_keys():
     assert formatted == {"1": "T cells"}
 
 
+def test_format_results_dict_input_normalized_key_collision_prefers_known_over_unknown():
+    """Test normalized dict-key collisions keep known labels over Unknown sentinels."""
+    clusters = ["1"]
+
+    formatted_a = format_results({1: "T cells", "1": "Unknown"}, clusters)
+    formatted_b = format_results({"1": "Unknown", 1: "T cells"}, clusters)
+    formatted_c = format_results({" 1 ": "Unknown", "1": "T cells"}, clusters)
+    formatted_d = format_results({" 1 ": "T cells", "1": "Unknown"}, clusters)
+
+    assert formatted_a == {"1": "T cells"}
+    assert formatted_b == {"1": "T cells"}
+    assert formatted_c == {"1": "T cells"}
+    assert formatted_d == {"1": "T cells"}
+
+
 def test_format_results_json_direct_mapping():
     """Test parsing direct JSON mapping format."""
     json_response = ['{"1": "T cells", "2": "B cells"}']
