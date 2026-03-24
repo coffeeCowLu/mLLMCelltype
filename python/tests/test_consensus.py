@@ -1380,6 +1380,61 @@ class TestConsensus:
         assert cp["1"] == 0.9
         assert entropy["1"] == 0.1
 
+    @patch("mllmcelltype.consensus.load_api_key")
+    @patch("mllmcelltype.consensus.check_consensus_for_discussion_round")
+    @patch("mllmcelltype.consensus.get_model_response")
+    def test_process_controversial_clusters_consensus_provider_key_autoloaded(
+        self,
+        mock_get_model_response,
+        mock_check_round_consensus,
+        mock_load_api_key,
+    ):
+        """Test direct discussion API autoloads consensus-model provider key from environment."""
+        mock_get_model_response.return_value = "CELL TYPE: T cells\nGROUNDS: CD3D"
+
+        captured: dict[str, object] = {}
+
+        def check_round_side_effect(**kwargs):
+            captured["api_keys"] = kwargs["api_keys"]
+            captured["consensus_model"] = kwargs["consensus_model"]
+            return {
+                "reached": True,
+                "consensus_proportion": 0.9,
+                "entropy": 0.1,
+                "majority_prediction": "T cells",
+            }
+
+        mock_check_round_consensus.side_effect = check_round_side_effect
+        mock_load_api_key.side_effect = lambda provider: "anth-key" if provider == "anthropic" else None
+
+        results, _history, cp, entropy = process_controversial_clusters(
+            marker_genes={"1": ["CD3D"]},
+            controversial_clusters=["1"],
+            model_predictions={
+                "openai:gpt-5.2": {"1": "T cells"},
+                "zhipu:glm-4-plus": {"1": "T cells"},
+            },
+            species="human",
+            models=[
+                {"provider": "openai", "model": "gpt-5.2"},
+                {"provider": "zhipu", "model": "glm-4-plus"},
+            ],
+            api_keys={"openai": "key-a", "zhipu": "key-z"},
+            consensus_model={"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+            max_discussion_rounds=1,
+            use_cache=False,
+        )
+
+        assert results["1"] == "T cells"
+        assert cp["1"] == 0.9
+        assert entropy["1"] == 0.1
+        assert captured["consensus_model"] == {
+            "provider": "anthropic",
+            "model": "claude-sonnet-4-5-20250929",
+        }
+        assert isinstance(captured["api_keys"], dict)
+        assert captured["api_keys"]["anthropic"] == "anth-key"  # type: ignore[index]
+
     def test_process_controversial_clusters_missing_markers_returns_unknown(self):
         """Test controversial cluster without marker genes returns canonical Unknown."""
         results, history, cp, entropy = process_controversial_clusters(

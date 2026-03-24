@@ -1952,6 +1952,8 @@ def process_controversial_clusters(
     _validate_models_spec(models)
 
     api_keys = _normalize_api_keys(api_keys)
+    consensus_model_dict = _normalize_consensus_model_spec(consensus_model)
+    api_keys = _ensure_consensus_model_api_key(api_keys, consensus_model_dict)
 
     # Normalize cluster keys for consistent lookups.
     marker_genes = normalize_marker_genes_keys(marker_genes)
@@ -2000,7 +2002,7 @@ def process_controversial_clusters(
                 consensus_threshold=consensus_threshold,
                 entropy_threshold=entropy_threshold,
                 api_keys=api_keys,
-                consensus_model=consensus_model,
+                consensus_model=consensus_model_dict,
                 use_cache=use_cache,
                 force_rerun=force_rerun,
                 cache_dir=cache_dir,
