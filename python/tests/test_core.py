@@ -835,6 +835,62 @@ def test_format_discussion_report_single_cluster():
     assert "T cells" in report
 
 
+def test_format_discussion_report_single_cluster_strips_cluster_id_whitespace():
+    """Test report cluster filter accepts whitespace-padded IDs."""
+    from mllmcelltype.consensus import format_discussion_report
+
+    mock_results = {
+        "consensus": {"0": "T cells", "1": "B cells"},
+        "consensus_proportion": {"0": 0.8, "1": 1.0},
+        "entropy": {"0": 0.5, "1": 0.0},
+        "controversial_clusters": [],
+        "resolved": {},
+        "model_annotations": {"gpt-5": {"0": "T cells", "1": "B cells"}},
+        "discussion_logs": {},
+        "metadata": {
+            "timestamp": "2026-01-26 12:00:00",
+            "species": "human",
+            "tissue": "blood",
+            "models": ["gpt-5"],
+            "consensus_threshold": 0.7,
+            "max_discussion_rounds": 3,
+        },
+    }
+
+    report = format_discussion_report(mock_results, cluster_id=" 0 ")
+
+    assert "CLUSTER 0" in report
+    assert "CLUSTER 1" not in report
+
+
+def test_format_discussion_report_single_cluster_accepts_numeric_cluster_id():
+    """Test report cluster filter tolerates numeric cluster IDs."""
+    from mllmcelltype.consensus import format_discussion_report
+
+    mock_results = {
+        "consensus": {"0": "T cells", "1": "B cells"},
+        "consensus_proportion": {"0": 0.8, "1": 1.0},
+        "entropy": {"0": 0.5, "1": 0.0},
+        "controversial_clusters": [],
+        "resolved": {},
+        "model_annotations": {"gpt-5": {"0": "T cells", "1": "B cells"}},
+        "discussion_logs": {},
+        "metadata": {
+            "timestamp": "2026-01-26 12:00:00",
+            "species": "human",
+            "tissue": "blood",
+            "models": ["gpt-5"],
+            "consensus_threshold": 0.7,
+            "max_discussion_rounds": 3,
+        },
+    }
+
+    report = format_discussion_report(mock_results, cluster_id=0)  # type: ignore[arg-type]
+
+    assert "CLUSTER 0" in report
+    assert "CLUSTER 1" not in report
+
+
 def test_format_discussion_report_no_discussion():
     """Test format_discussion_report when no discussion was needed."""
     from mllmcelltype.consensus import format_discussion_report
@@ -864,6 +920,35 @@ def test_format_discussion_report_no_discussion():
 
     assert "NO DISCUSSION NEEDED" in report
     assert "Consensus reached with initial predictions" in report
+
+
+def test_format_discussion_report_metadata_formats_model_dicts_and_none_fields():
+    """Test metadata formatting avoids malformed model labels and None display."""
+    from mllmcelltype.consensus import format_discussion_report
+
+    mock_results = {
+        "consensus": {"0": "T cells"},
+        "consensus_proportion": {"0": 1.0},
+        "entropy": {"0": 0.0},
+        "controversial_clusters": [],
+        "resolved": {},
+        "model_annotations": {"openai:gpt-5.2": {"0": "T cells"}},
+        "discussion_logs": {},
+        "metadata": {
+            "timestamp": "2026-01-26 12:00:00",
+            "species": "human",
+            "tissue": None,
+            "models": [{"model": "gpt-5.2"}],
+            "consensus_threshold": 0.7,
+            "max_discussion_rounds": 3,
+        },
+    }
+
+    report = format_discussion_report(mock_results)
+
+    assert "Models: gpt-5.2" in report
+    assert "Models: :gpt-5.2" not in report
+    assert "Tissue: N/A" in report
 
 
 def test_format_discussion_report_save_to_file():

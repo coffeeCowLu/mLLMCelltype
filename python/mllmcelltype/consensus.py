@@ -2439,23 +2439,54 @@ def interactive_consensus_annotation(
     )
 
 
+def _format_metadata_model_name(raw_model: Any) -> str:
+    """Format one metadata model descriptor into a human-readable name."""
+    if isinstance(raw_model, str):
+        return raw_model
+    if not isinstance(raw_model, dict):
+        return str(raw_model)
+
+    provider = str(raw_model.get("provider", "")).strip()
+    model = str(raw_model.get("model", "")).strip()
+    if provider and model:
+        return f"{provider}:{model}"
+    if model:
+        return model
+    if provider:
+        return provider
+    return str(raw_model)
+
+
 def _format_metadata_model_names(raw_models: list[Any]) -> list[str]:
     """Format model descriptors from metadata to human-readable names."""
-    return [
-        model if isinstance(model, str) else f"{model.get('provider', '')}:{model.get('model', '')}"
-        for model in raw_models
-    ]
+    return [_format_metadata_model_name(model) for model in raw_models]
+
+
+def _display_metadata_value(value: Any) -> Any:
+    """Normalize optional metadata values for report display."""
+    if value is None:
+        return "N/A"
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or "N/A"
+    return value
 
 
 def _resolve_clusters_to_report(
     *,
     consensus: dict[str, Any],
     cluster_id: str | None,
-) -> list[str]:
+) -> list[Any]:
     """Resolve report target clusters with deterministic ordering."""
     if cluster_id is not None:
-        return [cluster_id] if cluster_id in consensus else []
-    return sorted(consensus.keys(), key=cluster_sort_key)
+        target_cluster = str(cluster_id).strip()
+        if not target_cluster:
+            return []
+        for existing_cluster in consensus:
+            if str(existing_cluster).strip() == target_cluster:
+                return [existing_cluster]
+        return []
+    return sorted(consensus.keys(), key=lambda cid: cluster_sort_key(str(cid).strip()))
 
 
 def _append_report_header(
@@ -2468,13 +2499,17 @@ def _append_report_header(
     lines.append(separator)
     lines.append("MULTI-LLM CONSENSUS DISCUSSION REPORT")
     lines.append(separator)
-    lines.append(f"Generated: {metadata.get('timestamp', 'N/A')}")
-    lines.append(f"Species: {metadata.get('species', 'N/A')}")
-    lines.append(f"Tissue: {metadata.get('tissue', 'N/A')}")
+    lines.append(f"Generated: {_display_metadata_value(metadata.get('timestamp'))}")
+    lines.append(f"Species: {_display_metadata_value(metadata.get('species'))}")
+    lines.append(f"Tissue: {_display_metadata_value(metadata.get('tissue'))}")
     model_names = _format_metadata_model_names(metadata.get("models", []))
     lines.append(f"Models: {', '.join(model_names)}")
-    lines.append(f"Consensus Threshold: {metadata.get('consensus_threshold', 'N/A')}")
-    lines.append(f"Max Discussion Rounds: {metadata.get('max_discussion_rounds', 'N/A')}")
+    lines.append(
+        f"Consensus Threshold: {_display_metadata_value(metadata.get('consensus_threshold'))}"
+    )
+    lines.append(
+        f"Max Discussion Rounds: {_display_metadata_value(metadata.get('max_discussion_rounds'))}"
+    )
     lines.append("")
 
 
@@ -2482,7 +2517,7 @@ def _append_initial_predictions_section(
     *,
     lines: list[str],
     model_annotations: dict[str, dict[str, Any]],
-    cluster_id: str,
+    cluster_id: Any,
 ) -> None:
     """Append initial prediction section for one cluster."""
     lines.append("")
@@ -2501,7 +2536,7 @@ def _append_discussion_section(
     *,
     lines: list[str],
     discussion_logs: dict[str, list[dict[str, Any]]],
-    cluster_id: str,
+    cluster_id: Any,
 ) -> None:
     """Append discussion rounds section for one cluster."""
     rounds = discussion_logs.get(cluster_id)
@@ -2530,13 +2565,16 @@ def _append_discussion_section(
 def _append_final_result_section(
     *,
     lines: list[str],
-    cluster_id: str,
+    cluster_id: Any,
     consensus: dict[str, Any],
     consensus_proportion: dict[str, Any],
     entropy: dict[str, Any],
     controversial_clusters: list[str],
 ) -> None:
     """Append final result section for one cluster."""
+    normalized_cluster_id = str(cluster_id).strip()
+    controversial_cluster_set = {str(cid).strip() for cid in controversial_clusters}
+
     lines.append("")
     lines.append("-" * 40)
     lines.append("FINAL RESULT")
@@ -2545,7 +2583,7 @@ def _append_final_result_section(
     lines.append(f"  Consensus Proportion: {consensus_proportion.get(cluster_id, 'N/A')}")
     lines.append(f"  Entropy: {entropy.get(cluster_id, 'N/A')}")
     lines.append(
-        f"  Was Controversial: {'Yes' if cluster_id in controversial_clusters else 'No'}"
+        f"  Was Controversial: {'Yes' if normalized_cluster_id in controversial_cluster_set else 'No'}"
     )
     lines.append("")
 
