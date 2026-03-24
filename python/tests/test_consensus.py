@@ -514,11 +514,30 @@ class TestConsensus:
         """Test multi-response round falls back cleanly when LLM fails."""
         mock_call_llm.return_value = None
         result = check_consensus_for_discussion_round(
-            round_responses={"modelA": "T cells", "modelB": "B cells"},
+            round_responses={
+                "modelA": "Given marker ambiguity, this could be activated lymphocytes.",
+                "modelB": "Insufficient evidence for a confident subtype assignment.",
+            },
             api_keys={"openai": "test-key"},
         )
         assert result["reached"] is False
         assert result["majority_prediction"] == "Unknown"
+
+    @patch("mllmcelltype.consensus._call_llm_with_retry")
+    def test_check_consensus_for_discussion_round_llm_failure_plain_label_lines_use_fallback_majority(
+        self, mock_call_llm
+    ):
+        """Test fallback can recover consensus from plain single-line label responses."""
+        mock_call_llm.return_value = None
+        result = check_consensus_for_discussion_round(
+            round_responses={"m1": "T cells", "m2": "B cells", "m3": "T cells"},
+            api_keys={"openai": "test-key"},
+            consensus_threshold=0.7,
+            entropy_threshold=1.0,
+        )
+        assert result["majority_prediction"] == "T cells"
+        assert result["consensus_proportion"] == pytest.approx(2 / 3)
+        assert result["reached"] is False
 
     @patch("mllmcelltype.consensus._call_llm_with_retry")
     def test_check_consensus_for_discussion_round_llm_failure_uses_structured_label_fallback(

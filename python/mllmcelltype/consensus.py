@@ -1083,6 +1083,76 @@ def _extract_structured_cell_type_label(response_text: str) -> str | None:
     return None
 
 
+def _extract_conservative_free_text_label(response_text: str) -> str | None:
+    """Extract a label from simple free-text responses using conservative heuristics."""
+    lines = [line.strip() for line in response_text.splitlines() if line.strip()]
+    if len(lines) != 1:
+        return None
+
+    single_line = re.sub(r"^\s*(?:[-*]\s*)", "", lines[0]).strip()
+    if not single_line:
+        return None
+
+    # Strip common uncertainty prefixes while keeping the candidate label.
+    single_line = re.sub(
+        r"(?i)^(?:likely|probably|possibly|maybe|it\s+is|it's|seems\s+to\s+be|appears\s+to\s+be)\s+",
+        "",
+        single_line,
+    ).strip()
+    if not single_line:
+        return None
+
+    # Avoid treating full narrative sentences as labels.
+    if any(punct in single_line for punct in ".!?;"):
+        return None
+    if len(single_line) > 80 or len(single_line.split()) > 10:
+        return None
+
+    # Reject narrative/uncertainty phrasing that commonly appears in explanations.
+    lowered_tokens = {
+        token
+        for token in re.split(r"[^A-Za-z0-9+]+", single_line.lower())
+        if token
+    }
+    if lowered_tokens & {
+        "candidate",
+        "likely",
+        "probably",
+        "possibly",
+        "maybe",
+        "uncertain",
+        "insufficient",
+        "evidence",
+        "suggest",
+        "suggests",
+        "given",
+        "without",
+        "label",
+        "free",
+        "text",
+        "could",
+        "might",
+    }:
+        return None
+
+    # Keep this heuristic strict: only accept obvious cell-type-like labels.
+    lower_line = single_line.lower()
+    has_cell_word = re.search(r"\bcell(?:s)?\b", lower_line) is not None
+    ends_with_known_cell_type = re.search(
+        r"\b("
+        r"lymphocyte|lymphocytes|monocyte|monocytes|macrophage|macrophages|"
+        r"neutrophil|neutrophils|fibroblast|fibroblasts|astrocyte|astrocytes|"
+        r"neuron|neurons|plasmablast|plasmablasts|megakaryocyte|megakaryocytes|"
+        r"erythrocyte|erythrocytes|endothelial|epithelial|myeloid|treg|tregs|nk"
+        r")\b$",
+        lower_line,
+    ) is not None
+    if not (has_cell_word or ends_with_known_cell_type):
+        return None
+
+    return _normalize_predicted_label(single_line)
+
+
 def _fallback_discussion_consensus_from_responses(
     *,
     valid_round_responses: dict[str, str],
@@ -1093,6 +1163,8 @@ def _fallback_discussion_consensus_from_responses(
     extracted_labels = []
     for response in valid_round_responses.values():
         label = _extract_structured_cell_type_label(response)
+        if label is None:
+            label = _extract_conservative_free_text_label(response)
         if label:
             extracted_labels.append(label)
 
