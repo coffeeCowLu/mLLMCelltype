@@ -91,6 +91,17 @@ class TestConsensus:
 
         assert result["discussion_round_counts"] == {"1": 2, "2": 0}
 
+    def test_build_interactive_result_round_counts_include_controversial_without_logs(self):
+        """Test round-count map includes explicit 0 for controversial clusters lacking logs."""
+        result = _build_interactive_result(
+            metadata={"timestamp": "2026-03-24 00:00:00"},
+            controversial_clusters=["1", 2],  # type: ignore[list-item]
+            discussion_logs={"1": [{"model_a": "round 1"}]},
+        )
+
+        assert result["controversial_clusters"] == ["1", "2"]
+        assert result["discussion_round_counts"] == {"1": 1, "2": 0}
+
     def test_normalize_api_keys_strips_and_drops_blank(self):
         """Test api key normalization trims and removes blank entries."""
         normalized = _normalize_api_keys(

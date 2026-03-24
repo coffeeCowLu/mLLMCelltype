@@ -274,16 +274,20 @@ def _build_interactive_result(
 ) -> dict[str, Any]:
     """Build normalized return payload for interactive consensus."""
     normalized_discussion_logs = discussion_logs or {}
+    normalized_controversial_clusters = [str(cluster_id) for cluster_id in (controversial_clusters or [])]
     discussion_round_counts = {
+        cluster_id: 0 for cluster_id in normalized_controversial_clusters
+    }
+    discussion_round_counts.update({
         str(cluster_id): len(rounds) if isinstance(rounds, list) else 0
         for cluster_id, rounds in normalized_discussion_logs.items()
-    }
+    })
 
     result = {
         "consensus": consensus or {},
         "consensus_proportion": consensus_proportion or {},
         "entropy": entropy or {},
-        "controversial_clusters": controversial_clusters or [],
+        "controversial_clusters": normalized_controversial_clusters,
         "resolved": resolved or {},
         "model_annotations": model_annotations or {},
         "discussion_logs": normalized_discussion_logs,
