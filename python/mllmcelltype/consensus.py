@@ -192,9 +192,20 @@ def _normalize_single_prediction_map(model_name: str, raw_results: Any) -> dict[
     for raw_cluster, raw_annotation in raw_results.items():
         if raw_cluster is None or raw_annotation is None:
             continue
+        cluster_id = str(raw_cluster).strip()
+        if not cluster_id:
+            continue
         annotation = str(raw_annotation).strip()
         if annotation and not is_unknown_annotation(annotation):
-            cluster_map[str(raw_cluster)] = annotation
+            existing = cluster_map.get(cluster_id)
+            if existing is None or existing == annotation:
+                cluster_map[cluster_id] = annotation
+            else:
+                write_log(
+                    f"Model '{model_name}' has conflicting annotations for normalized cluster "
+                    f"'{cluster_id}', keeping first value '{existing}' and ignoring '{annotation}'",
+                    level="warning",
+                )
     return cluster_map
 
 
@@ -939,7 +950,9 @@ def _collect_candidate_clusters_from_raw_predictions(predictions: dict[str, Any]
         for raw_cluster in raw_results:
             if raw_cluster is None:
                 continue
-            cluster_ids.add(str(raw_cluster))
+            cluster_id = str(raw_cluster).strip()
+            if cluster_id:
+                cluster_ids.add(cluster_id)
     return sorted(cluster_ids, key=cluster_sort_key)
 
 

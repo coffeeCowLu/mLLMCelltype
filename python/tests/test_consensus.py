@@ -1407,6 +1407,25 @@ class TestConsensus:
         assert consensus_proportion["0"] == 1.0
         assert consensus_proportion["1"] == 1.0
 
+    def test_check_consensus_whitespace_cluster_keys_are_normalized(self):
+        """Test whitespace-padded cluster keys are trimmed and merged."""
+        predictions = {
+            "model_a": {" 1 ": "T cells", "2": "B cells"},
+            "model_b": {"1": "T cells", "2": "B cells"},
+            "model_c": {"\t1\t": "T cells", "2": "B cells"},
+        }
+
+        consensus, consensus_proportion, _entropy, _controversial = check_consensus(
+            predictions=predictions,
+            api_keys={},
+        )
+
+        assert set(consensus.keys()) == {"1", "2"}
+        assert consensus["1"] == "T cells"
+        assert consensus["2"] == "B cells"
+        assert consensus_proportion["1"] == 1.0
+        assert consensus_proportion["2"] == 1.0
+
     @patch("mllmcelltype.consensus.annotate_clusters")
     @patch("mllmcelltype.consensus.check_consensus")
     def test_interactive_consensus_annotation_merges_mixed_marker_cluster_keys(
