@@ -432,6 +432,11 @@ class TestConsensus:
         assert result["entropy"] == DEFAULT_FALLBACK_ENTROPY
         assert result["majority_prediction"] == "Unknown"
 
+    def test_check_consensus_for_discussion_round_invalid_input_type_raises(self):
+        """Test non-dict discussion responses fail fast with clear error."""
+        with pytest.raises(ValueError, match="round_responses must be a dict"):
+            check_consensus_for_discussion_round(round_responses=["invalid"], api_keys={})  # type: ignore[arg-type]
+
     @patch("mllmcelltype.consensus._extract_cell_type_via_llm")
     def test_check_consensus_for_discussion_round_single_response(self, mock_extract):
         """Test single-response round uses extraction path."""

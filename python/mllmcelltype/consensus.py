@@ -240,6 +240,11 @@ def _normalize_predictions(
 
 def _collect_valid_round_responses(round_responses: dict[str, Any]) -> dict[str, str]:
     """Normalize round responses and drop provider error outputs."""
+    if not isinstance(round_responses, dict):
+        raise ValueError(
+            "round_responses must be a dict mapping model name to response text"
+        )
+
     valid_responses: dict[str, str] = {}
     for model_key, response in round_responses.items():
         response_text = response if isinstance(response, str) else str(response)
