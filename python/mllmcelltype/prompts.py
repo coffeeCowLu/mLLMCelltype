@@ -129,8 +129,14 @@ def create_prompt(
     """
     write_log(f"Creating prompt for {len(marker_genes)} clusters")
 
+    # Validate custom template type and use default template when empty.
+    if prompt_template is not None and not isinstance(prompt_template, str):
+        raise ValueError(
+            f"prompt_template must be a string or None, got {type(prompt_template).__name__}"
+        )
+
     # Use default template if not provided
-    if not prompt_template:
+    if not prompt_template or not prompt_template.strip():
         prompt_template = DEFAULT_PROMPT_TEMPLATE
 
     # Default tissue if none provided

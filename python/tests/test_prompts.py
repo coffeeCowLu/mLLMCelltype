@@ -88,6 +88,16 @@ Marker genes: {markers}"""
                 prompt_template=bad_template,
             )
 
+    def test_create_prompt_with_non_string_template_raises_clear_error(self):
+        """Test non-string custom templates fail with explicit type guidance."""
+        with pytest.raises(ValueError, match="prompt_template must be a string or None"):
+            create_prompt(
+                marker_genes=self.marker_genes,
+                species="human",
+                tissue="blood",
+                prompt_template=123,  # type: ignore[arg-type]
+            )
+
     def test_create_initial_discussion_prompt(self):
         """Test initial discussion prompt creation."""
         cluster_id = "1"
