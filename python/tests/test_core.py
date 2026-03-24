@@ -513,6 +513,26 @@ def test_format_results_dict_input_supports_reverse_cluster_alias_mapping():
     assert formatted == {"1": "T cells"}
 
 
+def test_format_results_preserves_exact_cluster_id_over_alias_collision_dict():
+    """Test exact cluster IDs are not shadowed by alias expansion collisions."""
+    results = {"Cluster_1": "B cells", "1": "T cells"}
+    clusters = ["1", "Cluster_1"]
+
+    formatted = format_results(results, clusters)
+
+    assert formatted == {"1": "T cells", "Cluster_1": "B cells"}
+
+
+def test_format_results_preserves_exact_cluster_id_over_alias_collision_labeled():
+    """Test labeled lines keep exact cluster IDs when alias names overlap."""
+    results = ["Cluster_1: B cells", "1: T cells"]
+    clusters = ["1", "Cluster_1"]
+
+    formatted = format_results(results, clusters)
+
+    assert formatted == {"1": "T cells", "Cluster_1": "B cells"}
+
+
 def test_format_results_dict_input_strips_whitespace_keys():
     """Test dict keys with surrounding whitespace are normalized."""
     results = {" 1 ": "T cells"}

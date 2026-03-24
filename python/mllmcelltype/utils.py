@@ -465,9 +465,11 @@ def format_results(
 
     def _parse_labeled_line(line: str) -> tuple[str, str] | None:
         patterns = [
-            r"(?i)^\s*(?:[-*]\s*)?(?:cluster[_\s]*)?([A-Za-z0-9_.-]+)\s*(?:[:\-]|\uFF1A)\s*(.+?)\s*$",
-            r"(?i)^\s*(?:[-*]\s*)?(?:cluster[_\s]*)?([A-Za-z0-9_.-]+)\)\s*(.+?)\s*$",
-            r"(?i)^\s*(?:[-*]\s*)?(?:cluster[_\s]*)?([A-Za-z0-9_-]+)\.\s*(.+?)\s*$",
+            # Keep the left identifier verbatim; alias normalization happens later.
+            # This avoids misparsing exact IDs like "Cluster_1" as "1".
+            r"^\s*(?:[-*]\s*)?(.+?)\s*(?:[:\-]|\uFF1A)\s*(.+?)\s*$",
+            r"^\s*(?:[-*]\s*)?([A-Za-z0-9_.-]+)\)\s*(.+?)\s*$",
+            r"^\s*(?:[-*]\s*)?([A-Za-z0-9_.-]+)\.\s*(.+?)\s*$",
         ]
         for pattern in patterns:
             match = re.match(pattern, line)
@@ -491,9 +493,21 @@ def format_results(
 
     def _build_requested_cluster_lookup(target_clusters: list[str]) -> dict[str, str]:
         lookup: dict[str, str] = {}
+        # Pass 1: exact IDs take precedence to avoid alias collisions
+        # (e.g., requested clusters ['1', 'Cluster_1']).
+        for cluster in target_clusters:
+            cluster_str = str(cluster)
+            if not cluster_str:
+                continue
+            lookup.setdefault(cluster_str, cluster_str)
+            lookup.setdefault(cluster_str.lower(), cluster_str)
+
+        # Pass 2: add alias forms without overriding exact mappings.
         for cluster in target_clusters:
             cluster_str = str(cluster)
             for candidate in _build_cluster_aliases(cluster_str):
+                if candidate == cluster_str:
+                    continue
                 lookup.setdefault(candidate, cluster_str)
                 lookup.setdefault(candidate.lower(), cluster_str)
         return lookup
