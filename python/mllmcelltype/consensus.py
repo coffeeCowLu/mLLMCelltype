@@ -254,6 +254,8 @@ def _collect_valid_round_responses(round_responses: dict[str, Any]) -> dict[str,
         response_text = response_text.strip()
         if not response_text or response_text.casefold().startswith("error:"):
             continue
+        if is_unknown_annotation(response_text):
+            continue
         valid_responses[model_key] = response_text
     return valid_responses
 
@@ -1168,6 +1170,25 @@ def _extract_conservative_free_text_label(response_text: str) -> str | None:
     return _normalize_predicted_label(single_line)
 
 
+def _extract_conservative_multiline_label(response_text: str) -> str | None:
+    """Extract a conservative label candidate from multiline free-text responses."""
+    lines = [line.strip() for line in response_text.splitlines() if line.strip()]
+    if len(lines) <= 1:
+        return None
+
+    for line in lines:
+        candidate = re.sub(r"^\s*(?:[-*]\s*)", "", line).strip()
+        if not candidate:
+            continue
+        if ":" in candidate:
+            # Structured key-value lines are handled by structured extraction.
+            continue
+        label = _extract_conservative_free_text_label(candidate)
+        if label:
+            return label
+    return None
+
+
 def _fallback_discussion_consensus_from_responses(
     *,
     valid_round_responses: dict[str, str],
@@ -1180,6 +1201,8 @@ def _fallback_discussion_consensus_from_responses(
         label = _extract_structured_cell_type_label(response)
         if label is None:
             label = _extract_conservative_free_text_label(response)
+        if label is None:
+            label = _extract_conservative_multiline_label(response)
         if label:
             extracted_labels.append(label)
 
@@ -2555,7 +2578,10 @@ def _append_initial_predictions_section(
     lines.append("INITIAL PREDICTIONS")
     lines.append("-" * 40)
 
-    for model_name, predictions in model_annotations.items():
+    for raw_model_name, predictions in model_annotations.items():
+        model_name = str(raw_model_name)
+        if not isinstance(predictions, dict):
+            continue
         if cluster_id not in predictions:
             continue
         lines.append(f"\n[{model_name}]")
@@ -2569,7 +2595,13 @@ def _append_discussion_section(
     cluster_id: Any,
 ) -> None:
     """Append discussion rounds section for one cluster."""
-    rounds = discussion_logs.get(cluster_id)
+    rounds_raw = discussion_logs.get(cluster_id)
+    rounds: list[Any] = []
+    if isinstance(rounds_raw, list):
+        rounds = rounds_raw
+    elif isinstance(rounds_raw, tuple):
+        rounds = list(rounds_raw)
+
     if not rounds:
         lines.append("")
         lines.append("-" * 40)
@@ -2579,6 +2611,9 @@ def _append_discussion_section(
         return
 
     for round_idx, round_responses in enumerate(rounds, start=1):
+        if not isinstance(round_responses, dict):
+            round_responses = {"raw_response": round_responses}
+
         lines.append("")
         lines.append("-" * 40)
         lines.append(f"ROUND {round_idx} DISCUSSION")
@@ -2646,16 +2681,56 @@ def format_discussion_report(
         # Or save to file:
         >>> format_discussion_report(results, output_file="discussion_report.txt")
     """
+    if not isinstance(results, dict):
+        raise ValueError(f"results must be a dict, got {type(results).__name__}")
+
     lines: list[str] = []
     sep = "=" * 80
 
-    model_annotations = results.get("model_annotations", {})
-    discussion_logs = results.get("discussion_logs", {})
-    consensus = results.get("consensus", {})
-    consensus_proportion = results.get("consensus_proportion", {})
-    entropy = results.get("entropy", {})
-    controversial_clusters = results.get("controversial_clusters", [])
-    metadata = results.get("metadata", {})
+    def _as_dict(value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return value
+        return {}
+
+    def _as_cluster_list(value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, (str, bytes)):
+            normalized = str(value).strip()
+            return [normalized] if normalized else []
+        is_unordered = isinstance(value, set)
+        if isinstance(value, (list, tuple, set)):
+            items: list[Any] = list(value)
+        else:
+            try:
+                items = list(value)
+            except TypeError:
+                normalized = str(value).strip()
+                return [normalized] if normalized else []
+
+        normalized_clusters: list[str] = []
+        seen: set[str] = set()
+        for item in items:
+            if is_missing_value(item):
+                continue
+            cluster = str(item).strip()
+            if not cluster or cluster in seen:
+                continue
+            seen.add(cluster)
+            normalized_clusters.append(cluster)
+
+        if is_unordered:
+            normalized_clusters = sorted(normalized_clusters, key=cluster_sort_key)
+
+        return normalized_clusters
+
+    model_annotations = _as_dict(results.get("model_annotations", {}))
+    discussion_logs = _as_dict(results.get("discussion_logs", {}))
+    consensus = _as_dict(results.get("consensus", {}))
+    consensus_proportion = _as_dict(results.get("consensus_proportion", {}))
+    entropy = _as_dict(results.get("entropy", {}))
+    controversial_clusters = _as_cluster_list(results.get("controversial_clusters", []))
+    metadata = _as_dict(results.get("metadata", {}))
 
     _append_report_header(lines=lines, separator=sep, metadata=metadata)
 

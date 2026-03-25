@@ -1099,5 +1099,42 @@ def test_format_discussion_report_non_string_round_response():
     assert "object-response" in report
 
 
+def test_format_discussion_report_invalid_results_type_raises():
+    """Test report generation rejects non-dict result payloads."""
+    from mllmcelltype.consensus import format_discussion_report
+
+    with pytest.raises(ValueError, match="results must be a dict"):
+        format_discussion_report(["not", "a", "dict"])  # type: ignore[arg-type]
+
+
+def test_format_discussion_report_malformed_nested_payloads_are_tolerated():
+    """Test malformed nested sections do not crash report formatting."""
+    from mllmcelltype.consensus import format_discussion_report
+
+    mock_results = {
+        "consensus": {"0": "T cells"},
+        "consensus_proportion": "not-a-dict",
+        "entropy": None,
+        "controversial_clusters": {"0", None, " "},
+        "model_annotations": {"gpt-5": "not-a-dict"},
+        "discussion_logs": {"0": ["raw round response"]},
+        "metadata": {
+            "timestamp": "2026-01-26 12:00:00",
+            "species": "human",
+            "tissue": "blood",
+            "models": ["gpt-5"],
+            "consensus_threshold": 0.7,
+            "max_discussion_rounds": 3,
+        },
+    }
+
+    report = format_discussion_report(mock_results)
+
+    assert "CLUSTER 0" in report
+    assert "[raw_response]" in report
+    assert "raw round response" in report
+    assert "Was Controversial: Yes" in report
+
+
 if __name__ == "__main__":
     pytest.main(["-xvs", __file__])

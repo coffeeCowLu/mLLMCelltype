@@ -546,6 +546,42 @@ class TestConsensus:
         assert result["reached"] is False
 
     @patch("mllmcelltype.consensus._call_llm_with_retry")
+    def test_check_consensus_for_discussion_round_llm_failure_multiline_plain_label_uses_fallback(
+        self, mock_call_llm
+    ):
+        """Test fallback extracts first-line labels from multiline free-text responses."""
+        mock_call_llm.return_value = None
+        result = check_consensus_for_discussion_round(
+            round_responses={
+                "m1": "T cells\nReasoning: CD3D, IL7R",
+                "m2": "- T cells\nevidence discussed above",
+                "m3": "B cells\nReasoning: MS4A1, CD79A",
+            },
+            api_keys={"openai": "test-key"},
+            consensus_threshold=0.7,
+            entropy_threshold=1.0,
+        )
+        assert result["majority_prediction"] == "T cells"
+        assert result["consensus_proportion"] == pytest.approx(2 / 3)
+        assert result["reached"] is False
+
+    @patch("mllmcelltype.consensus._extract_cell_type_via_llm")
+    @patch("mllmcelltype.consensus._call_llm_with_retry")
+    def test_check_consensus_for_discussion_round_filters_unknown_like_responses(
+        self, mock_call_llm, mock_extract
+    ):
+        """Test unknown-like responses are removed before single-response decision path."""
+        mock_call_llm.return_value = "1\n0.90\n0.10\nT cells"
+        mock_extract.return_value = "T cells"
+        result = check_consensus_for_discussion_round(
+            round_responses={"m1": "Unknown", "m2": "CELL TYPE: T cells"},
+            api_keys={"openai": "test-key"},
+        )
+        assert result["majority_prediction"] == "T cells"
+        mock_call_llm.assert_not_called()
+        mock_extract.assert_not_called()
+
+    @patch("mllmcelltype.consensus._call_llm_with_retry")
     def test_check_consensus_for_discussion_round_llm_failure_uses_structured_label_fallback(
         self, mock_call_llm
     ):
