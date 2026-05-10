@@ -132,7 +132,7 @@ class TestGetDefaultApiUrl:
     def test_get_zhipu_url(self):
         """Test getting Zhipu default URL."""
         result = get_default_api_url("zhipu")
-        assert result == "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+        assert result == "https://api.z.ai/api/paas/v4/chat/completions"
 
     def test_get_grok_url(self):
         """Test getting Grok default URL."""

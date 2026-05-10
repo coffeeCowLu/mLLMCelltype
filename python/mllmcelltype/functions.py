@@ -50,7 +50,7 @@ def get_provider(model: str) -> str:
     OpenRouter models are identified by the '/' character in the model name.
 
     Args:
-        model: The model name (e.g., 'gpt-5.2', 'claude-sonnet-4-5-20250929', 'anthropic/claude-sonnet-4.5')
+        model: The model name (e.g., 'gpt-5.5', 'claude-opus-4-7', 'anthropic/claude-opus-4.7')
 
     Returns:
         The provider name (e.g., 'openai', 'anthropic', 'openrouter')

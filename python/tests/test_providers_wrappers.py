@@ -54,7 +54,7 @@ def test_process_deepseek_request_shape(mock_resolve_endpoint, mock_call_api):
     mock_resolve_endpoint.return_value = "https://deepseek.example/v1"
     mock_call_api.return_value = ["Cluster 1: T cells"]
 
-    result = process_deepseek("genes", "deepseek-chat", "test-key")
+    result = process_deepseek("genes", "deepseek-v4-flash", "test-key")
 
     assert result == ["Cluster 1: T cells"]
     kwargs = mock_call_api.call_args.kwargs
@@ -75,12 +75,12 @@ def test_process_grok_request_shape(mock_resolve_endpoint, mock_call_api):
     mock_resolve_endpoint.return_value = "https://grok.example/v1"
     mock_call_api.return_value = ["Cluster 1: T cells"]
 
-    result = process_grok("genes", "grok-4", "test-key")
+    result = process_grok("genes", "grok-4.3", "test-key")
 
     assert result == ["Cluster 1: T cells"]
     kwargs = mock_call_api.call_args.kwargs
     assert kwargs["provider_name"] == "Grok"
-    assert kwargs["body"]["model"] == "grok-4"
+    assert kwargs["body"]["model"] == "grok-4.3"
     assert kwargs["body"]["messages"][0]["content"] == "genes"
 
 
@@ -91,12 +91,12 @@ def test_process_openai_request_shape(mock_resolve_endpoint, mock_call_api):
     mock_resolve_endpoint.return_value = "https://openai.example/v1"
     mock_call_api.return_value = ["Cluster 1: T cells"]
 
-    result = process_openai("genes", "gpt-5.2", "test-key")
+    result = process_openai("genes", "gpt-5.5", "test-key")
 
     assert result == ["Cluster 1: T cells"]
     kwargs = mock_call_api.call_args.kwargs
     assert kwargs["provider_name"] == "OpenAI"
-    assert kwargs["body"]["model"] == "gpt-5.2"
+    assert kwargs["body"]["model"] == "gpt-5.5"
     assert kwargs["body"]["messages"] == [{"role": "user", "content": "genes"}]
 
 
@@ -112,7 +112,7 @@ def test_process_openrouter_warns_for_non_provider_model(
     mock_resolve_endpoint.return_value = "https://openrouter.example/v1"
     mock_call_api.return_value = ["Cluster 1: T cells"]
 
-    result = process_openrouter("genes", "gpt-5.2", "test-key")
+    result = process_openrouter("genes", "gpt-5.5", "test-key")
 
     assert result == ["Cluster 1: T cells"]
     kwargs = mock_call_api.call_args.kwargs
@@ -130,7 +130,7 @@ def test_process_stepfun_request_shape(mock_resolve_endpoint, mock_call_api):
     mock_resolve_endpoint.return_value = "https://stepfun.example/v1"
     mock_call_api.return_value = ["Cluster 1: T cells"]
 
-    result = process_stepfun("genes", "step-3", "test-key")
+    result = process_stepfun("genes", "step-3.5-flash", "test-key")
 
     assert result == ["Cluster 1: T cells"]
     kwargs = mock_call_api.call_args.kwargs
@@ -146,7 +146,7 @@ def test_process_zhipu_request_shape(mock_resolve_endpoint, mock_call_api):
     mock_resolve_endpoint.return_value = "https://zhipu.example/v1"
     mock_call_api.return_value = ["Cluster 1: T cells"]
 
-    result = process_zhipu("genes", "glm-4-plus", "test-key")
+    result = process_zhipu("genes", "glm-5.1", "test-key")
 
     assert result == ["Cluster 1: T cells"]
     kwargs = mock_call_api.call_args.kwargs
@@ -165,11 +165,11 @@ def test_process_anthropic_alias_resolution_and_headers(
     mock_resolve_endpoint.return_value = "https://anthropic.example/v1/messages"
     mock_call_http.return_value = ["Cluster 1: T cells"]
 
-    result = process_anthropic("genes", "claude-opus-4.5", "test-key")
+    result = process_anthropic("genes", "claude-opus-latest", "test-key")
 
     assert result == ["Cluster 1: T cells"]
     kwargs = mock_call_http.call_args.kwargs
-    assert kwargs["body"]["model"] == "claude-opus-4-5-20251101"
+    assert kwargs["body"]["model"] == "claude-opus-4-7"
     assert kwargs["headers"]["x-api-key"] == "test-key"
     assert kwargs["headers"]["anthropic-version"] == "2023-06-01"
 
@@ -190,7 +190,7 @@ def test_process_minimax_uses_smart_endpoint_by_default(
     mock_get_working_endpoint.return_value = "https://api.minimax.io/v1/chat/completions"
     mock_call_api.return_value = ["Cluster 1: T cells"]
 
-    result = process_minimax("genes", "MiniMax-M2.1", "test-key")
+    result = process_minimax("genes", "MiniMax-M2.7", "test-key")
 
     assert result == ["Cluster 1: T cells"]
     kwargs = mock_call_api.call_args.kwargs
@@ -211,7 +211,7 @@ def test_process_minimax_uses_custom_base_url(
 
     result = process_minimax(
         "genes",
-        "MiniMax-M2.1",
+        "MiniMax-M2.7",
         "test-key",
         base_url="https://custom.example/v1/chat/completions",
     )
@@ -263,7 +263,7 @@ def test_process_gemini_retries_then_succeeds(mock_sleep):
     fake_modules = _build_fake_google_modules(client=fake_client)
 
     with patch.dict("sys.modules", fake_modules, clear=False):
-        result = process_gemini("genes", "gemini-3-pro", "test-key")
+        result = process_gemini("genes", "gemini-3.1-pro-preview", "test-key")
 
     assert result == ["Cluster 1: T cells", "Cluster 2: B cells"]
     assert fake_client.models.generate_content.call_count == 2
@@ -278,7 +278,7 @@ def test_process_gemini_non_string_text_is_coerced():
     fake_modules = _build_fake_google_modules(client=fake_client)
 
     with patch.dict("sys.modules", fake_modules, clear=False):
-        result = process_gemini("genes", "gemini-3-pro", "test-key")
+        result = process_gemini("genes", "gemini-3.1-pro-preview", "test-key")
 
     assert result == ["123"]
 
@@ -294,7 +294,7 @@ def test_process_gemini_missing_text_fails_fast_without_retry(mock_sleep):
     with patch.dict("sys.modules", fake_modules, clear=False), pytest.raises(
         ValueError, match="missing text content"
     ):
-        process_gemini("genes", "gemini-3-pro", "test-key")
+        process_gemini("genes", "gemini-3.1-pro-preview", "test-key")
 
     assert fake_client.models.generate_content.call_count == 1
     mock_sleep.assert_not_called()
@@ -312,7 +312,7 @@ def test_process_gemini_import_error_message_is_clear():
     with patch("builtins.__import__", side_effect=_fake_import), pytest.raises(
         ImportError, match="google-genai"
     ):
-        process_gemini("genes", "gemini-3-pro", "test-key")
+        process_gemini("genes", "gemini-3.1-pro-preview", "test-key")
 
 
 @patch("mllmcelltype.providers.gemini.write_log")
@@ -325,7 +325,7 @@ def test_process_gemini_base_url_is_ignored_with_warning(mock_write_log):
     with patch.dict("sys.modules", fake_modules, clear=False):
         result = process_gemini(
             "genes",
-            "gemini-3-pro",
+            "gemini-3.1-pro-preview",
             "test-key",
             base_url="https://proxy.example/v1",
         )
@@ -348,7 +348,7 @@ def test_process_gemini_retries_exhausted_raises(mock_sleep):
     with patch.dict("sys.modules", fake_modules, clear=False), pytest.raises(
         RuntimeError, match="persistent failure"
     ):
-        process_gemini("genes", "gemini-3-pro", "test-key")
+        process_gemini("genes", "gemini-3.1-pro-preview", "test-key")
 
     assert fake_client.models.generate_content.call_count == 3
     assert mock_sleep.call_count == 2

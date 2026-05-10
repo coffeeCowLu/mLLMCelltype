@@ -4,21 +4,21 @@
 #' Uses prefix-based matching for efficient and maintainable provider detection.
 #' New models following existing naming conventions are automatically supported.
 #'
-#' @param model Character string specifying the model name (e.g., "gpt-5.2", "claude-sonnet-4.5").
+#' @param model Character string specifying the model name (e.g., "gpt-5.5", "claude-opus-4-7").
 #' @return Character string of the provider name (e.g., "openai", "anthropic").
 #' @details
 #' Supported providers and model prefixes:
 #' \itemize{
-#'   \item OpenAI: gpt-*, o1*, o3*, o4*, chatgpt-*, codex-* (e.g., 'gpt-5.2', 'o3-pro', 'o4-mini')
-#'   \item Anthropic: claude-* (e.g., 'claude-opus-4.6', 'claude-sonnet-4.5')
-#'   \item DeepSeek: deepseek-* (e.g., 'deepseek-chat', 'deepseek-r1')
-#'   \item Google: gemini-* (e.g., 'gemini-3-pro', 'gemini-2.5-flash')
-#'   \item Qwen: qwen*, qwq-* (e.g., 'qwen3-max', 'qwq-32b')
-#'   \item Stepfun: step-* (e.g., 'step-2-mini', 'step-2-16k')
-#'   \item Zhipu: glm-*, chatglm* (e.g., 'glm-4.7', 'glm-4-plus')
-#'   \item MiniMax: minimax-* (e.g., 'minimax-m2.1', 'minimax-m1')
-#'   \item Grok: grok-* (e.g., 'grok-4', 'grok-4-heavy')
-#'   \item OpenRouter: Any model with '/' in the name (e.g., 'openai/gpt-5.2', 'anthropic/claude-sonnet-4.5')
+#'   \item OpenAI: gpt-*, o1*, o3*, o4*, chatgpt-*, codex-* (e.g., 'gpt-5.5', 'gpt-5.4-mini')
+#'   \item Anthropic: claude-* (e.g., 'claude-opus-4-7', 'claude-sonnet-4-6')
+#'   \item DeepSeek: deepseek-* (e.g., 'deepseek-v4-flash', 'deepseek-v4-pro')
+#'   \item Google: gemini-* (e.g., 'gemini-3.1-pro-preview', 'gemini-3-flash-preview')
+#'   \item Qwen: qwen*, qwq-* (e.g., 'qwen3.6-plus', 'qwen3.6-flash')
+#'   \item Stepfun: step-* (e.g., 'step-3.5-flash', 'step-3')
+#'   \item Zhipu: glm-*, chatglm* (e.g., 'glm-5.1', 'glm-5-turbo')
+#'   \item MiniMax: minimax-* (e.g., 'MiniMax-M2.7', 'MiniMax-M2.5')
+#'   \item Grok: grok-* (e.g., 'grok-4.3', 'grok-4.3-latest')
+#'   \item OpenRouter: Any model with '/' in the name (e.g., 'openai/gpt-5.5', 'anthropic/claude-opus-4.7')
 #' }
 #' @export
 get_provider <- function(model) {
@@ -29,7 +29,7 @@ get_provider <- function(model) {
   # Normalize model name to lowercase for case-insensitive matching
   model_lower <- tolower(model)
 
-  # OpenRouter models always contain '/' (e.g., 'openai/gpt-5.2')
+  # OpenRouter models always contain '/' (e.g., 'openai/gpt-5.5')
   if (grepl("/", model_lower)) {
     return("openrouter")
   }

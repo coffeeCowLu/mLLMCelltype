@@ -29,37 +29,37 @@
   "model_annotations": {
     "Cluster_0": {
       "gpt-4-turbo": "T cells",
-      "claude-sonnet-4-5": "T cells",
+      "claude-sonnet-4-6": "T cells",
       "gemini-1.5-pro": "T cells"
     },
     "Cluster_1": {
       "gpt-4-turbo": "B cells",
-      "claude-sonnet-4-5": "B cells",
+      "claude-sonnet-4-6": "B cells",
       "gemini-1.5-pro": "B cells"
     },
     "Cluster_2": {
       "gpt-4-turbo": "CD14+ Monocytes",
-      "claude-sonnet-4-5": "CD14+ Monocytes",
+      "claude-sonnet-4-6": "CD14+ Monocytes",
       "gemini-1.5-pro": "Classical Monocytes"
     },
     "Cluster_3": {
       "gpt-4-turbo": "NK cells",
-      "claude-sonnet-4-5": "NK cells",
+      "claude-sonnet-4-6": "NK cells",
       "gemini-1.5-pro": "Natural Killer cells"
     },
     "Cluster_4": {
       "gpt-4-turbo": "Dendritic cells",
-      "claude-sonnet-4-5": "Myeloid dendritic cells",
+      "claude-sonnet-4-6": "Myeloid dendritic cells",
       "gemini-1.5-pro": "Dendritic cells"
     },
     "Cluster_5": {
       "gpt-4-turbo": "CD16+ Monocytes",
-      "claude-sonnet-4-5": "Non-classical monocytes",
+      "claude-sonnet-4-6": "Non-classical monocytes",
       "gemini-1.5-pro": "CD16+ Monocytes"
     },
     "Cluster_6": {
       "gpt-4-turbo": "Platelets",
-      "claude-sonnet-4-5": "Platelets",
+      "claude-sonnet-4-6": "Platelets",
       "gemini-1.5-pro": "Megakaryocytes/Platelets"
     }
   },

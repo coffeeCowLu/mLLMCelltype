@@ -12,7 +12,7 @@ test_that("Cache key generation performance", {
   
   # Key generation should be fast even for large data
   start_time <- Sys.time()
-  key <- cache_manager$generate_key(large_data, "gpt-5.2", "0")
+  key <- cache_manager$generate_key(large_data, "gpt-5.5", "0")
   key_time <- as.numeric(Sys.time() - start_time)
   
   expect_true(key_time < 2.0)  # Should take less than 2 seconds
@@ -38,7 +38,7 @@ test_that("Cache I/O performance", {
     confidence_score = 0.95,
     metadata = list(
       processing_time = 45.2,
-      models_used = c("gpt-5.2", "claude-sonnet-4-20250514", "gemini-3-pro"),
+      models_used = c("gpt-5.5", "claude-sonnet-4-20250514", "gemini-3.1-pro-preview"),
       gene_count = 50
     )
   )

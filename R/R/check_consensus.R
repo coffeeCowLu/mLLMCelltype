@@ -66,7 +66,7 @@ calculate_simple_consensus <- function(round_responses) {
 .CONSENSUS_CONSTANTS <- list(
   MAX_RETRIES = 3,
   DEFAULT_RESPONSE = "0\n0\n0\nUnknown",
-  FALLBACK_MODELS = c("claude-sonnet-4.5", "gpt-5.2", "gemini-3-flash", "qwen3-max", "deepseek-r1"),
+  FALLBACK_MODELS = c("claude-sonnet-4-6", "gpt-5.5", "gemini-3-flash-preview", "qwen3.6-flash", "deepseek-v4-flash"),
   NUMERIC_PATTERNS = list(
     CONSENSUS_INDICATOR = "^\\s*[01]\\s*$",
     PROPORTION = "^\\s*(0\\.\\d+|1\\.0*|1)\\s*$",

@@ -1,5 +1,5 @@
 #' Base API Processor Class
-#' 
+#'
 #' Abstract base class for API processors that provides common functionality
 #' including unified logging, error handling, input processing, and response validation.
 #' This eliminates code duplication across all provider-specific processors.
@@ -218,8 +218,7 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
       if (!is.character(result)) {
         return(TRUE)
       }
-      text <- paste(result, collapse = "\n")
-      !grepl("^\\s*Error:", text, ignore.case = TRUE)
+      !is_error_response(result)
     }
   )
 )

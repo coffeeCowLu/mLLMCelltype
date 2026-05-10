@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
+  python-test:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v6
@@ -41,15 +41,29 @@ jobs:
         ruff check mllmcelltype tests
 
     - name: Test
-      env:
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-        QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
-        STEPFUN_API_KEY: ${{ secrets.STEPFUN_API_KEY }}
-        ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
-        MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
       run: |
         cd python
         pytest --cov=mllmcelltype tests/
+
+  r-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Set up R
+      uses: r-lib/actions/setup-r@v2
+      with:
+        r-version: 'release'
+        use-public-rspm: true
+
+    - name: Install R dependencies
+      uses: r-lib/actions/setup-r-dependencies@v2
+      with:
+        working-directory: R
+        extra-packages: any::devtools
+        needs: tests
+
+    - name: Test R package
+      run: |
+        cd R
+        Rscript -e 'devtools::test()'

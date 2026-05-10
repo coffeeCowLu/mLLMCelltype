@@ -198,7 +198,7 @@ class TestAnnotation:
             get_model_response(
                 prompt="Test prompt",
                 provider="unknown_provider",
-                model="gpt-5.2",
+                model="gpt-5.5",
                 api_key="test-key",
                 use_cache=False,
             )
@@ -210,7 +210,7 @@ class TestAnnotation:
                 marker_genes={"1": ["CD3D"]},
                 species="human",
                 provider="unknown_provider",
-                model="gpt-5.2",
+                model="gpt-5.5",
                 api_key="test-key",
                 use_cache=False,
             )
@@ -222,7 +222,7 @@ class TestAnnotation:
                 marker_genes={"1": ["CD3D"]},
                 species="human",
                 provider="   ",
-                model="gpt-5.2",
+                model="gpt-5.5",
                 api_key="test-key",
                 use_cache=False,
             )
@@ -277,12 +277,12 @@ class TestAnnotation:
             return "Cluster 1: T cells"
 
         mock_provider_functions.get.return_value = mock_provider_func
-        mock_get_default_model.return_value = "gpt-5.2"
+        mock_get_default_model.return_value = "gpt-5.5"
 
         result = get_model_response(
             prompt="Test prompt",
             provider="  openai  ",
-            model="gpt-5.2",
+            model="gpt-5.5",
             api_key="test-key",
             use_cache=False,
         )
@@ -303,7 +303,7 @@ class TestAnnotation:
             return "Cluster 1: T cells"
 
         mock_provider_functions.get.return_value = mock_provider_func
-        mock_get_default_model.return_value = "gpt-5.2"
+        mock_get_default_model.return_value = "gpt-5.5"
 
         result = get_model_response(
             prompt="Test prompt",
@@ -313,7 +313,7 @@ class TestAnnotation:
             use_cache=False,
         )
         assert "T cells" in result
-        assert captured["model"] == "gpt-5.2"
+        assert captured["model"] == "gpt-5.5"
 
     @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS")
     @patch("mllmcelltype.annotate.load_api_key")
@@ -335,7 +335,7 @@ class TestAnnotation:
         result = get_model_response(
             prompt="Test prompt",
             provider="openai",
-            model="gpt-5.2",
+            model="gpt-5.5",
             api_key="   ",
             use_cache=False,
         )
@@ -348,7 +348,7 @@ class TestAnnotation:
             get_model_response(
                 prompt="Test prompt",
                 provider="openai",
-                model="gpt-5.2",
+                model="gpt-5.5",
                 api_key=123,  # type: ignore[arg-type]
                 use_cache=False,
             )
@@ -502,7 +502,7 @@ class TestAnnotation:
             first = get_model_response(
                 prompt="test prompt",
                 provider="openai",
-                model="gpt-5.2",
+                model="gpt-5.5",
                 api_key="test-key",
                 use_cache=True,
                 cache_dir=temp_dir,
@@ -514,7 +514,7 @@ class TestAnnotation:
             second = get_model_response(
                 prompt="test prompt",
                 provider="openai",
-                model="gpt-5.2",
+                model="gpt-5.5",
                 api_key="test-key",
                 use_cache=True,
                 cache_dir=temp_dir,

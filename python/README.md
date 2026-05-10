@@ -1,6 +1,6 @@
 # mLLMCelltype
 
-[![PyPI version](https://img.shields.io/badge/pypi-v1.1.0-blue.svg)](https://pypi.org/project/mllmcelltype/)
+[![PyPI version](https://img.shields.io/badge/pypi-v2.0.4-blue.svg)](https://pypi.org/project/mllmcelltype/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Overview
@@ -27,9 +27,7 @@ pip install -e .
 
 ```python
 import pandas as pd
-from mllmcelltype import annotate_clusters, setup_logging
-
-setup_logging()
+from mllmcelltype import annotate_clusters
 
 marker_genes_df = pd.read_csv('marker_genes.csv')
 
@@ -40,7 +38,7 @@ annotations = annotate_clusters(
     marker_genes=marker_genes_df,
     species='human',
     provider='openai',
-    model='gpt-5.2',
+    model='gpt-5.5',
     tissue='brain'
 )
 
@@ -52,15 +50,15 @@ for cluster, annotation in annotations.items():
 
 | Provider | Models | API Key Variable |
 |----------|--------|-----------------|
-| OpenAI | GPT-5.2, GPT-5, O3-Pro, etc. | `OPENAI_API_KEY` |
-| Anthropic | Claude 4.6 Opus, Claude 4.5 Sonnet/Haiku, etc. | `ANTHROPIC_API_KEY` |
-| Google | Gemini 3 Pro, Gemini 3 Flash, etc. | `GEMINI_API_KEY` (also supports `GOOGLE_API_KEY`) |
-| Alibaba | Qwen3-Max, Qwen-Plus, etc. | `QWEN_API_KEY` |
-| DeepSeek | DeepSeek-Chat, DeepSeek-Reasoner | `DEEPSEEK_API_KEY` |
-| StepFun | Step-3, Step-2-16k, Step-2-Mini | `STEPFUN_API_KEY` |
-| Zhipu AI | GLM-4.7, GLM-4-Plus | `ZHIPU_API_KEY` |
-| MiniMax | MiniMax-M2.1, MiniMax-M2 | `MINIMAX_API_KEY` |
-| X.AI | Grok-4 | `GROK_API_KEY` |
+| OpenAI | GPT-5.5, GPT-5.4, GPT-5.4-mini | `OPENAI_API_KEY` |
+| Anthropic | Claude Opus 4.7, Claude Sonnet 4.6, Claude Haiku 4.5 | `ANTHROPIC_API_KEY` |
+| Google | Gemini 3.1 Pro Preview, Gemini 3 Flash Preview, Gemini 3.1 Flash-Lite | `GEMINI_API_KEY` (also supports `GOOGLE_API_KEY`) |
+| Alibaba | Qwen3.6 Plus, Qwen3.6 Flash, Qwen3.6 Max Preview | `QWEN_API_KEY` |
+| DeepSeek | DeepSeek V4 Flash, DeepSeek V4 Pro | `DEEPSEEK_API_KEY` |
+| StepFun | Step 3.5 Flash, Step 3 | `STEPFUN_API_KEY` |
+| Zhipu/Z.AI | GLM-5.1, GLM-5, GLM-5-Turbo | `ZHIPU_API_KEY` |
+| MiniMax | MiniMax-M2.7, MiniMax-M2.7-highspeed | `MINIMAX_API_KEY` |
+| X.AI | Grok-4.3 | `GROK_API_KEY` |
 | OpenRouter | Access to multiple models via single API | `OPENROUTER_API_KEY` |
 
 API keys can be set via environment variables, passed directly as parameters, or loaded from a `.env` file.
@@ -83,7 +81,7 @@ result = interactive_consensus_annotation(
     marker_genes=marker_genes,
     species='human',
     tissue='peripheral blood',
-    models=['gpt-5.2', 'claude-sonnet-4-5-20250929', 'gemini-3-pro', 'qwen3-max'],
+    models=['gpt-5.5', 'claude-sonnet-4-6', 'gemini-3.1-pro-preview', 'qwen3.6-plus'],
     consensus_threshold=0.7,
     max_discussion_rounds=3,
     verbose=True
@@ -97,24 +95,24 @@ print(format_discussion_report(result))
 
 The `consensus_model` parameter specifies which LLM evaluates semantic similarity, calculates consensus metrics, and moderates discussions. Recommended models for consensus checking:
 
-- **Anthropic**: `claude-sonnet-4-5-20250929`, `claude-opus-4-1-20250805`
-- **OpenAI**: `o1`, `gpt-5.2`, `gpt-4.1`
-- **Google**: `gemini-3-pro`, `gemini-3-flash`
-- **Other**: `deepseek-r1`, `qwen3-max`, `grok-4`
+- **Anthropic**: `claude-sonnet-4-6`, `claude-opus-4-7`
+- **OpenAI**: `o1`, `gpt-5.5`, `gpt-4.1`
+- **Google**: `gemini-3.1-pro-preview`, `gemini-3-flash-preview`
+- **Other**: `deepseek-v4-pro`, `qwen3.6-plus`, `grok-4.3`
 
 ```python
 result = interactive_consensus_annotation(
     marker_genes=marker_genes,
     species="human",
     tissue="brain",
-    models=["gpt-5.2", "claude-sonnet-4-5-20250929", "gemini-3-pro"],
-    consensus_model="claude-sonnet-4-5-20250929",
+    models=["gpt-5.5", "claude-sonnet-4-6", "gemini-3.1-pro-preview"],
+    consensus_model="claude-sonnet-4-6",
     consensus_threshold=0.7,
     entropy_threshold=1.0
 )
 ```
 
-If not specified, defaults to `qwen3-max` with `claude-sonnet-4-5-20250929` as fallback.
+If not specified, the consensus checker is selected from the providers available in `api_keys`. Pass `consensus_model` explicitly for reproducible consensus checks.
 
 ## Targeted Analysis
 
@@ -124,7 +122,7 @@ If not specified, defaults to `qwen3-max` with `claude-sonnet-4-5-20250929` as f
 result = interactive_consensus_annotation(
     marker_genes=all_marker_genes,
     species="human",
-    models=["gpt-5.2", "claude-sonnet-4-5-20250929", "gemini-3-pro"],
+    models=["gpt-5.5", "claude-sonnet-4-6", "gemini-3.1-pro-preview"],
     clusters_to_analyze=["cluster_0", "cluster_1", "cluster_2"],
     tissue="peripheral blood"
 )
@@ -136,7 +134,7 @@ result = interactive_consensus_annotation(
 result = interactive_consensus_annotation(
     marker_genes=marker_genes,
     species="human",
-    models=["gpt-5.2", "claude-sonnet-4-5-20250929"],
+    models=["gpt-5.5", "claude-sonnet-4-6"],
     tissue="peripheral blood",
     additional_context="Patient with autoimmune disease",
     force_rerun=True
@@ -154,7 +152,7 @@ annotations = annotate_clusters(
     marker_genes=marker_genes,
     species='human',
     tissue='peripheral blood',
-    provider_config={"provider": "openrouter", "model": "openai/gpt-5.2"}
+    provider_config={"provider": "openrouter", "model": "openai/gpt-5.5"}
 )
 ```
 
@@ -172,7 +170,7 @@ base_urls = {
 result = interactive_consensus_annotation(
     marker_genes=marker_genes,
     species='human',
-    models=['gpt-5.2', 'claude-sonnet-4-5-20250929', 'qwen3-max'],
+    models=['gpt-5.5', 'claude-sonnet-4-6', 'qwen3.6-plus'],
     api_keys=your_api_keys,
     base_urls=base_urls
 )
@@ -198,7 +196,7 @@ annotations = mct.annotate_clusters(
     marker_genes=marker_genes,
     species='human',
     provider='openai',
-    model='gpt-5.2'
+    model='gpt-5.5'
 )
 adata.obs['cell_type'] = adata.obs['leiden'].astype(str).map(annotations)
 
@@ -206,7 +204,7 @@ adata.obs['cell_type'] = adata.obs['leiden'].astype(str).map(annotations)
 consensus_results = mct.interactive_consensus_annotation(
     marker_genes=marker_genes,
     species='human',
-    models=['gpt-5.2', 'claude-sonnet-4-5-20250929', 'gemini-3-pro'],
+    models=['gpt-5.5', 'claude-sonnet-4-6', 'gemini-3.1-pro-preview'],
     consensus_threshold=0.7
 )
 adata.obs['consensus_cell_type'] = adata.obs['leiden'].astype(str).map(consensus_results["consensus"])
@@ -219,6 +217,20 @@ See the [examples directory](https://github.com/cafferychen777/mLLMCelltype/tree
 ## Contributing
 
 We welcome contributions. Please submit issues or pull requests on our [GitHub repository](https://github.com/cafferychen777/mLLMCelltype).
+
+### Running tests
+
+Default tests are offline and do not call external APIs:
+
+```bash
+python -m pytest
+```
+
+Real API integration tests are opt-in:
+
+```bash
+python -m pytest --run-integration
+```
 
 ## License
 

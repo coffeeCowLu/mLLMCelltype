@@ -135,7 +135,7 @@ def annotate_clusters(
                      or DataFrame with 'cluster' and 'gene' columns
         species: Species name (e.g., 'human', 'mouse')
         provider: LLM provider (e.g., 'openai', 'anthropic')
-        model: Model name (e.g., 'gpt-5', 'claude-sonnet-4-5-20250929')
+        model: Model name (e.g., 'gpt-5.5', 'claude-sonnet-4-6')
         api_key: API key for the provider
         tissue: Tissue name (e.g., 'brain', 'liver')
         additional_context: Additional context to include in the prompt

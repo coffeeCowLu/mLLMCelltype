@@ -134,7 +134,7 @@ The API costs depend on the models you use and the number of clusters:
 
 - **OpenAI models** (GPT-4o, etc.): $0.01-0.05 per cluster for annotation
 - **Anthropic models** (Claude 3.7, etc.): $0.01-0.03 per cluster for annotation
-- **Google models** (Gemini 1.5, etc.): $0.001-0.01 per cluster for annotation
+- **Google models** (Gemini 3, etc.): $0.001-0.01 per cluster for annotation
 - **Other models**: Generally lower cost
 - **OpenRouter free models**: $0.00 (free with `:free` suffix)
 
@@ -176,7 +176,7 @@ results <- annotate_cell_types(
 
 4. **Recommended free models** (Updated Oct 2025):
    - `meta-llama/llama-4-maverick:free` - Meta Llama 4 Maverick (256K context, best performance)
-   - `deepseek/deepseek-r1:free` - DeepSeek R1 (advanced reasoning)
+   - `deepseek/deepseek-v4-pro:free` - DeepSeek V4 Pro
    - `meta-llama/llama-3.3-70b-instruct:free` - Meta Llama 3.3 70B (reliable)
    - `venice/uncensored:free` - Venice Uncensored (new model)
    - `minimax/minimax-m2:free` - MiniMax M2 (optimized for coding)
@@ -194,7 +194,7 @@ results <- annotate_cell_types(
 
 To get the most accurate annotations:
 
-1. **Use multiple high-quality models**: Include diverse, high-performing models like Claude 3.7, GPT-4o, and Gemini 1.5
+1. **Use multiple high-quality models**: Include diverse, high-performing models like Claude Sonnet 4.6, GPT-5.5, and Gemini 3.1
 
 2. **Provide good marker genes**: Use robust differential expression analysis to identify strong marker genes
 
@@ -324,16 +324,20 @@ While mLLMCelltype uses carefully designed prompts, advanced users can customize
 ```r
 # Create a custom annotation prompt
 custom_prompt <- create_annotation_prompt(
-  marker_data = your_markers,
+  input = your_markers,
   tissue_name = "your_tissue",
-  top_gene_count = 10,
-  custom_instructions = "Also consider developmental stage and activation state."
+  top_gene_count = 10
 )
 
-# Use the custom prompt directly
+# Add custom context before sending the prompt directly
+prompt_with_context <- paste0(
+  custom_prompt$prompt,
+  "\n\nAdditional context: Also consider developmental stage and activation state."
+)
+
 response <- get_model_response(
-  prompt = custom_prompt,
-  model = "claude-sonnet-4-5-20250929",
+  prompt = prompt_with_context,
+  model = "claude-sonnet-4-6",
   api_key = your_api_key
 )
 ```
@@ -346,17 +350,17 @@ Yes, you can register custom models and providers:
 # Register a custom provider
 register_custom_provider(
   provider_name = "my_provider",
-  api_url = "https://api.my-provider.com/v1/chat/completions",
-  api_key_env_var = "MY_PROVIDER_API_KEY",
-  process_function = function(prompt, api_key) {
-    # Custom implementation
-  }
+  process_fn = function(prompt, model, api_key) {
+    # Custom implementation that returns the model response text
+  },
+  description = "My custom LLM provider"
 )
 
 # Register a custom model
 register_custom_model(
   model_name = "my-custom-model",
-  provider = "my_provider"
+  provider_name = "my_provider",
+  model_config = list()
 )
 
 # Use the custom model

@@ -21,7 +21,7 @@
 
 # mLLMCelltype: 多大语言模型共识框架用于细胞类型注释
 
-mLLMCelltype是一个迭代式多大语言模型（Multi-LLM）共识框架，专为单细胞RNA测序（scRNA-seq）数据的细胞类型注释而设计。通过组合多种大语言模型（包括OpenAI GPT-5.2/5、Anthropic Claude-4.6/4.5、Google Gemini-3、X.AI Grok-4、DeepSeek-V3、阿里云 Qwen3、智谱 GLM-4、MiniMax、Stepfun、和 OpenRouter）的预测结果，该框架旨在提高注释准确性，同时为生物信息学和计算生物学研究提供透明的不确定性量化。
+mLLMCelltype是一个迭代式多大语言模型（Multi-LLM）共识框架，专为单细胞RNA测序（scRNA-seq）数据的细胞类型注释而设计。通过组合多种大语言模型（包括OpenAI GPT-5.5、Anthropic Claude Opus 4.7 和 Sonnet 4.6、Google Gemini 3、X.AI Grok 4.3、DeepSeek V4、阿里云 Qwen 3.6、Z.AI GLM 5.1、MiniMax M2.7、Stepfun 3.5 和 OpenRouter）的预测结果，该框架旨在提高注释准确性，同时为生物信息学和计算生物学研究提供透明的不确定性量化。
 
 ## 摘要
 
@@ -63,7 +63,7 @@ Google已经停用了几个Gemini 1.5模型，并将在2025年9月24日停用更
 - **已停用**：Gemini 1.5 Pro 001、Gemini 1.5 Flash 001
 - **将于2025年9月24日停用**：Gemini 1.5 Pro 002、Gemini 1.5 Flash 002、Gemini 1.5 Flash-8B -001
 
-**推荐迁移**：使用`gemini-3-pro`或`gemini-3-flash`以获得更好的性能和推理能力。别名`gemini-1.5-pro`和`gemini-1.5-flash`将继续工作到2025年9月24日，因为它们指向-002版本。
+**推荐迁移**：使用`gemini-3.1-pro-preview`或`gemini-3-flash-preview`以获得更好的稳定性、性能和推理能力。请避免在新示例或新分析中继续使用Gemini 1.5别名。
 
 **📢 重要提示：Claude模型弃用（2025-07-21）**
 
@@ -74,8 +74,8 @@ Anthropic将于2025年7月21日停用以下Claude模型：
 - **Claude 3 Opus**（非版本化）
 
 **推荐迁移**：
-- Claude 2/2.1 → 使用 `claude-sonnet-4-5-20250929`（最新）
-- Claude 3 Sonnet → 使用 `claude-sonnet-4-5-20250929`（最新）
+- Claude 2/2.1 → 使用 `claude-sonnet-4-6`（最新）
+- Claude 3 Sonnet → 使用 `claude-sonnet-4-6`（最新）
 - Claude 3 Opus → 使用 `claude-opus-4-1-20250805`（最新）
 
 请在2025年7月21日之前更新您的代码以避免服务中断。
@@ -258,19 +258,19 @@ pip install google-genai
 
 ### 支持的模型
 
-- **OpenAI**: GPT-5.2/GPT-5/GPT-4.1 ([API Key](https://platform.openai.com/settings/organization/billing/overview))
-- **Anthropic**: Claude-4.6-Opus/Claude-4.5-Sonnet/Claude-4.5-Haiku ([API Key](https://console.anthropic.com/))
-- **Google**: Gemini-3-Pro/Gemini-3-Flash ([API Key](https://ai.google.dev/?authuser=2))
-- **Alibaba**: Qwen3-Max ([API Key](https://www.alibabacloud.com/en/product/modelstudio))
-- **DeepSeek**: DeepSeek-V3/DeepSeek-R1 ([API Key](https://platform.deepseek.com/usage))
-- **Minimax**: MiniMax-M2.1 ([API Key](https://intl.minimaxi.com/user-center/basic-information/interface-key))
-- **Stepfun**: Step-3 ([API Key](https://platform.stepfun.com/account-info))
-- **Zhipu**: GLM-4.7/GLM-4-Plus ([API Key](https://bigmodel.cn/))
-- **X.AI**: Grok-4/Grok-3 ([API Key](https://accounts.x.ai/))
+- **OpenAI**: GPT-5.5/GPT-5.4/GPT-5.4-mini ([API Key](https://platform.openai.com/settings/organization/billing/overview))
+- **Anthropic**: Claude-Opus-4.7/Claude-Sonnet-4.6/Claude-Haiku-4.5 ([API Key](https://console.anthropic.com/))
+- **Google**: Gemini-3.1-Pro-Preview/Gemini-3-Flash-Preview/Gemini-3.1-Flash-Lite ([API Key](https://ai.google.dev/?authuser=2))
+- **Alibaba**: Qwen3.6-Plus/Qwen3.6-Flash/Qwen3.6-Max-Preview ([API Key](https://www.alibabacloud.com/en/product/modelstudio))
+- **DeepSeek**: DeepSeek-V4-Flash/DeepSeek-V4-Pro ([API Key](https://platform.deepseek.com/usage))
+- **Minimax**: MiniMax-M2.7/MiniMax-M2.7-highspeed ([API Key](https://intl.minimaxi.com/user-center/basic-information/interface-key))
+- **Stepfun**: Step-3.5-Flash/Step-3 ([API Key](https://platform.stepfun.com/account-info))
+- **Zhipu/Z.AI**: GLM-5.1/GLM-5/GLM-5-Turbo ([API Key](https://bigmodel.cn/))
+- **X.AI**: Grok-4.3 ([API Key](https://accounts.x.ai/))
 - **OpenRouter**: 通过单一API访问多种模型 ([API Key](https://openrouter.ai/keys))
   - 支持来自OpenAI、Anthropic、Meta、Google、Mistral等多家提供商的模型
-  - 格式: 'provider/model-name'（例如：'openai/gpt-5.2'、'anthropic/claude-opus-4.5'）
-  - 提供免费模型，使用`:free`后缀（例如：'deepseek/deepseek-r1:free'、'deepseek/deepseek-chat:free'）
+  - 格式: 'provider/model-name'（例如：'openai/gpt-5.5'、'anthropic/claude-opus-4.7'）
+  - 提供免费模型，使用`:free`后缀（例如：'deepseek/deepseek-v4-pro:free'、'deepseek/deepseek-v4-flash:free'）
 
 ## 中国大陆用户指南
 
@@ -299,11 +299,11 @@ pip install google-genai
 
 以下模型在中国大陆可以直接访问，无需特殊网络设置：
 
-- **DeepSeek**：DeepSeek-V3、DeepSeek-R1 等系列模型
-- **阿里云 Qwen**：Qwen3-Max 等千问系列模型
-- **智谱 AI**：GLM-4.7、GLM-4-Plus 等系列模型
-- **MiniMax**：MiniMax-M2.1 等系列模型
-- **Stepfun**：Step-3、Step-2-16K、Step-2-Mini 等系列模型
+- **DeepSeek**：DeepSeek-V4-Flash、DeepSeek-V4-Pro 等系列模型
+- **阿里云 Qwen**：Qwen3.6-Plus、Qwen3.6-Flash 等千问系列模型
+- **Zhipu/Z.AI**：GLM-5.1、GLM-5 等系列模型
+- **MiniMax**：MiniMax-M2.7 等系列模型
+- **Stepfun**：Step-3.5-Flash、Step-3 等系列模型
 
 这些模型是中国大陆用户的首选，因为它们提供稳定的 API 访问，且不需要特殊网络配置。
 
@@ -311,10 +311,10 @@ pip install google-genai
 
 以下模型可能需要特殊网络设置才能在中国大陆访问：
 
-- **OpenAI**：GPT-5.2、GPT-5 等系列模型
-- **Anthropic**：Claude-4.6-Opus、Claude-4.5-Sonnet、Claude-4.5-Haiku 等系列模型
-- **Google**：Gemini-3-Pro、Gemini-3-Flash 等系列模型
-- **X.AI**：Grok-4、Grok-3 等系列模型
+- **OpenAI**：GPT-5.5、GPT-5.4 等系列模型
+- **Anthropic**：Claude Opus 4.7、Claude Sonnet 4.6、Claude Haiku 4.5 等系列模型
+- **Google**：Gemini-3.1-Pro-Preview、Gemini-3-Flash-Preview 等系列模型
+- **X.AI**：Grok-4.3 等系列模型
 
 ### 推荐使用方案
 
@@ -330,14 +330,14 @@ from mllmcelltype import interactive_consensus_annotation
 # 配置国内大语言模型的 API 密钥，用于多模型共识注释
 os.environ["DEEPSEEK_API_KEY"] = "your-deepseek-api-key"  # DeepSeek-V3 模型 API 密钥，用于高精度生物信息学分析
 os.environ["QWEN_API_KEY"] = "your-qwen-api-key"        # 阿里云千问 2.5 API 密钥，提供中文生物医学专业知识
-os.environ["ZHIPU_API_KEY"] = "your-zhipu-api-key"      # 智谱 GLM-4 API 密钥，具有强大的中文生物学能力
+os.environ["ZHIPU_API_KEY"] = "your-zhipu-api-key"      # 智谱 GLM-5 API 密钥，具有强大的中文生物学能力
 
 # 执行多模型共识细胞类型注释，通过国内大语言模型的协作讨论提高准确性
 consensus_results = interactive_consensus_annotation(
     marker_genes=marker_genes,      # 各细胞类群的标记基因字典，用于细胞类型识别
     species="human",               # 指定物种信息，提高注释准确性
     tissue="blood",               # 指定组织类型，提供重要的生物学背景
-    models=["deepseek-chat", "qwen3-max", "glm-4-plus"],  # 使用国内三个顶级模型进行共识
+    models=["deepseek-v4-flash", "qwen3.6-plus", "glm-5.1"],  # 使用国内三个顶级模型进行共识
     consensus_threshold=0.7        # 设置共识阈值，平衡准确性和覆盖率
 )
 ```
@@ -351,9 +351,9 @@ consensus_results <- interactive_consensus_annotation(
   input = pbmc_markers,
   tissue_name = "human PBMC",
   models = c(
-    "deepseek-chat",        # DeepSeek
-    "qwen3-max",  # 阿里云千问
-    "glm-4-plus"            # 智谱 GLM
+    "deepseek-v4-flash",        # DeepSeek
+    "qwen3.6-plus",  # 阿里云千问
+    "glm-5.1"            # 智谱 GLM
   ),
   api_keys = list(
     deepseek = "your-deepseek-key",
@@ -381,9 +381,9 @@ consensus_results = interactive_consensus_annotation(
     species="human",
     tissue="blood",
     models=[
-        "deepseek/deepseek-chat",                # 通过 OpenRouter 访问 DeepSeek（付费）
-        "anthropic/claude-sonnet-4",  # 通过 OpenRouter 访问 Anthropic（付费）
-        "google/gemini-3-pro-preview-03-25"    # 通过 OpenRouter 访问 Google（付费）
+        "deepseek/deepseek-v4-flash",                # 通过 OpenRouter 访问 DeepSeek（付费）
+        "anthropic/claude-sonnet-4.6",  # 通过 OpenRouter 访问 Anthropic（付费）
+        "google/gemini-3.1-pro-preview"    # 通过 OpenRouter 访问 Google（付费）
     ],
     consensus_threshold=0.7
 )
@@ -395,9 +395,9 @@ free_models_results = interactive_consensus_annotation(
     tissue="blood",
     models=[
         "meta-llama/llama-4-maverick:free",                # Meta Llama 4 Maverick（免费）
-        "nvidia/llama-3.1-nemotron-ultra-253b-v1:free",    # NVIDIA Nemotron Ultra 253B（免费）
-        "deepseek/deepseek-r1:free",             # DeepSeek Chat v3（免费）
-        "deepseek/deepseek-r1:free"                         # Microsoft MAI-DS-R1（免费）
+        "meta-llama/llama-3.3-70b-instruct:free",    # Meta Llama 3.3 70B（免费）
+        "deepseek/deepseek-v4-pro:free",             # DeepSeek V4 Pro（免费）
+        "z-ai/glm-4.5-air:free"                         # GLM 4.5 Air（免费）
     ],
     consensus_threshold=0.7
 )
@@ -412,9 +412,9 @@ consensus_results <- interactive_consensus_annotation(
   input = pbmc_markers,
   tissue_name = "human PBMC",
   models = c(
-    "deepseek/deepseek-chat",                # 通过 OpenRouter 访问 DeepSeek（付费）
-    "anthropic/claude-sonnet-4",  # 通过 OpenRouter 访问 Anthropic（付费）
-    "google/gemini-3-pro-preview-03-25"    # 通过 OpenRouter 访问 Google（付费）
+    "deepseek/deepseek-v4-flash",                # 通过 OpenRouter 访问 DeepSeek（付费）
+    "anthropic/claude-sonnet-4.6",  # 通过 OpenRouter 访问 Anthropic（付费）
+    "google/gemini-3.1-pro-preview"    # 通过 OpenRouter 访问 Google（付费）
   ),
   api_keys = list(
     openrouter = "your-openrouter-key"  # 单一 API 密钥访问多种模型
@@ -427,14 +427,14 @@ free_consensus_results <- interactive_consensus_annotation(
   tissue_name = "human PBMC",
   models = c(
     "meta-llama/llama-4-maverick:free",                # Meta Llama 4 Maverick（免费）
-    "nvidia/llama-3.1-nemotron-ultra-253b-v1:free",    # NVIDIA Nemotron Ultra 253B（免费）
-    "deepseek/deepseek-r1:free",             # DeepSeek Chat v3（免费）
-    "deepseek/deepseek-r1:free"                         # Microsoft MAI-DS-R1（免费）
+    "meta-llama/llama-3.3-70b-instruct:free",    # Meta Llama 3.3 70B（免费）
+    "deepseek/deepseek-v4-pro:free",             # DeepSeek V4 Pro（免费）
+    "z-ai/glm-4.5-air:free"                         # GLM 4.5 Air（免费）
   ),
   api_keys = list(
     openrouter = "your-openrouter-key"  # 单一 API 密钥访问多种模型
   ),
-  consensus_check_model = "deepseek/deepseek-r1:free"  # 免费模型用于共识检查
+  consensus_check_model = "deepseek/deepseek-v4-pro:free"  # 免费模型用于共识检查
 )
 ```
 
@@ -442,14 +442,14 @@ free_consensus_results <- interactive_consensus_annotation(
 
 > ⚠️ **重要警告** ⚠️
 >
-> **即使通过 OpenRouter 访问，OpenAI 的模型（如 gpt-5、gpt-4-turbo 等）和 X.AI 的 Grok 模型仍可能受到 IP 限制。**
+> **即使通过 OpenRouter 访问，OpenAI 的模型（如 gpt-5.5、gpt-5.4 等）和 X.AI 的 Grok 模型仍可能受到 IP 限制。**
 >
 > **如果您在中国大陆访问，这些模型可能无法正常工作。您有以下选择：**
 >
 > **方案1：使用替代模型**
-> - 国内模型：DeepSeek、Qwen、GLM-4、MiniMax、Stepfun
+> - 国内模型：DeepSeek、Qwen、GLM-5、MiniMax、Stepfun
 > - 通过 OpenRouter 访问的其他国际模型：Anthropic Claude、Google Gemini、Meta Llama 4
-> - OpenRouter 免费模型：`meta-llama/llama-4-maverick:free`、`nvidia/llama-3.1-nemotron-ultra-253b-v1:free`、`deepseek/deepseek-r1:free`
+> - OpenRouter 免费模型：`meta-llama/llama-4-maverick:free`、`meta-llama/llama-3.3-70b-instruct:free`、`deepseek/deepseek-v4-pro:free`
 >
 > **方案2：使用干净 IP 的 VPN**
 > - 根据用户反馈，使用具有"干净 IP"（未被 OpenAI 或 X.AI 封禁的 IP 地址）的 VPN 服务可能解决访问限制
@@ -477,7 +477,7 @@ library(mLLMCelltype)
 results <- annotate_cell_types(
   input = pbmc_markers,
   tissue_name = "human PBMC",
-  model = "gpt-5.2",
+  model = "gpt-5.5",
   api_key = "your-openai-key",
   base_urls = "https://api.your-proxy.com/v1"  # 代理端点
 )
@@ -486,7 +486,7 @@ results <- annotate_cell_types(
 results <- annotate_cell_types(
   input = pbmc_markers,
   tissue_name = "human PBMC",
-  model = "gpt-5.2",
+  model = "gpt-5.5",
   api_key = "your-openai-key",
   base_urls = list(
     openai = "https://openai-proxy.com/v1",
@@ -499,7 +499,7 @@ results <- annotate_cell_types(
 consensus_results <- interactive_consensus_annotation(
   input = pbmc_markers,
   tissue_name = "human PBMC",
-  models = c("gpt-5.2", "claude-sonnet-4-5-20250929", "qwen3-max"),
+  models = c("gpt-5.5", "claude-sonnet-4-6", "qwen3.6-plus"),
   api_keys = list(
     openai = "your-openai-key",
     anthropic = "your-anthropic-key",
@@ -514,9 +514,35 @@ consensus_results <- interactive_consensus_annotation(
 ```
 
 ```python
-# Python 中使用自定义 base_url（计划在未来版本中支持）
-# 目前 Python 版本尚未支持 base_urls 参数
-# 请使用 R 版本获得完整的代理支持功能
+from mllmcelltype import annotate_clusters, interactive_consensus_annotation
+
+# 单模型注释：为当前 provider 传入自定义 base_url
+annotations = annotate_clusters(
+    marker_genes=marker_genes,
+    species="human",
+    tissue="PBMC",
+    provider="openai",
+    model="gpt-5.5",
+    api_key="your-openai-key",
+    base_url="https://openai-proxy.com/v1",
+)
+
+# 共识注释：为多个 provider 传入 base_urls 映射
+consensus_results = interactive_consensus_annotation(
+    marker_genes=marker_genes,
+    species="human",
+    tissue="PBMC",
+    models=["gpt-5.5", "claude-sonnet-4-6", "qwen3.6-plus"],
+    api_keys={
+        "openai": "your-openai-key",
+        "anthropic": "your-anthropic-key",
+        "qwen": "your-qwen-key",
+    },
+    base_urls={
+        "openai": "https://openai-proxy.com/v1",
+        "anthropic": "https://anthropic-proxy.com/v1",
+    },
+)
 ```
 
 **功能特点：**
@@ -706,24 +732,19 @@ for i in range(len(adata.obs['leiden'].cat.categories)):
 #     marker_genes = {cluster: [gene_name_dict.get(gene_id, gene_id) for gene_id in genes]
 #                    for cluster, genes in marker_genes.items()}
 
-# 重要提示：mLLMCelltype需要数字聚类ID
-# 'cluster'列必须包含数字值或可以转换为数字的值。
-# 非数字聚类ID（例如"cluster_1"、"T_cells"、"7_0"）可能会导致错误或意外行为。
-# 如果您的数据包含非数字聚类ID，请创建原始ID和数字ID之间的映射：
-# 示例标准化代码：
-# original_ids = list(marker_genes.keys())
-# id_mapping = {original: idx for idx, original in enumerate(original_ids)}
-# marker_genes = {str(id_mapping[cluster]): genes for cluster, genes in marker_genes.items()}
+# 重要提示：mLLMCelltype会保留输入中的聚类ID。
+# 聚类ID可以是数字或字符值（例如"0"、"T_cells"、"7_0"）。
+# 请使用稳定且唯一的ID，以便将输出映射回原始聚类。
 
 # 配置用于共识注释的大语言模型的API密钥
 # 至少需要一个API密钥用于多LLM共识注释
-os.environ["OPENAI_API_KEY"] = "your-openai-api-key"      # 用于GPT-5.2/5模型（推荐）
-os.environ["ANTHROPIC_API_KEY"] = "your-anthropic-api-key"  # 用于Claude-4.6/4.5模型
-os.environ["GEMINI_API_KEY"] = "your-gemini-api-key"      # 用于Google Gemini-3模型
+os.environ["OPENAI_API_KEY"] = "your-openai-api-key"      # 用于GPT-5.5/5.4模型（推荐）
+os.environ["ANTHROPIC_API_KEY"] = "your-anthropic-api-key"  # 用于Claude Opus 4.7/Sonnet 4.6模型
+os.environ["GEMINI_API_KEY"] = "your-gemini-api-key"      # 用于Google Gemini 3模型
 os.environ["QWEN_API_KEY"] = "your-qwen-api-key"        # 用于阿里巴巴Qwen3模型
 # 用于增强共识多样性的其他可选LLM提供商：
-# os.environ["DEEPSEEK_API_KEY"] = "your-deepseek-api-key"   # 用于DeepSeek-V3模型
-# os.environ["ZHIPU_API_KEY"] = "your-zhipu-api-key"       # 用于智谱GLM-4模型
+# os.environ["DEEPSEEK_API_KEY"] = "your-deepseek-api-key"   # 用于DeepSeek V4模型
+# os.environ["ZHIPU_API_KEY"] = "your-zhipu-api-key"       # 用于Z.AI GLM 5模型
 # os.environ["STEPFUN_API_KEY"] = "your-stepfun-api-key"    # 用于Stepfun模型
 # os.environ["MINIMAX_API_KEY"] = "your-minimax-api-key"    # 用于MiniMax模型
 # os.environ["OPENROUTER_API_KEY"] = "your-openrouter-api-key"  # 通过OpenRouter访问多种模型
@@ -733,7 +754,7 @@ consensus_results = interactive_consensus_annotation(
     marker_genes=marker_genes,  # 每个簇的标记基因字典
     species="human",            # 指定生物体以进行适当的细胞类型注释
     tissue="blood",            # 指定组织环境以获得更准确的注释
-    models=["gpt-5.2", "claude-sonnet-4-5-20250929", "gemini-3-pro", "qwen3-max"],  # 用于共识的多个LLM
+    models=["gpt-5.5", "claude-sonnet-4-6", "gemini-3.1-pro-preview", "qwen3.6-plus"],  # 用于共识的多个LLM
     consensus_threshold=1,     # 共识一致所需的最小比例
     max_discussion_rounds=3    # 模型之间进行改进的讨论轮数
 )
@@ -749,9 +770,9 @@ free_models_results = interactive_consensus_annotation(
     tissue="blood",
     models=[
         {"provider": "openrouter", "model": "meta-llama/llama-4-maverick:free"},      # Meta Llama 4 Maverick（免费）
-        {"provider": "openrouter", "model": "nvidia/llama-3.1-nemotron-ultra-253b-v1:free"},  # NVIDIA Nemotron Ultra 253B（免费）
-        {"provider": "openrouter", "model": "deepseek/deepseek-r1:free"},   # DeepSeek Chat v3（免费）
-        {"provider": "openrouter", "model": "deepseek/deepseek-r1:free"}               # Microsoft MAI-DS-R1（免费）
+        {"provider": "openrouter", "model": "meta-llama/llama-3.3-70b-instruct:free"},  # Meta Llama 3.3 70B（免费）
+        {"provider": "openrouter", "model": "deepseek/deepseek-v4-pro:free"},   # DeepSeek V4 Pro（免费）
+        {"provider": "openrouter", "model": "deepseek/deepseek-v4-pro:free"}               # Microsoft MAI-DS-R1（免费）
     ],
     consensus_threshold=0.7,
     max_discussion_rounds=2
@@ -830,7 +851,7 @@ annotations = annotate_clusters(
     species='human',
     tissue='peripheral blood',
     provider='openrouter',
-    model='deepseek/deepseek-r1:free'  # 免费模型
+    model='deepseek/deepseek-v4-pro:free'  # 免费模型
 )
 
 # 打印注释
@@ -880,7 +901,7 @@ annotations = annotate_clusters(
     species='human',
     tissue='peripheral blood',  # 根据您的组织类型调整
     provider='openrouter',
-    model='deepseek/deepseek-r1:free'  # 免费模型
+    model='deepseek/deepseek-v4-pro:free'  # 免费模型
 )
 
 # 将注释添加到AnnData对象
@@ -931,32 +952,31 @@ dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
 
 # 从任何支持的提供商中选择一个模型
 # 支持的模型包括：
-# - OpenAI: 'gpt-5.2', 'gpt-5', 'gpt-4.1', 'o3-pro', 'o3', 'o4-mini', 'o1', 'o1-pro'
-# - Anthropic: 'claude-opus-4-6-20260205', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001'
-# - DeepSeek: 'deepseek-chat', 'deepseek-reasoner'
-# - Google: 'gemini-3-pro', 'gemini-3-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'
-# - Qwen: 'qwen3-max', 'qwen-max-2025-01-25'
-# - Stepfun: 'step-3', 'step-2-16k', 'step-2-mini'
-# - Zhipu: 'glm-4.7', 'glm-4-plus'
-# - MiniMax: 'minimax-m2.1', 'minimax-m2'
-# - Grok: 'grok-4', 'grok-4.1', 'grok-4-heavy', 'grok-3', 'grok-3-fast', 'grok-3-mini'
+# - OpenAI: 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'
+# - Anthropic: 'claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'
+# - DeepSeek: 'deepseek-v4-flash', 'deepseek-v4-pro'
+# - Google: 'gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite'
+# - Qwen: 'qwen3.6-plus', 'qwen3.6-flash', 'qwen3.6-max-preview'
+# - Stepfun: 'step-3.5-flash', 'step-3.5-flash-2603', 'step-3'
+# - Zhipu/Z.AI: 'glm-5.1', 'glm-5', 'glm-5-turbo'
+# - MiniMax: 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5'
+# - Grok: 'grok-4.3', 'grok-4.3-latest', 'grok-latest'
 # - OpenRouter: 通过单一API访问多个提供商的模型。格式：'provider/model-name'
-#   - OpenAI模型：'openai/gpt-5.2', 'openai/gpt-5', 'openai/o3-pro'
-#   - Anthropic模型：'anthropic/claude-opus-4.5', 'anthropic/claude-sonnet-4.5', 'anthropic/claude-haiku-4.5'
-#   - Meta模型：'meta-llama/llama-4-maverick', 'meta-llama/llama-4-scout', 'meta-llama/llama-3.3-70b-instruct'
-#   - Google模型：'google/gemini-3-pro', 'google/gemini-3-flash', 'google/gemini-2.5-pro'
-#   - Mistral模型：'mistralai/mistral-large', 'mistralai/magistral-medium-2506'
-#   - 其他模型：'deepseek/deepseek-r1', 'deepseek/deepseek-chat-v3.1', 'microsoft/mai-ds-r1'
+#   - OpenAI模型：'openai/gpt-5.5', 'openai/gpt-5.4-mini'
+#   - Anthropic模型：'anthropic/claude-opus-4.7', 'anthropic/claude-sonnet-4.6'
+#   - Google模型：'google/gemini-3.1-pro-preview', 'google/gemini-3-flash-preview'
+#   - X.AI模型：'x-ai/grok-4.3'
+#   - Stepfun模型：'stepfun/step-3.5-flash'
 
 # 使用多个LLM模型运行LLMCelltype注释
 consensus_results <- interactive_consensus_annotation(
   input = pbmc_markers,
   tissue_name = "human PBMC",  # 提供组织上下文
   models = c(
-    "claude-sonnet-4-5-20250929",  # Anthropic
-    "gpt-5.2",                   # OpenAI
-    "gemini-3-pro",           # Google
-    "qwen3-max"       # Alibaba
+    "claude-sonnet-4-6",  # Anthropic
+    "gpt-5.5",                   # OpenAI
+    "gemini-3.1-pro-preview",           # Google
+    "qwen3.6-plus"       # Alibaba
   ),
   api_keys = list(
     anthropic = "your-anthropic-key",
@@ -1182,12 +1202,12 @@ consensus_results <-
   interactive_consensus_annotation(
     input = marker_genes_list,
     tissue_name = "your tissue type", # 例如："human heart"
-    models = c("gemini-3-pro",
-              "gemini-3-flash",
-              "qwen3-max",
-              "grok-4",
-              "claude-sonnet-4-5-20250929",
-              "gpt-5.2"),
+    models = c("gemini-3.1-pro-preview",
+              "gemini-3-flash-preview",
+              "qwen3.6-plus",
+              "grok-4.3",
+              "claude-sonnet-4-6",
+              "gpt-5.5"),
     api_keys = api_keys,
     controversy_threshold = 0.6,
     entropy_threshold = 1.0,
@@ -1206,12 +1226,12 @@ free_consensus_results <-
     tissue_name = "your tissue type", # 例如："human heart"
     models = c(
       "meta-llama/llama-4-maverick:free",      # Meta Llama 4 Maverick（免费）
-      "nvidia/llama-3.1-nemotron-ultra-253b-v1:free",  # NVIDIA Nemotron Ultra 253B（免费）
-      "deepseek/deepseek-r1:free",   # DeepSeek Chat v3（免费）
-      "deepseek/deepseek-r1:free"               # Microsoft MAI-DS-R1（免费）
+      "meta-llama/llama-3.3-70b-instruct:free",  # Meta Llama 3.3 70B（免费）
+      "deepseek/deepseek-v4-pro:free",   # DeepSeek V4 Pro（免费）
+      "z-ai/glm-4.5-air:free"                      # GLM 4.5 Air（免费）
     ),
     api_keys = api_keys,
-    consensus_check_model = "deepseek/deepseek-r1:free",  # 用于共识检查的免费模型
+    consensus_check_model = "deepseek/deepseek-v4-pro:free",  # 用于共识检查的免费模型
     controversy_threshold = 0.6,
     entropy_threshold = 1.0,
     max_discussion_rounds = 2,
@@ -1272,28 +1292,27 @@ pbmc_markers <- FindAllMarkers(pbmc,
 
 # 从任何支持的提供商中选择一个模型
 # 支持的模型包括：
-# - OpenAI: 'gpt-5.2', 'gpt-5', 'gpt-4.1', 'o3-pro', 'o3', 'o4-mini', 'o1', 'o1-pro'
-# - Anthropic: 'claude-opus-4-6-20260205', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001'
-# - DeepSeek: 'deepseek-chat', 'deepseek-reasoner'
-# - Google: 'gemini-3-pro', 'gemini-3-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'
-# - Qwen: 'qwen3-max', 'qwen-max-2025-01-25'
-# - Stepfun: 'step-3', 'step-2-16k', 'step-2-mini'
-# - Zhipu: 'glm-4.7', 'glm-4-plus'
-# - MiniMax: 'minimax-m2.1', 'minimax-m2'
-# - Grok: 'grok-4', 'grok-4.1', 'grok-4-heavy', 'grok-3', 'grok-3-fast', 'grok-3-mini'
+# - OpenAI: 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'
+# - Anthropic: 'claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'
+# - DeepSeek: 'deepseek-v4-flash', 'deepseek-v4-pro'
+# - Google: 'gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite'
+# - Qwen: 'qwen3.6-plus', 'qwen3.6-flash', 'qwen3.6-max-preview'
+# - Stepfun: 'step-3.5-flash', 'step-3.5-flash-2603', 'step-3'
+# - Zhipu/Z.AI: 'glm-5.1', 'glm-5', 'glm-5-turbo'
+# - MiniMax: 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5'
+# - Grok: 'grok-4.3', 'grok-4.3-latest', 'grok-latest'
 # - OpenRouter: 通过单一API访问多个提供商的模型。格式：'provider/model-name'
-#   - OpenAI模型：'openai/gpt-5.2', 'openai/gpt-5', 'openai/o3-pro'
-#   - Anthropic模型：'anthropic/claude-opus-4.5', 'anthropic/claude-sonnet-4.5', 'anthropic/claude-haiku-4.5'
-#   - Meta模型：'meta-llama/llama-4-maverick', 'meta-llama/llama-4-scout', 'meta-llama/llama-3.3-70b-instruct'
-#   - Google模型：'google/gemini-3-pro', 'google/gemini-3-flash', 'google/gemini-2.5-pro'
-#   - Mistral模型：'mistralai/mistral-large', 'mistralai/magistral-medium-2506'
-#   - 其他模型：'deepseek/deepseek-r1', 'deepseek/deepseek-chat-v3.1', 'microsoft/mai-ds-r1'
+#   - OpenAI模型：'openai/gpt-5.5', 'openai/gpt-5.4-mini'
+#   - Anthropic模型：'anthropic/claude-opus-4.7', 'anthropic/claude-sonnet-4.6'
+#   - Google模型：'google/gemini-3.1-pro-preview', 'google/gemini-3-flash-preview'
+#   - X.AI模型：'x-ai/grok-4.3'
+#   - Stepfun模型：'stepfun/step-3.5-flash'
 
 # 使用单个LLM模型运行细胞类型注释
 single_model_results <- annotate_cell_types(
   input = pbmc_markers,
   tissue_name = "human PBMC",  # 提供组织上下文
-  model = "claude-sonnet-4-5-20250929",  # 指定单个模型
+  model = "claude-sonnet-4-6",  # 指定单个模型
   api_key = "your-anthropic-key",  # 直接提供API密钥
   top_gene_count = 10
 )
@@ -1307,20 +1326,8 @@ free_model_results <- annotate_cell_types(
   top_gene_count = 10
 )
 
-# 打印结果
-print(single_model_results)
-
-# 将注释添加到Seurat对象
-# single_model_results是一个字符向量，每个聚类对应一个注释
-pbmc$cell_type <- plyr::mapvalues(
-  x = as.character(Idents(pbmc)),
-  from = names(single_model_results),
-  to = single_model_results
-)
-
-# 可视化结果
-DimPlot(pbmc, group.by = "cell_type", label = TRUE) +
-  ggtitle("使用单个LLM模型注释的细胞类型")
+# 查看 provider 返回的逐行文本；在映射回 Seurat 对象前请先解析或人工确认。
+cat(single_model_results)
 ```
 
 #### 比较不同的模型
@@ -1330,10 +1337,10 @@ DimPlot(pbmc, group.by = "cell_type", label = TRUE) +
 ```r
 # 定义要测试的模型
 models_to_test <- c(
-  "claude-sonnet-4-5-20250929",  # Anthropic
-  "gpt-5.2",                      # OpenAI
-  "gemini-3-pro",              # Google
-  "qwen3-max"          # Alibaba
+  "claude-sonnet-4-6",  # Anthropic
+  "gpt-5.5",                      # OpenAI
+  "gemini-3.1-pro-preview",              # Google
+  "qwen3.6-plus"          # Alibaba
 )
 
 # 不同提供商的API密钥
@@ -1359,13 +1366,8 @@ for (model in models_to_test) {
     top_gene_count = 10
   )
 
-  # 添加到Seurat对象
-  column_name <- paste0("cell_type_", gsub("[^a-zA-Z0-9]", "_", model))
-  pbmc[[column_name]] <- plyr::mapvalues(
-    x = as.character(Idents(pbmc)),
-    from = names(results[[model]]),
-    to = results[[model]]
-  )
+  # 存储原始响应，供后续人工检查或解析。
+  message(sprintf("%s response:\n%s", model, results[[model]]))
 }
 ```
 
@@ -1383,23 +1385,23 @@ for (model in models_to_test) {
 #### 推荐的共识检查模型（按性能排序）
 
 1. **Anthropic Claude模型**（推荐）
-   - `claude-sonnet-4-5-20250929`
+   - `claude-sonnet-4-6`
    - `claude-opus-4-1-20250805`
 
 2. **OpenAI模型**
    - `o1` / `o1-pro` - 高级推理能力
-   - `gpt-5.2` / `gpt-5` - 在各种细胞类型中的强大性能
-   - `gpt-4.1` - 最新的GPT-4变体
+   - `gpt-5.5` / `gpt-5.4` - 在各种细胞类型中的强大性能
+   - `gpt-5.4-mini` - 更快、更经济的GPT-5系列模型
 
 3. **Google Gemini模型**
-   - `gemini-3-pro` - 顶级性能，增强推理能力
-   - `gemini-3-flash` - 性能与速度的绝佳平衡
-   - `gemini-2.0-flash` - 良好的性能，处理速度更快
+   - `gemini-3.1-pro-preview` - 顶级性能，增强推理能力
+   - `gemini-3-flash-preview` - 性能与速度的绝佳平衡
+   - `gemini-3.1-flash-lite` - 轻量快速模型
 
 4. **其他高性能模型**
-   - `deepseek-r1` / `deepseek-reasoner` - 强大的推理能力
-   - `qwen3-max` - 在科学背景下表现出色
-   - `grok-4` - 高级语言理解
+   - `deepseek-v4-pro` / `deepseek-v4-pro` - 强大的推理能力
+   - `qwen3.6-plus` - 在科学背景下表现出色
+   - `grok-4.3` - 高级语言理解
 
 #### R包使用
 
@@ -1408,9 +1410,9 @@ for (model in models_to_test) {
 consensus_results <- interactive_consensus_annotation(
   input = marker_genes_list,
   tissue_name = "human brain",
-  models = c("gpt-5.2", "claude-sonnet-4-5-20250929", "gemini-3-pro", "qwen3-max"),
+  models = c("gpt-5.5", "claude-sonnet-4-6", "gemini-3.1-pro-preview", "qwen3.6-plus"),
   api_keys = api_keys,
-  consensus_check_model = "claude-sonnet-4-5-20250929",  # 使用最有能力的模型
+  consensus_check_model = "claude-sonnet-4-6",  # 使用最有能力的模型
   controversy_threshold = 0.7,
   entropy_threshold = 1.0
 )
@@ -1419,9 +1421,9 @@ consensus_results <- interactive_consensus_annotation(
 consensus_results <- interactive_consensus_annotation(
   input = marker_genes_list,
   tissue_name = "mouse liver",
-  models = c("gpt-5.2", "gemini-3-pro", "qwen3-max"),
+  models = c("gpt-5.5", "gemini-3.1-pro-preview", "qwen3.6-plus"),
   api_keys = api_keys,
-  consensus_check_model = "claude-sonnet-4-5-20250929",  # 替代高性能模型
+  consensus_check_model = "claude-sonnet-4-6",  # 替代高性能模型
   controversy_threshold = 0.7,
   entropy_threshold = 1.0
 )
@@ -1430,7 +1432,7 @@ consensus_results <- interactive_consensus_annotation(
 consensus_results <- interactive_consensus_annotation(
   input = marker_genes_list,
   tissue_name = "human immune cells",
-  models = c("gpt-5.2", "claude-sonnet-4-5-20250929", "gemini-3-pro"),
+  models = c("gpt-5.5", "claude-sonnet-4-6", "gemini-3.1-pro-preview"),
   api_keys = api_keys,
   consensus_check_model = "o1",  # OpenAI的高级推理模型
   controversy_threshold = 0.7,
@@ -1459,7 +1461,7 @@ consensus_results <- interactive_consensus_annotation(
 result <- annotate_cell_types(
   input = marker_genes_list,
   tissue_name = "human PBMC",
-  model = "gpt-5.2",
+  model = "gpt-5.5",
   api_key = "your-api-key",
   base_urls = "https://api.openai-proxy.com/v1"  # 所有提供商使用相同代理
 )
@@ -1468,7 +1470,7 @@ result <- annotate_cell_types(
 result <- annotate_cell_types(
   input = marker_genes_list,
   tissue_name = "human PBMC",
-  model = "gpt-5.2",
+  model = "gpt-5.5",
   api_key = "your-api-key",
   base_urls = list(
     openai = "https://openai-proxy.com/v1",
@@ -1485,7 +1487,7 @@ result <- annotate_cell_types(
 consensus_results <- interactive_consensus_annotation(
   input = marker_genes_list,
   tissue_name = "human PBMC",
-  models = c("gpt-5.2", "claude-sonnet-4-5-20250929", "qwen3-max"),
+  models = c("gpt-5.5", "claude-sonnet-4-6", "qwen3.6-plus"),
   api_keys = list(
     openai = Sys.getenv("OPENAI_API_KEY"),
     anthropic = Sys.getenv("ANTHROPIC_API_KEY"),
@@ -1518,7 +1520,7 @@ Qwen有两个API端点：
 result <- annotate_cell_types(
   input = marker_genes_list,
   tissue_name = "human PBMC",
-  model = "qwen3-max",
+  model = "qwen3.6-plus",
   api_key = "your-qwen-api-key"
   # 无需配置base_urls，系统自动选择最佳端点
 )
@@ -1527,7 +1529,7 @@ result <- annotate_cell_types(
 consensus_results <- interactive_consensus_annotation(
   input = marker_genes_list,
   tissue_name = "human PBMC",
-  models = c("gpt-5.2", "claude-sonnet-4-5-20250929", "qwen3-max"),
+  models = c("gpt-5.5", "claude-sonnet-4-6", "qwen3.6-plus"),
   api_keys = list(
     openai = "your-openai-key",
     anthropic = "your-anthropic-key",
@@ -1540,7 +1542,7 @@ consensus_results <- interactive_consensus_annotation(
 result <- annotate_cell_types(
   input = marker_genes_list,
   tissue_name = "human PBMC",
-  model = "qwen3-max",
+  model = "qwen3.6-plus",
   api_key = "your-qwen-api-key",
   base_urls = list(qwen = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation")  # 强制使用国内版
 )
@@ -1579,8 +1581,8 @@ consensus_results = interactive_consensus_annotation(
     marker_genes=marker_genes,
     species="human",
     tissue="brain",
-    models=["gpt-5.2", "claude-sonnet-4-5-20250929", "gemini-3-pro", "qwen3-max"],
-    consensus_model="claude-sonnet-4-5-20250929",  # 使用最有能力的模型
+    models=["gpt-5.5", "claude-sonnet-4-6", "gemini-3.1-pro-preview", "qwen3.6-plus"],
+    consensus_model="claude-sonnet-4-6",  # 使用最有能力的模型
     consensus_threshold=0.7,
     entropy_threshold=1.0
 )
@@ -1590,8 +1592,8 @@ consensus_results = interactive_consensus_annotation(
     marker_genes=marker_genes,
     species="mouse",
     tissue="liver",
-    models=["gpt-5.2", "gemini-3-pro", "qwen3-max"],
-    consensus_model={"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+    models=["gpt-5.5", "gemini-3.1-pro-preview", "qwen3.6-plus"],
+    consensus_model={"provider": "anthropic", "model": "claude-sonnet-4-6"},
     consensus_threshold=0.7,
     entropy_threshold=1.0
 )
@@ -1601,19 +1603,19 @@ consensus_results = interactive_consensus_annotation(
     marker_genes=marker_genes,
     species="human",
     tissue="heart",
-    models=["gpt-5.2", "claude-sonnet-4-5-20250929", "qwen3-max"],
-    consensus_model={"provider": "google", "model": "gemini-3-pro"},
+    models=["gpt-5.5", "claude-sonnet-4-6", "qwen3.6-plus"],
+    consensus_model={"provider": "google", "model": "gemini-3.1-pro-preview"},
     consensus_threshold=0.7,
     entropy_threshold=1.0
 )
 
-# 示例4：默认行为（使用Qwen与高性能回退）
+# 示例4：默认行为（从可用 API key 自动选择）
 consensus_results = interactive_consensus_annotation(
     marker_genes=marker_genes,
     species="human",
     tissue="blood",
-    models=["gpt-5.2", "claude-sonnet-4-5-20250929", "gemini-3-pro"],
-    # 如果未指定，默认为qwen3-max（高性能模型）
+    models=["gpt-5.5", "claude-sonnet-4-6", "gemini-3.1-pro-preview"],
+    # 如果未指定，consensus_model 会从可用 api_keys 中选择
     consensus_threshold=0.7,
     entropy_threshold=1.0
 )
@@ -1627,11 +1629,11 @@ consensus_results = interactive_consensus_annotation(
 
 3. **一致性**：在项目中的所有共识检查中使用相同的高性能模型，以确保一致的评估标准。
 
-4. **复杂组织**：对于具有挑战性的组织（例如，大脑、免疫系统），考虑使用最先进的模型，如Claude Opus、O1或Gemini 2.5 Pro。
+4. **复杂组织**：对于具有挑战性的组织（例如，大脑、免疫系统），考虑使用最先进的模型，如Claude Opus、O1或Gemini 3.1 Pro Preview。
 
 5. **默认行为**：
-   - R：如果未指定，则使用`models`列表中的第一个模型
-   - Python：默认为`qwen3-max`（高性能模型），以`claude-sonnet-4-5-20250929`作为回退
+   - R：如果未指定，则使用初始注释阶段第一个成功的模型
+   - Python：从`api_keys`中可用的 provider 自动选择共识检查模型；为了可复现，建议显式传入`consensus_model`
 
 #### 为什么模型质量对共识检查很重要
 
@@ -1673,7 +1675,7 @@ library(ggplot2)
 consensus_results <- interactive_consensus_annotation(
   input = markers_df,
   tissue_name = "human PBMC",
-  models = c("anthropic/claude-sonnet-4.5", "openai/gpt-5.2"),
+  models = c("anthropic/claude-sonnet-4.6", "openai/gpt-5.5"),
   api_keys = list(openrouter = "your_api_key")
 )
 

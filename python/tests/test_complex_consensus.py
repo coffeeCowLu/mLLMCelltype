@@ -11,23 +11,17 @@ This script tests the multi-LLM round-table discussion with challenging scenario
 Using latest models from each provider.
 """
 
-import os
-import sys
-
-# Add the parent directory to the path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+import pytest
 from dotenv import load_dotenv
 
 from mllmcelltype import interactive_consensus_annotation
 from mllmcelltype.utils import load_api_key
 
-# Load environment variables
-load_dotenv()
 
-
+@pytest.mark.integration
 def test_complex_consensus():
     """Test consensus with challenging, ambiguous marker gene profiles."""
+    load_dotenv()
 
     # Complex scenario: Human bone marrow with ambiguous cell populations
     # These markers are designed to create disagreement between models
@@ -158,11 +152,11 @@ def test_complex_consensus():
     # Check available API keys and select latest models
     api_keys = {}
 
-    # OpenAI - gpt-5.2
+    # OpenAI - gpt-5.5
     openai_key = load_api_key("openai")
     if openai_key:
         api_keys["openai"] = openai_key
-        models_to_use.append("gpt-5.2")  # Latest GPT model
+        models_to_use.append("gpt-5.5")  # Latest GPT model
 
     # Anthropic - claude-opus-4-5
     anthropic_key = load_api_key("anthropic")
@@ -174,19 +168,19 @@ def test_complex_consensus():
     deepseek_key = load_api_key("deepseek")
     if deepseek_key:
         api_keys["deepseek"] = deepseek_key
-        models_to_use.append("deepseek-chat")  # V3.2
+        models_to_use.append("deepseek-v4-flash")  # V3.2
 
-    # Qwen - qwen3-max
+    # Qwen - qwen3.6-plus
     qwen_key = load_api_key("qwen")
     if qwen_key:
         api_keys["qwen"] = qwen_key
-        models_to_use.append("qwen3-max")  # Latest Qwen3
+        models_to_use.append("qwen3.6-plus")  # Latest Qwen3
 
-    # Zhipu - GLM-4-plus (glm-4.7 has rate limits)
+    # Zhipu - GLM-4-plus (glm-5.1 has rate limits)
     zhipu_key = load_api_key("zhipu")
     if zhipu_key:
         api_keys["zhipu"] = zhipu_key
-        models_to_use.append("glm-4-plus")
+        models_to_use.append("glm-5.1")
 
     print("=" * 80)
     print("COMPLEX CONSENSUS TEST - Multi-LLM Round-Table Discussion")
@@ -225,8 +219,7 @@ def test_complex_consensus():
         print("Proceeding with available models...")
 
     if len(models_to_use) < 1:
-        print("ERROR: No API keys available. Cannot run test.")
-        return
+        pytest.skip("No API keys available for complex consensus integration test")
 
     # Run the interactive consensus annotation
     results = interactive_consensus_annotation(

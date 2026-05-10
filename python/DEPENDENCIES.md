@@ -25,8 +25,7 @@ Install with: `pip install mllmcelltype[provider_name]`
 - **Google Gemini**: `pip install mllmcelltype[gemini]`
   - google-genai ≥ 1.0.0
 
-- **X.AI Grok**: `pip install mllmcelltype[grok]`
-  - x-ai ≥ 0.1.0
+- **X.AI Grok, DeepSeek, Qwen, Zhipu, StepFun, MiniMax, and OpenRouter**: no provider-specific extra is required; these use the core HTTP client.
 
 ### For visualization
 
@@ -43,7 +42,6 @@ Install with: `pip install mllmcelltype[examples]`
 
 - matplotlib ≥ 3.3.0
 - scanpy ≥ 1.8.0
-- python-dotenv ≥ 0.19.0
 
 ### Install all optional dependencies
 
@@ -52,7 +50,6 @@ Install with: `pip install mllmcelltype[all]`
 This includes:
 - All LLM provider libraries (OpenAI, Anthropic, Google)
 - Visualization libraries (matplotlib, seaborn)
-- Environment management (python-dotenv)
 
 ### For development
 
@@ -65,7 +62,7 @@ Install with: `pip install mllmcelltype[dev]`
 
 ## Python Version Requirement
 
-- Python ≥ 3.9 (supports 3.9, 3.10, 3.11)
+- Python ≥ 3.9 (package metadata declares support for 3.9 through 3.13)
 
 ## Installation Examples
 
@@ -92,6 +89,6 @@ pip install -e .[dev]
 
 2. **Minimal Installation**: If you're only using models through OpenRouter or providers that use standard HTTP requests, you may not need to install provider-specific libraries.
 
-3. **Version Compatibility**: The package is tested with Python 3.9, 3.10, and 3.11. We recommend using the latest stable Python version for best performance.
+3. **Version Compatibility**: The package metadata declares support for Python 3.9 through 3.13. Use a supported stable Python version for best reproducibility.
 
 4. **Memory Requirements**: Running multiple LLMs for consensus annotation may require significant memory, especially for large datasets. We recommend at least 8GB RAM for typical use cases.

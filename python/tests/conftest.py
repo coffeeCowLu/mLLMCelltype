@@ -17,6 +17,27 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
+def pytest_addoption(parser):
+    """Add explicit opt-in for tests that call external APIs."""
+    parser.addoption(
+        "--run-integration",
+        action="store_true",
+        default=False,
+        help="run integration tests that require real external API access",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip integration tests unless the user explicitly opts in."""
+    if config.getoption("--run-integration"):
+        return
+
+    skip_integration = pytest.mark.skip(reason="requires --run-integration")
+    for item in items:
+        if item.get_closest_marker("integration") is not None:
+            item.add_marker(skip_integration)
+
+
 # Sample marker genes for testing
 @pytest.fixture
 def sample_marker_genes_df():

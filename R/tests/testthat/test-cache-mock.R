@@ -12,12 +12,12 @@ test_that("Cache saves and retrieves mock consensus results", {
   mock_consensus <- list(
     consensus_annotation = "T cell",
     confidence_score = 0.95,
-    models_used = c("gpt-5.2", "claude-sonnet-4-20250514"),
+    models_used = c("gpt-5.5", "claude-sonnet-4-20250514"),
     timestamp = Sys.time()
   )
   
   # Generate cache key
-  key <- cache_manager$generate_key(mock_input, c("gpt-5.2", "claude-sonnet-4-20250514"), "cluster_1")
+  key <- cache_manager$generate_key(mock_input, c("gpt-5.5", "claude-sonnet-4-20250514"), "cluster_1")
   
   # Test saving
   cache_manager$save_to_cache(key, mock_consensus)
@@ -47,8 +47,8 @@ test_that("Cache handles different input formats", {
   )
   
   # Both should generate valid cache keys
-  key1 <- cache_manager$generate_key(df_input, "gpt-5.2", "0")
-  key2 <- cache_manager$generate_key(simple_input, "gpt-5.2", "0")
+  key1 <- cache_manager$generate_key(df_input, "gpt-5.5", "0")
+  key2 <- cache_manager$generate_key(simple_input, "gpt-5.5", "0")
   
   expect_true(nchar(key1) > 0)
   expect_true(nchar(key2) > 0)
@@ -64,7 +64,7 @@ test_that("Cache validation works", {
     annotation = "T cell",
     discussion_log = list(
       rounds = list(
-        list(model = "gpt-5.2", response = "T cell")
+        list(model = "gpt-5.5", response = "T cell")
       )
     ),
     confidence_score = 0.95

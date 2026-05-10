@@ -4,9 +4,7 @@ filter_valid_responses <- function(responses, cluster_id, round = NULL) {
   valid <- list()
   for (model_name in names(responses)) {
     response <- responses[[model_name]]
-    if (!is.null(response) &&
-        (!is.character(response) ||
-         (is.character(response) && !any(grepl("^Error:", response))))) {
+    if (!is.null(response) && !is_error_response(response)) {
       valid[[model_name]] <- response
     } else {
       round_info <- if (!is.null(round)) sprintf(" in round %d", round) else ""

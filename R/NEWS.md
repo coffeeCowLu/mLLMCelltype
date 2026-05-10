@@ -1,5 +1,15 @@
 # mLLMCelltype Changelog
 
+## 2.0.4 (2026-05-10)
+
+### Bug Fixes
+* Aligned R documentation with the actual `annotate_cell_types()` return contract.
+* Hardened discussion error-response filtering so failed model responses are excluded consistently.
+* Kept default tests offline by gating real API integration tests behind explicit environment variables.
+
+### Documentation
+* Updated examples and integration guidance for the current cross-language API surface.
+
 ## 2.0.0 (2026-02-08)
 
 ### Breaking Changes

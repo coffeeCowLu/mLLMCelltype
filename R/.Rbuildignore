@@ -32,7 +32,6 @@
 ^\.Rhistory$
 ^\.RData$
 ^\.mllmcelltype_cache$
-^consensus_cache$
 ^detailed_check\.log$
 ^index\.md$
 ^examples$

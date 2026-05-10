@@ -44,12 +44,12 @@ class TestConsensus:
                 "2": "B cells",
                 "3": "NK cells",
             },
-            "claude-sonnet-4-5-20250929": {
+            "claude-sonnet-4-6": {
                 "1": "T lymphocytes",
                 "2": "B lymphocytes",
                 "3": "Natural killer cells",
             },
-            "gemini-3-pro": {
+            "gemini-3.1-pro-preview": {
                 "1": "CD4+ T cells",
                 "2": "Plasma B cells",
                 "3": "NK cells",
@@ -139,15 +139,15 @@ class TestConsensus:
 
     def test_normalize_consensus_model_spec_from_string(self):
         """Test string consensus model resolves to provider+model dict."""
-        result = _normalize_consensus_model_spec("  gpt-5.2  ")
-        assert result == {"provider": "openai", "model": "gpt-5.2"}
+        result = _normalize_consensus_model_spec("  gpt-5.5  ")
+        assert result == {"provider": "openai", "model": "gpt-5.5"}
 
     def test_normalize_consensus_model_spec_provider_only_gets_default_model(self):
         """Test provider-only dict consensus model picks default model."""
         result = _normalize_consensus_model_spec({"provider": "anthropic"})
         assert result is not None
         assert result["provider"] == "anthropic"
-        assert result["model"] == "claude-opus-4-6-20260205"
+        assert result["model"] == "claude-opus-4-7"
 
     def test_normalize_consensus_model_spec_invalid_type_raises(self):
         """Test invalid consensus_model type fails fast."""
@@ -170,7 +170,7 @@ class TestConsensus:
             _normalize_consensus_model_spec(
                 {
                     "provider": "openai",
-                    "model": "claude-sonnet-4-5-20250929",
+                    "model": "claude-sonnet-4-6",
                 }
             )
 
@@ -179,10 +179,10 @@ class TestConsensus:
         result = _normalize_consensus_model_spec(
             {
                 "provider": "openrouter",
-                "model": "gpt-5.2",
+                "model": "gpt-5.5",
             }
         )
-        assert result == {"provider": "openrouter", "model": "gpt-5.2"}
+        assert result == {"provider": "openrouter", "model": "gpt-5.5"}
 
     def test_check_consensus_fallback(self):
         """Test check_consensus function fallback behavior."""
@@ -298,7 +298,7 @@ class TestConsensus:
         response = _call_llm_with_retry(
             prompt="test prompt",
             provider="openai",
-            model="gpt-5.2",
+            model="gpt-5.5",
             api_key=None,
             max_retries=1,
             api_keys={"custom": "custom-key", "anthropic": "anth-key"},
@@ -322,7 +322,7 @@ class TestConsensus:
         response = _call_llm_with_retry(
             prompt="test prompt",
             provider="openai",
-            model="gpt-5.2",
+            model="gpt-5.5",
             api_key="openai-key",
             max_retries=3,
             api_keys={"openai": "openai-key", "anthropic": "anth-key"},
@@ -347,7 +347,7 @@ class TestConsensus:
         response = _call_llm_with_retry(
             prompt="test prompt",
             provider="openai",
-            model="gpt-5.2",
+            model="gpt-5.5",
             api_key="openai-key",
             max_retries=1,
             fallback_provider="custom",
@@ -418,7 +418,7 @@ class TestConsensus:
         consensus, cp, entropy, _controversial = check_consensus(
             predictions=predictions,
             api_keys={},
-            consensus_model="gpt-5.2",
+            consensus_model="gpt-5.5",
         )
 
         assert consensus["1"] == "T cells"
@@ -736,7 +736,7 @@ class TestConsensus:
         label = _extract_cell_type_via_llm(
             text="some response",
             provider="openai",
-            model="gpt-5.2",
+            model="gpt-5.5",
             api_key="test-key",
             api_keys={"openai": "test-key"},
         )
@@ -816,8 +816,8 @@ class TestConsensus:
             species="human",
             models=[
                 "gpt-5",
-                "claude-sonnet-4-5-20250929",
-                "gemini-3-pro",
+                "claude-sonnet-4-6",
+                "gemini-3.1-pro-preview",
             ],
             api_keys={
                 "openai": "test-key",
@@ -876,7 +876,7 @@ class TestConsensus:
         result = interactive_consensus_annotation(
             marker_genes={"1": ["CD3D"], "2": ["MS4A1"]},
             species="human",
-            models=[{"provider": "openai", "model": "gpt-5.2"}],
+            models=[{"provider": "openai", "model": "gpt-5.5"}],
             api_keys={"openai": "test-key"},
             use_cache=False,
         )
@@ -911,7 +911,7 @@ class TestConsensus:
         result = interactive_consensus_annotation(
             marker_genes={"1": ["CD3D"], "2": ["MS4A1"], "3": ["NKG7"]},
             species="human",
-            models=[{"provider": "openai", "model": "gpt-5.2"}],
+            models=[{"provider": "openai", "model": "gpt-5.5"}],
             api_keys={"openai": "test-key"},
             use_cache=False,
         )
@@ -955,8 +955,8 @@ class TestConsensus:
             marker_genes={"1": ["CD3D"]},
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-6"},
             ],
             api_keys={"openai": "key-a", "anthropic": "key-b"},
             max_discussion_rounds=1,
@@ -997,7 +997,7 @@ class TestConsensus:
         result = interactive_consensus_annotation(
             marker_genes={"1": ["CD3D"], "2": ["MS4A1"]},
             species="human",
-            models=[{"provider": "openai", "model": "gpt-5.2"}],
+            models=[{"provider": "openai", "model": "gpt-5.5"}],
             api_keys={"openai": "test-key"},
             use_cache=False,
         )
@@ -1027,7 +1027,7 @@ class TestConsensus:
         result = interactive_consensus_annotation(
             marker_genes={"1": ["CD3D"], "2": ["MS4A1"]},
             species="human",
-            models=[{"provider": "openai", "model": "gpt-5.2"}],
+            models=[{"provider": "openai", "model": "gpt-5.5"}],
             api_keys={"openai": "test-key"},
             use_cache=False,
         )
@@ -1067,8 +1067,8 @@ class TestConsensus:
             marker_genes={"1": ["CD3D"]},
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-6"},
             ],
             api_keys={"openai": "openai-key"},
             use_cache=False,
@@ -1102,15 +1102,15 @@ class TestConsensus:
             marker_genes={"1": ["CD3D"]},
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-6"},
             ],
             api_keys={"openai": "key-a", "anthropic": "key-b"},
             use_cache=False,
         )
 
         assert len(result["model_annotations"]) == 1
-        assert "anthropic:claude-sonnet-4-5-20250929" in result["model_annotations"]
+        assert "anthropic:claude-sonnet-4-6" in result["model_annotations"]
 
     @patch("mllmcelltype.consensus.check_consensus")
     @patch("mllmcelltype.consensus.annotate_clusters")
@@ -1126,8 +1126,8 @@ class TestConsensus:
             marker_genes={"1": ["CD3D"]},
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-6"},
             ],
             api_keys={"openai": "key-a", "anthropic": "key-b"},
             use_cache=False,
@@ -1161,8 +1161,8 @@ class TestConsensus:
             marker_genes={"1": ["CD3D"]},
             species="human",
             models=[
-                {"provider": "OpenAI", "model": "gpt-5.2"},
-                {"provider": "ANTHROPIC", "model": "claude-sonnet-4-5-20250929"},
+                {"provider": "OpenAI", "model": "gpt-5.5"},
+                {"provider": "ANTHROPIC", "model": "claude-sonnet-4-6"},
             ],
             api_keys={
                 "openai": "test-key",
@@ -1194,13 +1194,13 @@ class TestConsensus:
         result = interactive_consensus_annotation(
             marker_genes={"1": ["CD3D"]},
             species="human",
-            models=[{"provider": "openai", "model": "gpt-5.2"}],
+            models=[{"provider": "openai", "model": "gpt-5.5"}],
             api_keys={"  OPENAI  ": "test-key"},
             use_cache=False,
         )
 
         assert len(result["model_annotations"]) == 1
-        assert "openai:gpt-5.2" in result["model_annotations"]
+        assert "openai:gpt-5.5" in result["model_annotations"]
 
     @patch("mllmcelltype.consensus.annotate_clusters")
     @patch("mllmcelltype.consensus.check_consensus")
@@ -1221,7 +1221,7 @@ class TestConsensus:
         interactive_consensus_annotation(
             marker_genes={"1": ["CD3D"]},
             species="human",
-            models=[{"provider": "openai", "model": "gpt-5.2"}],
+            models=[{"provider": "openai", "model": "gpt-5.5"}],
             api_keys={"openai": "  test-key  "},
             use_cache=False,
         )
@@ -1251,8 +1251,8 @@ class TestConsensus:
             marker_genes={"1": ["CD3D"]},
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": "openrouter", "model": "gpt-5.2"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": "openrouter", "model": "gpt-5.5"},
             ],
             api_keys={
                 "openai": "test-key",
@@ -1263,12 +1263,12 @@ class TestConsensus:
 
         # Both models must be preserved — no silent overwrite
         assert len(result["model_annotations"]) == 2
-        assert "openai:gpt-5.2" in result["model_annotations"]
-        assert "openrouter:gpt-5.2" in result["model_annotations"]
+        assert "openai:gpt-5.5" in result["model_annotations"]
+        assert "openrouter:gpt-5.5" in result["model_annotations"]
         # Results should differ (first call → T cells, second → B cells)
         assert (
-            result["model_annotations"]["openai:gpt-5.2"]
-            != result["model_annotations"]["openrouter:gpt-5.2"]
+            result["model_annotations"]["openai:gpt-5.5"]
+            != result["model_annotations"]["openrouter:gpt-5.5"]
         )
 
     @patch("mllmcelltype.consensus.annotate_clusters")
@@ -1291,8 +1291,8 @@ class TestConsensus:
             marker_genes={"1": ["CD3D"]},
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": " OPENAI ", "model": "gpt-5.2"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": " OPENAI ", "model": "gpt-5.5"},
             ],
             api_keys={"openai": "test-key"},
             use_cache=False,
@@ -1300,7 +1300,7 @@ class TestConsensus:
 
         assert mock_annotate_clusters.call_count == 1
         assert len(result["model_annotations"]) == 1
-        assert "openai:gpt-5.2" in result["model_annotations"]
+        assert "openai:gpt-5.5" in result["model_annotations"]
 
     @patch("mllmcelltype.consensus.check_consensus_for_discussion_round")
     @patch("mllmcelltype.consensus.get_model_response")
@@ -1322,14 +1322,14 @@ class TestConsensus:
             marker_genes={"1": ["CD3D"]},
             controversial_clusters=["1"],
             model_predictions={
-                "openai:gpt-5.2": {"1": "T cells"},
-                "anthropic:claude-sonnet-4-5-20250929": {"1": "T cells"},
+                "openai:gpt-5.5": {"1": "T cells"},
+                "anthropic:claude-sonnet-4-6": {"1": "T cells"},
             },
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": " OPENAI ", "model": "gpt-5.2"},
-                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": " OPENAI ", "model": "gpt-5.5"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-6"},
             ],
             api_keys={"openai": "key-a", "anthropic": "key-b"},
             max_discussion_rounds=1,
@@ -1361,13 +1361,13 @@ class TestConsensus:
             marker_genes={"1": ["CD3D"]},
             controversial_clusters=[" 1 "],
             model_predictions={
-                "openai:gpt-5.2": {" 1 ": "T cells"},
-                "anthropic:claude-sonnet-4-5-20250929": {"1": "T cells"},
+                "openai:gpt-5.5": {" 1 ": "T cells"},
+                "anthropic:claude-sonnet-4-6": {"1": "T cells"},
             },
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-6"},
             ],
             api_keys={"openai": "key-a", "anthropic": "key-b"},
             max_discussion_rounds=1,
@@ -1399,13 +1399,13 @@ class TestConsensus:
             marker_genes={"1": ["CD3D"]},
             controversial_clusters=["1"],
             model_predictions={
-                "openai:gpt-5.2": ["not-a-dict"],  # type: ignore[dict-item]
-                "anthropic:claude-sonnet-4-5-20250929": {"1": "T cells"},
+                "openai:gpt-5.5": ["not-a-dict"],  # type: ignore[dict-item]
+                "anthropic:claude-sonnet-4-6": {"1": "T cells"},
             },
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-6"},
             ],
             api_keys={"openai": "key-a", "anthropic": "key-b"},
             max_discussion_rounds=1,
@@ -1447,16 +1447,16 @@ class TestConsensus:
             marker_genes={"1": ["CD3D"]},
             controversial_clusters=["1"],
             model_predictions={
-                "openai:gpt-5.2": {"1": "T cells"},
-                "zhipu:glm-4-plus": {"1": "T cells"},
+                "openai:gpt-5.5": {"1": "T cells"},
+                "zhipu:glm-5.1": {"1": "T cells"},
             },
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": "zhipu", "model": "glm-4-plus"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": "zhipu", "model": "glm-5.1"},
             ],
             api_keys={"openai": "key-a", "zhipu": "key-z"},
-            consensus_model={"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+            consensus_model={"provider": "anthropic", "model": "claude-sonnet-4-6"},
             max_discussion_rounds=1,
             use_cache=False,
         )
@@ -1466,7 +1466,7 @@ class TestConsensus:
         assert entropy["1"] == 0.1
         assert captured["consensus_model"] == {
             "provider": "anthropic",
-            "model": "claude-sonnet-4-5-20250929",
+            "model": "claude-sonnet-4-6",
         }
         assert isinstance(captured["api_keys"], dict)
         assert captured["api_keys"]["anthropic"] == "anth-key"  # type: ignore[index]
@@ -1479,8 +1479,8 @@ class TestConsensus:
             model_predictions={},
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-6"},
             ],
             api_keys={"openai": "key-a", "anthropic": "key-b"},
             use_cache=False,
@@ -1499,8 +1499,8 @@ class TestConsensus:
             model_predictions={},
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-6"},
             ],
             api_keys={"openai": "key-a", "anthropic": "key-b"},
             use_cache=False,
@@ -1536,13 +1536,13 @@ class TestConsensus:
             marker_genes={"1": ["CD3D", "IL7R"]},
             controversial_clusters=["1"],
             model_predictions={
-                "openai:gpt-5.2": {"1": "T cells"},
-                "anthropic:claude-sonnet-4-5-20250929": {"1": "T cells"},
+                "openai:gpt-5.5": {"1": "T cells"},
+                "anthropic:claude-sonnet-4-6": {"1": "T cells"},
             },
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-6"},
             ],
             api_keys={"openai": "key-a", "anthropic": "key-b"},
             max_discussion_rounds=1,
@@ -1575,13 +1575,13 @@ class TestConsensus:
             marker_genes={"1": ["CD3D", "IL7R"]},
             controversial_clusters=["1"],
             model_predictions={
-                "openai:gpt-5.2": {"1": "T cells"},
-                "anthropic:claude-sonnet-4-5-20250929": {"1": "T cells"},
+                "openai:gpt-5.5": {"1": "T cells"},
+                "anthropic:claude-sonnet-4-6": {"1": "T cells"},
             },
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-6"},
             ],
             api_keys={"openai": "key-a", "anthropic": "key-b"},
             max_discussion_rounds=1,
@@ -1599,9 +1599,9 @@ class TestConsensus:
         results, history, cp, entropy = process_controversial_clusters(
             marker_genes={"1": ["CD3D"]},
             controversial_clusters=["1"],
-            model_predictions={"openai:gpt-5.2": {"1": "T cells"}},
+            model_predictions={"openai:gpt-5.5": {"1": "T cells"}},
             species="human",
-            models=[{"provider": "openai", "model": "gpt-5.2"}],
+            models=[{"provider": "openai", "model": "gpt-5.5"}],
             api_keys={"openai": "key-a"},
             use_cache=False,
         )
@@ -1617,9 +1617,9 @@ class TestConsensus:
             process_controversial_clusters(
                 marker_genes={"1": ["CD3D"]},
                 controversial_clusters="1",  # type: ignore[arg-type]
-                model_predictions={"openai:gpt-5.2": {"1": "T cells"}},
+                model_predictions={"openai:gpt-5.5": {"1": "T cells"}},
                 species="human",
-                models=[{"provider": "openai", "model": "gpt-5.2"}],
+                models=[{"provider": "openai", "model": "gpt-5.5"}],
                 api_keys={"openai": "key-a"},
                 use_cache=False,
             )
@@ -1632,7 +1632,7 @@ class TestConsensus:
                 controversial_clusters=["1"],
                 model_predictions=["bad-payload"],  # type: ignore[arg-type]
                 species="human",
-                models=[{"provider": "openai", "model": "gpt-5.2"}],
+                models=[{"provider": "openai", "model": "gpt-5.5"}],
                 api_keys={"openai": "key-a"},
                 use_cache=False,
             )
@@ -1649,13 +1649,13 @@ class TestConsensus:
             marker_genes={"1": ["CD3D", "IL7R"]},
             controversial_clusters=["1"],
             model_predictions={
-                "openai:gpt-5.2": {"1": "T cells"},
-                "anthropic:claude-sonnet-4-5-20250929": {"1": "T cells"},
+                "openai:gpt-5.5": {"1": "T cells"},
+                "anthropic:claude-sonnet-4-6": {"1": "T cells"},
             },
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-6"},
             ],
             api_keys={"openai": "key-a", "anthropic": "key-b"},
             max_discussion_rounds=2,
@@ -1688,13 +1688,13 @@ class TestConsensus:
             marker_genes={"1": ["CD3D", "MS4A1"]},
             controversial_clusters=["1"],
             model_predictions={
-                "openai:gpt-5.2": {"1": "T cells"},
-                "anthropic:claude-sonnet-4-5-20250929": {"1": "B cells"},
+                "openai:gpt-5.5": {"1": "T cells"},
+                "anthropic:claude-sonnet-4-6": {"1": "B cells"},
             },
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-6"},
             ],
             api_keys={"openai": "key-a", "anthropic": "key-b"},
             max_discussion_rounds=1,
@@ -1725,13 +1725,13 @@ class TestConsensus:
             marker_genes={"1": ["CD3D", "MS4A1"]},
             controversial_clusters=["1"],
             model_predictions={
-                "openai:gpt-5.2": {"1": "T cells"},
-                "anthropic:claude-sonnet-4-5-20250929": {"1": "B cells"},
+                "openai:gpt-5.5": {"1": "T cells"},
+                "anthropic:claude-sonnet-4-6": {"1": "B cells"},
             },
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-6"},
             ],
             api_keys={"openai": "key-a", "anthropic": "key-b"},
             max_discussion_rounds=1,
@@ -1818,13 +1818,13 @@ class TestConsensus:
             marker_genes={"1": ["CD3D"]},
             controversial_clusters=[pd.NA, "1"],  # type: ignore[list-item]
             model_predictions={
-                "openai:gpt-5.2": {pd.NA: "Noise", "1": "T cells"},  # type: ignore[dict-item]
-                "anthropic:claude-sonnet-4-5-20250929": {"1": "T cells"},
+                "openai:gpt-5.5": {pd.NA: "Noise", "1": "T cells"},  # type: ignore[dict-item]
+                "anthropic:claude-sonnet-4-6": {"1": "T cells"},
             },
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-6"},
             ],
             api_keys={"openai": "key-a", "anthropic": "key-b"},
             max_discussion_rounds=1,
@@ -1863,15 +1863,15 @@ class TestConsensus:
             marker_genes={"1": ["CD3D"]},
             controversial_clusters=["1"],
             model_predictions={
-                "openai:gpt-5.2": {"1": pd.NA},  # type: ignore[dict-item]
-                "grok:grok-4": {"1": "Unknown (low confidence)"},
-                "anthropic:claude-sonnet-4-5-20250929": {"1": "B cells"},
+                "openai:gpt-5.5": {"1": pd.NA},  # type: ignore[dict-item]
+                "grok:grok-4.3": {"1": "Unknown (low confidence)"},
+                "anthropic:claude-sonnet-4-6": {"1": "B cells"},
             },
             species="human",
             models=[
-                {"provider": "openai", "model": "gpt-5.2"},
-                {"provider": "grok", "model": "grok-4"},
-                {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+                {"provider": "openai", "model": "gpt-5.5"},
+                {"provider": "grok", "model": "grok-4.3"},
+                {"provider": "anthropic", "model": "claude-sonnet-4-6"},
             ],
             api_keys={"openai": "key-a", "grok": "key-g", "anthropic": "key-b"},
             max_discussion_rounds=1,
@@ -1882,9 +1882,9 @@ class TestConsensus:
         assert captured_prompts
         assert "<NA>" not in captured_prompts[0]
         assert "None" not in captured_prompts[0]
-        assert "openai:gpt-5.2: Unknown" not in captured_prompts[0]
-        assert "grok:grok-4: Unknown" not in captured_prompts[0]
-        assert "anthropic:claude-sonnet-4-5-20250929" in captured_prompts[0]
+        assert "openai:gpt-5.5: Unknown" not in captured_prompts[0]
+        assert "grok:grok-4.3: Unknown" not in captured_prompts[0]
+        assert "anthropic:claude-sonnet-4-6" in captured_prompts[0]
 
     def test_check_consensus_whitespace_cluster_keys_are_normalized(self):
         """Test whitespace-padded cluster keys are trimmed and merged."""
@@ -1924,7 +1924,7 @@ class TestConsensus:
         result = interactive_consensus_annotation(
             marker_genes={1: ["CD3D"], "1": ["IL7R"]},
             species="human",
-            models=[{"provider": "openai", "model": "gpt-5.2"}],
+            models=[{"provider": "openai", "model": "gpt-5.5"}],
             api_keys={"openai": "test-key"},
             use_cache=False,
         )
@@ -1952,7 +1952,7 @@ class TestConsensus:
             interactive_consensus_annotation(
                 marker_genes={"1": ["CD3D"]},
                 species="human",
-                models=[{"provider": 1, "model": "gpt-5.2"}],  # type: ignore[dict-item]
+                models=[{"provider": 1, "model": "gpt-5.5"}],  # type: ignore[dict-item]
                 api_keys={"openai": "test-key"},
                 use_cache=False,
             )
@@ -1974,7 +1974,7 @@ class TestConsensus:
             interactive_consensus_annotation(
                 marker_genes={"1": ["CD3D"]},
                 species="human",
-                models=[{"provider": "   ", "model": "gpt-5.2"}],
+                models=[{"provider": "   ", "model": "gpt-5.5"}],
                 api_keys={"openai": "test-key"},
                 use_cache=False,
             )
@@ -1985,7 +1985,7 @@ class TestConsensus:
             interactive_consensus_annotation(
                 marker_genes=["CD3D", "IL7R"],  # type: ignore[arg-type]
                 species="human",
-                models=[{"provider": "openai", "model": "gpt-5.2"}],
+                models=[{"provider": "openai", "model": "gpt-5.5"}],
                 api_keys={"openai": "test-key"},
                 use_cache=False,
             )
@@ -1996,7 +1996,7 @@ class TestConsensus:
             interactive_consensus_annotation(
                 marker_genes={"1": ["CD3D"]},
                 species="human",
-                models=[{"provider": "openai", "model": "gpt-5.2"}],
+                models=[{"provider": "openai", "model": "gpt-5.5"}],
                 api_keys={"openai": "test-key"},
                 clusters_to_analyze="1",  # type: ignore[arg-type]
                 use_cache=False,
@@ -2021,7 +2021,7 @@ class TestConsensus:
         interactive_consensus_annotation(
             marker_genes={"1": ["CD3D"], "2": ["MS4A1"]},
             species="human",
-            models=[{"provider": "openai", "model": "gpt-5.2"}],
+            models=[{"provider": "openai", "model": "gpt-5.5"}],
             api_keys={"openai": "test-key"},
             clusters_to_analyze=["2", "2", "1"],
             use_cache=False,
@@ -2049,7 +2049,7 @@ class TestConsensus:
         interactive_consensus_annotation(
             marker_genes={"10": ["CD3D"], "2": ["MS4A1"]},
             species="human",
-            models=[{"provider": "openai", "model": "gpt-5.2"}],
+            models=[{"provider": "openai", "model": "gpt-5.5"}],
             api_keys={"openai": "test-key"},
             clusters_to_analyze={"10", "2"},
             use_cache=False,
@@ -2064,7 +2064,7 @@ class TestConsensus:
             interactive_consensus_annotation(
                 marker_genes={"1": ["CD3D"]},
                 species="human",
-                models=[{"provider": "openai", "model": "gpt-5.2"}],
+                models=[{"provider": "openai", "model": "gpt-5.5"}],
                 api_keys={"openai": "test-key"},
                 clusters_to_analyze=["9", "10"],
                 use_cache=False,
@@ -2089,7 +2089,7 @@ class TestConsensus:
         interactive_consensus_annotation(
             marker_genes={"1": ["CD3D"], "2": ["MS4A1"]},
             species="human",
-            models=[{"provider": "openai", "model": "gpt-5.2"}],
+            models=[{"provider": "openai", "model": "gpt-5.5"}],
             api_keys={"openai": "test-key"},
             clusters_to_analyze=[" 1 "],
             use_cache=False,
@@ -2104,7 +2104,7 @@ class TestConsensus:
             interactive_consensus_annotation(
                 marker_genes={"1": ["CD3D"]},
                 species="human",
-                models=[{"provider": "openai", "model": "gpt-5.2"}],
+                models=[{"provider": "openai", "model": "gpt-5.5"}],
                 api_keys={"openai": "test-key"},
                 clusters_to_analyze=[" ", "\t", ""],
                 use_cache=False,
@@ -2132,9 +2132,9 @@ class TestConsensus:
         interactive_consensus_annotation(
             marker_genes={"1": ["CD3D"]},
             species="human",
-            models=[{"provider": "openai", "model": "gpt-5.2"}],
+            models=[{"provider": "openai", "model": "gpt-5.5"}],
             api_keys={"openai": "openai-key"},
-            consensus_model={"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+            consensus_model={"provider": "anthropic", "model": "claude-sonnet-4-6"},
             use_cache=False,
         )
 
@@ -2148,7 +2148,7 @@ class TestConsensus:
             interactive_consensus_annotation(
                 marker_genes={"1": ["CD3D"]},
                 species="human",
-                models=[{"provider": "openai", "model": "gpt-5.2"}],
+                models=[{"provider": "openai", "model": "gpt-5.5"}],
                 api_keys={"openai": 123},  # type: ignore[dict-item]
                 use_cache=False,
             )
@@ -2159,7 +2159,7 @@ class TestConsensus:
             interactive_consensus_annotation(
                 marker_genes={"1": ["CD3D"]},
                 species="human",
-                models=[{"provider": "openai", "model": "gpt-5.2"}],
+                models=[{"provider": "openai", "model": "gpt-5.5"}],
                 api_keys={"openai": "test-key"},
                 consensus_model=123,  # type: ignore[arg-type]
                 use_cache=False,
@@ -2171,7 +2171,7 @@ class TestConsensus:
             interactive_consensus_annotation(
                 marker_genes={"1": ["CD3D"]},
                 species="human",
-                models=[{"provider": "openai", "model": "gpt-5.2"}],
+                models=[{"provider": "openai", "model": "gpt-5.5"}],
                 api_keys={"openai": "test-key"},
                 consensus_model="   ",
                 use_cache=False,

@@ -36,8 +36,8 @@ test_that("CacheManager generate_key supports character-vector list clusters", {
     "1" = list(genes = c("MS4A1"))
   )
 
-  key_0 <- cache_manager$generate_key(input_list, c("gpt-5.2"), "0")
-  key_1 <- cache_manager$generate_key(input_list, c("gpt-5.2"), "1")
+  key_0 <- cache_manager$generate_key(input_list, c("gpt-5.5"), "0")
+  key_1 <- cache_manager$generate_key(input_list, c("gpt-5.5"), "1")
 
   expect_true(is.character(key_0))
   expect_gt(nchar(key_0), 10)
@@ -81,7 +81,7 @@ test_that("interactive_consensus_annotation supports mapped cluster selectors", 
           "2" = list(genes = c("MS4A1"))
         ),
         tissue_name = "PBMC",
-        models = c("gpt-5.2", "grok-4.1"),
+        models = c("gpt-5.5", "grok-4.3"),
         api_keys = list(openai = "k", grok = "k"),
         use_cache = FALSE,
         clusters_to_analyze = selector
@@ -151,7 +151,7 @@ test_that("get_initial_predictions skips invalid model names without aborting", 
     suppressWarnings(get_initial_predictions(
       input = list("0" = list(genes = c("CD3D"))),
       tissue_name = "PBMC",
-      models = c("bad-model", "gpt-5.2"),
+      models = c("bad-model", "gpt-5.5"),
       api_keys = list(openai = "k"),
       top_gene_count = 10
     ))
@@ -168,8 +168,8 @@ test_that("get_initial_predictions skips invalid model names without aborting", 
   log_info = function(...) NULL,
   log_warn = function(...) NULL)
 
-  expect_identical(result$successful_models, "gpt-5.2")
-  expect_true("gpt-5.2" %in% names(result$individual_predictions))
+  expect_identical(result$successful_models, "gpt-5.5")
+  expect_true("gpt-5.5" %in% names(result$individual_predictions))
 })
 
 test_that("interactive_consensus_annotation consumes log_dir via initialize_logger", {
@@ -179,7 +179,7 @@ test_that("interactive_consensus_annotation consumes log_dir via initialize_logg
     suppressMessages(interactive_consensus_annotation(
       input = list("0" = list(genes = c("CD3D"))),
       tissue_name = "PBMC",
-      models = c("gpt-5.2", "grok-4.1"),
+      models = c("gpt-5.5", "grok-4.3"),
       api_keys = list(openai = "k", grok = "k"),
       use_cache = FALSE,
       log_dir = "custom_logs_dir"
@@ -273,6 +273,30 @@ test_that("facilitate_cluster_discussion keeps fallback cluster_genes on extract
   expect_true(grepl("Error extracting genes", captured_cluster_genes, fixed = TRUE))
 })
 
+test_that("is_error_response detects error sentinels consistently", {
+  expect_true(is_error_response("Error: request failed"))
+  expect_true(is_error_response("  ERROR: request failed"))
+  expect_true(is_error_response(c("metadata", "error : request failed")))
+  expect_false(is_error_response("CELL TYPE: T cell"))
+  expect_false(is_error_response(list(message = "Error: request failed")))
+})
+
+test_that("filter_valid_responses excludes case-insensitive error sentinels", {
+  result <- testthat::with_mocked_bindings({
+    filter_valid_responses(
+      list(
+        good = "CELL TYPE: T cell",
+        bad_upper = "ERROR: provider failed",
+        bad_spaced = " error : provider failed"
+      ),
+      cluster_id = "0"
+    )
+  },
+  log_warn = function(...) NULL)
+
+  expect_identical(names(result), "good")
+})
+
 test_that("annotate_cell_types supports custom providers", {
   custom_env <- new.env(parent = emptyenv())
   assign("customx", TRUE, envir = custom_env)
@@ -351,7 +375,7 @@ test_that("BaseAPIProcessor rejects non-scalar prompt cleanly", {
 
 test_that("get_provider validates model as non-empty scalar", {
   expect_error(get_provider(character(0)), "model must be a non-empty character scalar")
-  expect_error(get_provider(c("gpt-5.2", "grok-4.1")), "model must be a non-empty character scalar")
+  expect_error(get_provider(c("gpt-5.5", "grok-4.3")), "model must be a non-empty character scalar")
   expect_error(get_provider(NA_character_), "model must be a non-empty character scalar")
 })
 
@@ -360,7 +384,7 @@ test_that("annotate_cell_types validates api_key scalar contract", {
     annotate_cell_types(
       input = list("0" = list(genes = c("CD3D"))),
       tissue_name = "PBMC",
-      model = "gpt-5.2",
+      model = "gpt-5.5",
       api_key = c("a", "b")
     ),
     "api_key must be a non-empty character scalar, or NA to return prompt only"
@@ -372,7 +396,7 @@ test_that("interactive_consensus_annotation validates api_keys list contract", {
     interactive_consensus_annotation(
       input = list("0" = list(genes = c("CD3D"))),
       tissue_name = "PBMC",
-      models = c("gpt-5.2", "grok-4.1"),
+      models = c("gpt-5.5", "grok-4.3"),
       api_keys = "bad",
       use_cache = FALSE
     ),
@@ -381,12 +405,12 @@ test_that("interactive_consensus_annotation validates api_keys list contract", {
 })
 
 test_that("get_api_key ignores empty/NA/non-scalar keys and falls back correctly", {
-  expect_null(get_api_key("gpt-5.2", list(openai = "")))
-  expect_null(get_api_key("gpt-5.2", list(openai = "   ")))
-  expect_null(get_api_key("gpt-5.2", list(openai = NA_character_)))
-  expect_null(get_api_key("gpt-5.2", list(openai = c("a", "b"))))
-  expect_identical(get_api_key("gpt-5.2", list(openai = "", "gpt-5.2" = "k2")), "k2")
-  expect_identical(get_api_key("gpt-5.2", list(openai = "  k1  ")), "k1")
+  expect_null(get_api_key("gpt-5.5", list(openai = "")))
+  expect_null(get_api_key("gpt-5.5", list(openai = "   ")))
+  expect_null(get_api_key("gpt-5.5", list(openai = NA_character_)))
+  expect_null(get_api_key("gpt-5.5", list(openai = c("a", "b"))))
+  expect_identical(get_api_key("gpt-5.5", list(openai = "", "gpt-5.5" = "k2")), "k2")
+  expect_identical(get_api_key("gpt-5.5", list(openai = "  k1  ")), "k1")
 })
 
 test_that("facilitate_cluster_discussion uses last available consensus on early break", {

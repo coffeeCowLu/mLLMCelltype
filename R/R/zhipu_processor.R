@@ -20,7 +20,7 @@ ZhipuProcessor <- R6::R6Class("ZhipuProcessor",
     #' Get default Zhipu API URL
     #
     get_default_api_url = function() {
-      return("https://open.bigmodel.cn/api/paas/v4/chat/completions")
+      return("https://api.z.ai/api/paas/v4/chat/completions")
     },
     
     #' @description

@@ -143,7 +143,7 @@ def get_working_minimax_endpoint(api_key: str) -> str:
         try:
             headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
             test_body = {
-                "model": "MiniMax-M2.1",
+                "model": "MiniMax-M2.7",
                 "messages": [{"role": "user", "content": "test"}],
                 "max_tokens": 1,
             }

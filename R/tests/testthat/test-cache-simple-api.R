@@ -1,22 +1,8 @@
-# Simplified Real API Test
-
-# Helper function to skip on CRAN
-skip_on_cran <- function() {
-  if (!identical(Sys.getenv("NOT_CRAN"), "true")) {
-    testthat::skip("Skipping on CRAN")
-  }
-}
+# Simplified Cache Test
 
 test_that("Cache directory creation works with simple test", {
-  skip_on_cran()
-  
-  # Check for OpenRouter API key
-  has_openrouter <- nchar(Sys.getenv("OPENROUTER_API_KEY")) > 0
-  
-  if (!has_openrouter) {
-    skip("No OpenRouter API key available")
-  }
-  
+  skip_if_not_cran_env()
+
   # Test system cache directory creation
   system_cache <- mllmcelltype_cache_dir()
   expect_true(dir.exists(system_cache))
@@ -43,7 +29,7 @@ test_that("Cache directory creation works with simple test", {
 })
 
 test_that("Cache key generation works correctly", {
-  skip_on_cran()
+  skip_if_not_cran_env()
   
   cache_manager <- CacheManager$new(cache_dir = tempdir())
   
@@ -72,7 +58,7 @@ test_that("Cache key generation works correctly", {
 })
 
 test_that("Cache save and load operations work", {
-  skip_on_cran()
+  skip_if_not_cran_env()
   
   cache_manager <- CacheManager$new(cache_dir = tempdir())
   
@@ -81,7 +67,7 @@ test_that("Cache save and load operations work", {
     annotation = "T cell",
     discussion_log = list(
       rounds = list(
-        list(model = "gpt-5.2", response = "T cell")
+        list(model = "gpt-5.5", response = "T cell")
       )
     ),
     confidence = 0.95

@@ -28,53 +28,52 @@ class ProviderConfig:
 # When updating default models, only modify this dictionary
 PROVIDER_CONFIGS: dict[str, ProviderConfig] = {
     "openai": ProviderConfig(
-        default_model="gpt-5.2",
+        default_model="gpt-5.5",
         api_key_env_var="OPENAI_API_KEY",
         default_api_url="https://api.openai.com/v1/chat/completions",
     ),
     "anthropic": ProviderConfig(
-        default_model="claude-opus-4-6-20260205",
+        default_model="claude-opus-4-7",
         api_key_env_var="ANTHROPIC_API_KEY",
         default_api_url="https://api.anthropic.com/v1/messages",
     ),
     "deepseek": ProviderConfig(
-        default_model="deepseek-chat",  # V3.2
+        default_model="deepseek-v4-flash",
         api_key_env_var="DEEPSEEK_API_KEY",
         default_api_url="https://api.deepseek.com/v1/chat/completions",
     ),
     "gemini": ProviderConfig(
-        # Use a stable public model id; some preview aliases are not universally available.
-        default_model="gemini-2.5-pro",
+        default_model="gemini-3.1-pro-preview",
         api_key_env_var="GEMINI_API_KEY",
         default_api_url="https://generativelanguage.googleapis.com/v1beta/models",
     ),
     "qwen": ProviderConfig(
-        default_model="qwen3-max",
+        default_model="qwen3.6-plus",
         api_key_env_var="QWEN_API_KEY",
         default_api_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
     ),
     "stepfun": ProviderConfig(
-        default_model="step-3",
+        default_model="step-3.5-flash",
         api_key_env_var="STEPFUN_API_KEY",
         default_api_url="https://api.stepfun.com/v1/chat/completions",
     ),
     "zhipu": ProviderConfig(
-        default_model="glm-4-plus",  # Stable model (glm-4.7 has rate limits)
+        default_model="glm-5.1",
         api_key_env_var="ZHIPU_API_KEY",
-        default_api_url="https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        default_api_url="https://api.z.ai/api/paas/v4/chat/completions",
     ),
     "minimax": ProviderConfig(
-        default_model="MiniMax-M2.1",
+        default_model="MiniMax-M2.7",
         api_key_env_var="MINIMAX_API_KEY",
         default_api_url="https://api.minimaxi.com/v1/chat/completions",
     ),
     "grok": ProviderConfig(
-        default_model="grok-4",
+        default_model="grok-4.3",
         api_key_env_var="GROK_API_KEY",
         default_api_url="https://api.x.ai/v1/chat/completions",
     ),
     "openrouter": ProviderConfig(
-        default_model="openai/gpt-5.2",
+        default_model="openai/gpt-5.5",
         api_key_env_var="OPENROUTER_API_KEY",
         default_api_url="https://openrouter.ai/api/v1/chat/completions",
     ),

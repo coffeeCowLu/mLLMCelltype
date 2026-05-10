@@ -15,13 +15,15 @@ from .common import (
 
 # Model alias mapping: user-friendly names -> official API model IDs
 MODEL_ALIASES = {
-    # Claude 4.6 series (latest - Feb 2026)
-    "claude-opus-4.6": "claude-opus-4-6-20260205",
-    "claude-opus-latest": "claude-opus-4-6-20260205",
-    # Claude 4.5 series (Nov 2025)
+    # Claude 4.7 series (latest)
+    "claude-opus-latest": "claude-opus-4-7",
+    # Claude 4.6 series
+    "claude-opus-4.6": "claude-opus-4-6",
+    "claude-sonnet-4.6": "claude-sonnet-4-6",
+    "claude-sonnet-latest": "claude-sonnet-4-6",
+    # Claude 4.5 series (compatibility)
     "claude-opus-4.5": "claude-opus-4-5-20251101",
     "claude-sonnet-4.5": "claude-sonnet-4-5-20250929",
-    "claude-sonnet-latest": "claude-sonnet-4-5-20250929",
     "claude-haiku-4.5": "claude-haiku-4-5-20251001",
     "claude-haiku-latest": "claude-haiku-4-5-20251001",
     # Claude 4.1 series (Aug 2025)
@@ -71,7 +73,7 @@ def process_anthropic(
 
     Args:
         prompt: The prompt to send to the API
-        model: The model name (e.g., 'claude-3-opus', 'claude-sonnet-4-5-20250929')
+        model: The model name (e.g., 'claude-opus-4-7', 'claude-sonnet-4-6')
         api_key: Anthropic API key
         base_url: Optional custom base URL
 

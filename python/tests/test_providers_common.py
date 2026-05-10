@@ -28,9 +28,9 @@ def test_parse_chat_completions_response_non_string_content():
 
 def test_build_chat_completions_body_minimal_shape():
     """Test shared body builder returns normalized minimal request payload."""
-    body = build_chat_completions_body(model="gpt-5.2", prompt="genes")
+    body = build_chat_completions_body(model="gpt-5.5", prompt="genes")
     assert body == {
-        "model": "gpt-5.2",
+        "model": "gpt-5.5",
         "messages": [{"role": "user", "content": "genes"}],
     }
 
@@ -38,7 +38,7 @@ def test_build_chat_completions_body_minimal_shape():
 def test_build_chat_completions_body_with_optional_controls():
     """Test shared body builder includes optional generation controls."""
     body = build_chat_completions_body(
-        model="MiniMax-M2.1",
+        model="MiniMax-M2.7",
         prompt="genes",
         temperature=0.7,
         max_tokens=4096,
@@ -287,7 +287,7 @@ def test_call_openai_compatible_api_sets_auth_header_and_parses():
         provider_name="OpenAI",
         api_key="secret-key",
         url="https://api.example.com/v1/chat/completions",
-        body={"model": "gpt-5.2", "messages": [{"role": "user", "content": "test"}]},
+        body={"model": "gpt-5.5", "messages": [{"role": "user", "content": "test"}]},
         post_func=post_func,
     )
 
@@ -310,7 +310,7 @@ def test_call_openai_compatible_api_merges_extra_headers():
         provider_name="OpenRouter",
         api_key="secret-key",
         url="https://api.example.com/v1/chat/completions",
-        body={"model": "openai/gpt-5.2", "messages": [{"role": "user", "content": "test"}]},
+        body={"model": "openai/gpt-5.5", "messages": [{"role": "user", "content": "test"}]},
         post_func=post_func,
         extra_headers={"X-Title": "mLLMCelltype"},
     )

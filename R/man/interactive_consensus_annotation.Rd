@@ -7,8 +7,8 @@
 interactive_consensus_annotation(
   input,
   tissue_name,
-  models = c("claude-opus-4-6-20260205", "gpt-5.2", "gemini-3-pro", "deepseek-r1",
-    "grok-4.1"),
+  models = c("claude-opus-4-7", "gpt-5.5", "gemini-3.1-pro-preview", "deepseek-v4-flash",
+    "grok-4.3"),
   api_keys,
   top_gene_count = 10,
   controversy_threshold = 0.7,
@@ -52,7 +52,7 @@ indicates more disagreement among models (default: 1.0).}
 for controversial clusters (default: 3).}
 
 \item{consensus_check_model}{Character string specifying which model to use for
-consensus checking. If NULL, uses the first model from the models list.}
+consensus checking. If NULL, uses the first model that succeeds during initial annotation.}
 
 \item{log_dir}{Character scalar specifying directory for log files (default: "logs").
 This function reinitializes the session logger with this directory at the start

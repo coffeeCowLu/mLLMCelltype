@@ -7,7 +7,7 @@
 annotate_cell_types(
   input,
   tissue_name,
-  model = "gpt-5.2",
+  model = "gpt-5.5",
   api_key = NA,
   top_gene_count = 10,
   debug = FALSE,
@@ -17,9 +17,9 @@ annotate_cell_types(
 \arguments{
 \item{input}{Either a data frame from Seurat's FindAllMarkers() containing columns 'cluster', 'gene', and 'avg_log2FC', or a list with 'genes' field for each cluster}
 
-\item{tissue_name}{Optional tissue context (e.g., 'human PBMC', 'mouse brain') for more accurate annotations}
+\item{tissue_name}{Required tissue context (e.g., 'human PBMC', 'mouse brain') for more accurate annotations}
 
-\item{model}{Model name to use. Default: 'gpt-5.2'. See details for supported models}
+\item{model}{Model name to use. Default: 'gpt-5.5'. See details for supported models}
 
 \item{api_key}{API key for the selected model provider as a non-empty character scalar.
 If \code{NA}, returns prompt only.}
@@ -31,7 +31,8 @@ If \code{NA}, returns prompt only.}
 \item{base_urls}{Optional base URLs for API endpoints. Can be a string or named list for custom endpoints}
 }
 \value{
-When api_key is provided: Vector of cell type annotations per cluster. When api_key is NA: The generated prompt string
+When \code{api_key} is provided, the provider response split by newline as
+a character vector. When \code{api_key} is \code{NA}, the generated prompt string.
 }
 \description{
 A comprehensive function for automated cell type annotation using multiple Large Language Models (LLMs).
@@ -51,24 +52,22 @@ This can be in one of these formats:
 }
 \item Cluster IDs are preserved as-is. The function does not modify or re-index cluster IDs.
 'mouse brain'). This helps provide context for more accurate annotations.
-\item OpenAI: 'gpt-5.2', 'gpt-5.1', 'gpt-5', 'gpt-4.1', 'gpt-4o', 'o3-pro', 'o3', 'o4-mini', 'o1', 'o1-pro'
-\item Anthropic: 'claude-opus-4-6-20260205', 'claude-opus-4-5-20251101', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001',
-'claude-opus-4-1-20250805', 'claude-sonnet-4-20250514', 'claude-3-7-sonnet-20250219'
-\item DeepSeek: 'deepseek-chat', 'deepseek-reasoner', 'deepseek-r1'
-\item Google: 'gemini-3-pro', 'gemini-3-flash', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'
-\item Alibaba: 'qwen3-max', 'qwen-max-2025-01-25', 'qwen-plus'
-\item Stepfun: 'step-3', 'step-2-16k', 'step-2-mini'
-\item Zhipu: 'glm-4.7', 'glm-4-plus'
-\item MiniMax: 'minimax-m2.1', 'minimax-m2', 'MiniMax-Text-01'
-\item X.AI: 'grok-4', 'grok-4.1', 'grok-4-heavy', 'grok-3', 'grok-3-fast', 'grok-3-mini'
+\item OpenAI: 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'
+\item Anthropic: 'claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'
+\item DeepSeek: 'deepseek-v4-flash', 'deepseek-v4-pro'
+\item Google: 'gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite'
+\item Alibaba: 'qwen3.6-max-preview', 'qwen3.6-plus', 'qwen3.6-flash'
+\item Stepfun: 'step-3.5-flash', 'step-3.5-flash-2603', 'step-3'
+\item Zhipu/Z.AI: 'glm-5.1', 'glm-5-turbo', 'glm-5'
+\item MiniMax: 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5'
+\item X.AI: 'grok-4.3', 'grok-4.3-latest', 'grok-latest'
 \item OpenRouter: Provides access to models from multiple providers through a single API. Format: 'provider/model-name'
 \itemize{
-\item OpenAI models: 'openai/gpt-5.2', 'openai/gpt-5', 'openai/o3-pro', 'openai/o4-mini'
-\item Anthropic models: 'anthropic/claude-opus-4.5', 'anthropic/claude-sonnet-4.5', 'anthropic/claude-haiku-4.5'
-\item Meta models: 'meta-llama/llama-4-maverick', 'meta-llama/llama-4-scout', 'meta-llama/llama-3.3-70b-instruct'
-\item Google models: 'google/gemini-3-pro', 'google/gemini-3-flash', 'google/gemini-2.5-pro'
-\item Mistral models: 'mistralai/mistral-large', 'mistralai/magistral-medium-2506'
-\item Other models: 'deepseek/deepseek-r1', 'deepseek/deepseek-chat-v3.1', 'microsoft/mai-ds-r1'
+\item OpenAI models: 'openai/gpt-5.5', 'openai/gpt-5.4-mini'
+\item Anthropic models: 'anthropic/claude-opus-4.7', 'anthropic/claude-sonnet-4.6'
+\item Google models: 'google/gemini-3.1-pro-preview', 'google/gemini-3-flash-preview'
+\item X.AI models: 'x-ai/grok-4.3'
+\item Stepfun models: 'stepfun/step-3.5-flash'
 Each provider requires a specific API key format and authentication method:
 }
 \item OpenAI: "sk-..." (obtain from OpenAI platform)
@@ -87,7 +86,7 @@ OpenRouter provides access to multiple models through a single API key
 The API key can be provided directly or stored in environment variables:
 
 \if{html}{\out{<div class="sourceCode r">}}\preformatted{# Direct API key
-result <- annotate_cell_types(input, tissue_name, model="gpt-5.2",
+result <- annotate_cell_types(input, tissue_name, model="gpt-5.5",
                              api_key="sk-...")
 
 # Using environment variables
@@ -96,7 +95,7 @@ Sys.setenv(ANTHROPIC_API_KEY="sk-ant-...")
 Sys.setenv(OPENROUTER_API_KEY="sk-or-...")
 
 # Then use with environment variables
-result <- annotate_cell_types(input, tissue_name, model="claude-sonnet-4-5-20250929",
+result <- annotate_cell_types(input, tissue_name, model="claude-sonnet-4-6",
                              api_key=Sys.getenv("ANTHROPIC_API_KEY"))
 }\if{html}{\out{</div>}}
 
@@ -124,7 +123,7 @@ annotate_cell_types(
     monocytes = list(genes = c('CD14', 'CD68', 'CSF1R', 'FCGR3A'))
   ),
   tissue_name = 'human PBMC',
-  model = 'gpt-5.2',
+  model = 'gpt-5.5',
   api_key = NA  # Returns prompt only without making API call
 )
 
@@ -150,7 +149,7 @@ Sys.setenv(OPENAI_API_KEY = "your-openai-api-key")
 openai_annotations <- annotate_cell_types(
   input = all.markers,
   tissue_name = 'human PBMC',
-  model = 'gpt-5.2',
+  model = 'gpt-5.5',
   api_key = Sys.getenv("OPENAI_API_KEY"),
   top_gene_count = 15
 )
@@ -161,7 +160,7 @@ Sys.setenv(ANTHROPIC_API_KEY = "your-anthropic-api-key")
 claude_annotations <- annotate_cell_types(
   input = all.markers,
   tissue_name = 'human PBMC',
-  model = 'claude-opus-4-6-20260205',
+  model = 'claude-opus-4-7',
   api_key = Sys.getenv("ANTHROPIC_API_KEY"),
   top_gene_count = 15
 )
@@ -173,7 +172,7 @@ Sys.setenv(OPENROUTER_API_KEY = "your-openrouter-api-key")
 openrouter_gpt4_annotations <- annotate_cell_types(
   input = all.markers,
   tissue_name = 'human PBMC',
-  model = 'openai/gpt-5.2',  # Note the provider/model format
+  model = 'openai/gpt-5.5',  # Note the provider/model format
   api_key = Sys.getenv("OPENROUTER_API_KEY"),
   top_gene_count = 15
 )
@@ -191,7 +190,7 @@ openrouter_claude_annotations <- annotate_cell_types(
 mouse_annotations <- annotate_cell_types(
   input = mouse_markers,  # Your mouse marker genes
   tissue_name = 'mouse brain',  # Specify correct tissue for context
-  model = 'gpt-5.2',
+  model = 'gpt-5.5',
   api_key = Sys.getenv("OPENAI_API_KEY"),
   top_gene_count = 20,  # Use more genes for complex tissues
   debug = TRUE  # Enable debug output

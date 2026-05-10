@@ -33,15 +33,15 @@ mLLMCelltype is an R package that leverages various large language models (LLMs)
 * **Uncertainty Quantification**: Explicitly quantifies annotation uncertainty through consensus proportion and Shannon entropy
 * **No Reference Dataset Required**: Does not rely on pre-existing reference datasets, can annotate various tissues and species
 * **Support for Multiple LLM Providers**:
-  - OpenAI (GPT-5.2, GPT-5, GPT-4.1, O3/O4 series)
-  - Anthropic (Claude 4.6 Opus, Claude 4.5 Sonnet/Haiku)
-  - Google (Gemini 3 Pro, Gemini 3 Flash, Gemini 2.5 series)
-  - X.AI (Grok-4, Grok-3 series)
-  - DeepSeek (DeepSeek Chat, DeepSeek Reasoner)
-  - Qwen (Qwen3 Max, Qwen Max)
-  - Zhipu (GLM-4.7, GLM-4 Plus)
-  - MiniMax (MiniMax M2.1, MiniMax M2)
-  - Stepfun (Step-3, Step-2 series)
+  - OpenAI (GPT-5.5, GPT-5.4, GPT-5.4-mini)
+  - Anthropic (Claude Opus 4.7, Claude Sonnet 4.6, Claude Haiku 4.5)
+  - Google (Gemini 3.1 Pro Preview, Gemini 3 Flash Preview, Gemini 3.1 Flash-Lite)
+  - X.AI (Grok 4.3)
+  - DeepSeek (DeepSeek V4 Flash, DeepSeek V4 Pro)
+  - Qwen (Qwen3.6 Plus, Qwen3.6 Flash, Qwen3.6 Max Preview)
+  - Zhipu/Z.AI (GLM-5.1, GLM-5, GLM-5-Turbo)
+  - MiniMax (MiniMax M2.7, MiniMax M2.7-highspeed)
+  - Stepfun (Step 3.5 Flash, Step 3)
   - OpenRouter (access to Meta Llama, Mistral, Microsoft, Perplexity, Cohere, and more)
 * **Seurat Integration**: Can directly use Seurat's FindAllMarkers() output as input
 
@@ -63,7 +63,7 @@ Sys.setenv(GEMINI_API_KEY = "your-gemini-api-key")
 models <- c(
   "claude-3-7-sonnet-20250219",
   "gpt-4o",
-  "gemini-2.5-pro"
+  "gemini-3.1-pro-preview"
 )
 
 # Run multi-model annotation

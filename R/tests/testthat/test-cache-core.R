@@ -66,8 +66,8 @@ test_that("Cache key generation works", {
     IL7R = c(0.8, 2.3, 1.1)
   )
   
-  key1 <- cache_manager$generate_key(test_data, "gpt-5.2", "cluster_0")
-  key2 <- cache_manager$generate_key(test_data, "gpt-5.2", "cluster_1")
+  key1 <- cache_manager$generate_key(test_data, "gpt-5.5", "cluster_0")
+  key2 <- cache_manager$generate_key(test_data, "gpt-5.5", "cluster_1")
   key3 <- cache_manager$generate_key(test_data, "claude-sonnet-4-20250514", "cluster_0")
 
   # Keys should be different for different inputs
@@ -85,13 +85,13 @@ test_that("Cache key varies with tissue_name and top_gene_count", {
     avg_log2FC = c(2.5, 2.1, 1.8, 1.6)
   )
 
-  base_key <- cache_manager$generate_key(test_data, "gpt-5.2", "0",
+  base_key <- cache_manager$generate_key(test_data, "gpt-5.5", "0",
                                           tissue_name = "human PBMC", top_gene_count = 10)
-  diff_tissue <- cache_manager$generate_key(test_data, "gpt-5.2", "0",
+  diff_tissue <- cache_manager$generate_key(test_data, "gpt-5.5", "0",
                                              tissue_name = "mouse brain", top_gene_count = 10)
-  diff_topn <- cache_manager$generate_key(test_data, "gpt-5.2", "0",
+  diff_topn <- cache_manager$generate_key(test_data, "gpt-5.5", "0",
                                            tissue_name = "human PBMC", top_gene_count = 5)
-  same_key <- cache_manager$generate_key(test_data, "gpt-5.2", "0",
+  same_key <- cache_manager$generate_key(test_data, "gpt-5.5", "0",
                                           tissue_name = "human PBMC", top_gene_count = 10)
 
   expect_false(base_key == diff_tissue)  # Different tissue

@@ -16,7 +16,8 @@ Cluster IDs in named inputs are preserved as-is; unnamed list input receives seq
 \item{top_gene_count}{Number of top genes to use per cluster when input is from Seurat. Default: 10}
 }
 \value{
-Character string containing the formatted prompt
+A list with \code{prompt} (formatted prompt text), \code{expected_count}
+(number of clusters), and \code{gene_lists} (cluster ID to marker genes mapping).
 }
 \description{
 Create prompt for cell type annotation

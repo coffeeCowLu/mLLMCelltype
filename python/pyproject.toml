@@ -145,6 +145,9 @@ filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::PendingDeprecationWarning",
 ]
+markers = [
+    "integration: tests that require real external API access",
+]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 

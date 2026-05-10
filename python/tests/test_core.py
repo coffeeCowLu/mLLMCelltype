@@ -277,9 +277,9 @@ def test_load_api_key_unknown_provider():
 # Test cache functions
 def test_create_cache_key():
     """Test creating cache key."""
-    key1 = create_cache_key("test prompt", "gpt-5.2", "openai")
-    key2 = create_cache_key("test prompt", "gpt-5.2", "openai")
-    key3 = create_cache_key("different prompt", "gpt-5.2", "openai")
+    key1 = create_cache_key("test prompt", "gpt-5.5", "openai")
+    key2 = create_cache_key("test prompt", "gpt-5.5", "openai")
+    key3 = create_cache_key("different prompt", "gpt-5.5", "openai")
 
     assert key1 == key2  # Same inputs should produce same key
     assert key1 != key3  # Different inputs should produce different keys
@@ -289,7 +289,7 @@ def test_create_cache_key():
 
 def test_create_cache_key_with_non_string_base_url():
     """Test create_cache_key handles non-string base_url robustly."""
-    key = create_cache_key("test prompt", "gpt-5.2", "openai", base_url=123)  # type: ignore[arg-type]
+    key = create_cache_key("test prompt", "gpt-5.5", "openai", base_url=123)  # type: ignore[arg-type]
     assert isinstance(key, str)
     assert len(key) > 0
 
@@ -299,7 +299,7 @@ def test_save_and_load_from_cache():
     with tempfile.TemporaryDirectory() as temp_dir:
         # Test with dictionary
         data_dict = {"1": "T cells", "2": "B cells"}
-        key = create_cache_key("test prompt", "gpt-5.2", "openai")
+        key = create_cache_key("test prompt", "gpt-5.5", "openai")
 
         save_to_cache(key, data_dict, cache_dir=temp_dir)
         loaded = load_from_cache(key, cache_dir=temp_dir)
@@ -308,7 +308,7 @@ def test_save_and_load_from_cache():
 
         # Test with list
         data_list = ["T cells", "B cells"]
-        key = create_cache_key("test prompt 2", "gpt-5.2", "openai")
+        key = create_cache_key("test prompt 2", "gpt-5.5", "openai")
 
         save_to_cache(key, data_list, cache_dir=temp_dir)
         loaded = load_from_cache(key, cache_dir=temp_dir)
@@ -319,7 +319,7 @@ def test_save_and_load_from_cache():
 def test_load_from_nonexistent_cache():
     """Test loading from nonexistent cache."""
     with tempfile.TemporaryDirectory() as temp_dir:
-        key = create_cache_key("nonexistent", "gpt-5.2", "openai")
+        key = create_cache_key("nonexistent", "gpt-5.5", "openai")
         loaded = load_from_cache(key, cache_dir=temp_dir)
 
         assert loaded is None
@@ -328,7 +328,7 @@ def test_load_from_nonexistent_cache():
 def test_load_from_cache_legacy_format_payload():
     """Test legacy cache files (raw payload without metadata) still load."""
     with tempfile.TemporaryDirectory() as temp_dir:
-        key = create_cache_key("legacy", "gpt-5.2", "openai")
+        key = create_cache_key("legacy", "gpt-5.5", "openai")
         cache_file = os.path.join(temp_dir, f"{key}.json")
         with open(cache_file, "w") as f:
             f.write('{"1": "T cells"}')
@@ -959,13 +959,13 @@ def test_format_discussion_report_metadata_formats_model_dicts_and_none_fields()
         "entropy": {"0": 0.0},
         "controversial_clusters": [],
         "resolved": {},
-        "model_annotations": {"openai:gpt-5.2": {"0": "T cells"}},
+        "model_annotations": {"openai:gpt-5.5": {"0": "T cells"}},
         "discussion_logs": {},
         "metadata": {
             "timestamp": "2026-01-26 12:00:00",
             "species": "human",
             "tissue": None,
-            "models": [{"model": "gpt-5.2"}],
+            "models": [{"model": "gpt-5.5"}],
             "consensus_threshold": 0.7,
             "max_discussion_rounds": 3,
         },
@@ -973,8 +973,8 @@ def test_format_discussion_report_metadata_formats_model_dicts_and_none_fields()
 
     report = format_discussion_report(mock_results)
 
-    assert "Models: gpt-5.2" in report
-    assert "Models: :gpt-5.2" not in report
+    assert "Models: gpt-5.5" in report
+    assert "Models: :gpt-5.5" not in report
     assert "Tissue: N/A" in report
 
 
@@ -988,13 +988,13 @@ def test_format_discussion_report_metadata_models_string_not_split_by_character(
         "entropy": {"0": 0.0},
         "controversial_clusters": [],
         "resolved": {},
-        "model_annotations": {"openai:gpt-5.2": {"0": "T cells"}},
+        "model_annotations": {"openai:gpt-5.5": {"0": "T cells"}},
         "discussion_logs": {},
         "metadata": {
             "timestamp": "2026-01-26 12:00:00",
             "species": "human",
             "tissue": "blood",
-            "models": "gpt-5.2",
+            "models": "gpt-5.5",
             "consensus_threshold": 0.7,
             "max_discussion_rounds": 3,
         },
@@ -1002,7 +1002,7 @@ def test_format_discussion_report_metadata_models_string_not_split_by_character(
 
     report = format_discussion_report(mock_results)
 
-    assert "Models: gpt-5.2" in report
+    assert "Models: gpt-5.5" in report
     assert "Models: g, p, t" not in report
 
 
@@ -1016,7 +1016,7 @@ def test_format_discussion_report_metadata_models_set_is_deterministic():
         "entropy": {"0": 0.0},
         "controversial_clusters": [],
         "resolved": {},
-        "model_annotations": {"openai:gpt-5.2": {"0": "T cells"}},
+        "model_annotations": {"openai:gpt-5.5": {"0": "T cells"}},
         "discussion_logs": {},
         "metadata": {
             "timestamp": "2026-01-26 12:00:00",

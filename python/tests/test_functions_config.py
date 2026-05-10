@@ -12,8 +12,8 @@ from mllmcelltype.functions import get_provider
 
 def test_get_provider_trims_whitespace():
     """Test get_provider handles model names with leading/trailing spaces."""
-    assert get_provider("  gpt-5.2  ") == "openai"
-    assert get_provider("  anthropic/claude-sonnet-4.5  ") == "openrouter"
+    assert get_provider("  gpt-5.5  ") == "openai"
+    assert get_provider("  anthropic/claude-opus-4.7  ") == "openrouter"
 
 
 def test_get_provider_invalid_type():
@@ -36,8 +36,8 @@ def test_get_provider_unknown_model_prefix():
 
 def test_config_provider_normalization_with_whitespace():
     """Test config lookups normalize provider names with whitespace/case."""
-    assert get_default_model("  OPENAI  ") == "gpt-5.2"
-    assert get_default_model("gemini") == "gemini-2.5-pro"
+    assert get_default_model("  OPENAI  ") == "gpt-5.5"
+    assert get_default_model("gemini") == "gemini-3.1-pro-preview"
     assert get_default_api_url("  OpenRouter ") == "https://openrouter.ai/api/v1/chat/completions"
     assert get_api_key_env_var("  openai  ") == "OPENAI_API_KEY"
 

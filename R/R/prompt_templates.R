@@ -56,7 +56,8 @@ normalize_cluster_gene_list <- function(input) {
 #' @param tissue_name Tissue context for the annotation (e.g., 'human PBMC', 'mouse brain')
 #' @param top_gene_count Number of top genes to use per cluster when input is from Seurat. Default: 10
 #'
-#' @return Character string containing the formatted prompt
+#' @return A list with `prompt` (formatted prompt text), `expected_count`
+#'   (number of clusters), and `gene_lists` (cluster ID to marker genes mapping).
 #' @importFrom magrittr "%>%"
 #' @export
 create_annotation_prompt <- function(input, tissue_name, top_gene_count = 10) {
@@ -104,7 +105,7 @@ create_annotation_prompt <- function(input, tissue_name, top_gene_count = 10) {
   prompt <- paste0("You are a cell type annotation expert. Below are marker genes for different cell clusters in ", 
                   tissue_name, ".\n\n",
                   paste(formatted_lines, collapse = "\n"),
-                  "\n\nFor each numbered cluster, provide only the cell type name in a new line, without any explanation.")
+                  "\n\nFor each cluster ID, provide only the cell type name in a new line, without any explanation.")
   
   return(list(
     prompt = prompt,
