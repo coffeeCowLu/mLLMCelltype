@@ -2,7 +2,7 @@
 % Please edit documentation in R/prompt_templates.R
 \name{normalize_cluster_gene_list}
 \alias{normalize_cluster_gene_list}
-\title{Prompt templates for mLLMCelltype}
+\title{Normalize list input into a canonical cluster->genes mapping}
 \usage{
 normalize_cluster_gene_list(input)
 }
@@ -13,17 +13,13 @@ normalize_cluster_gene_list(input)
 Named list of character vectors (cluster_id -> genes)
 }
 \description{
-This file contains all prompt template functions used in mLLMCelltype.
-These functions create various prompts for different stages of the cell type annotation process.
-Normalize list input into a canonical cluster->genes mapping
-}
-\details{
 For list input, each element can be either:
 \enumerate{
 \item a list containing a \code{genes} field, or
 \item a character vector of genes.
 }
-
+}
+\details{
 Naming rules:
 \itemize{
 \item unnamed lists are assigned 0-based IDs ("0", "1", ...)

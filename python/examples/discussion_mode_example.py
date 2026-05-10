@@ -26,9 +26,9 @@ import scanpy as sc
 from dotenv import load_dotenv
 
 # Add package path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "python"))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from mllmcelltype.consensus import interactive_consensus_annotation
+from mllmcelltype import format_discussion_report, interactive_consensus_annotation
 
 # Load API keys from .env file
 # Try to find .env file in various locations
@@ -149,13 +149,13 @@ def main():
     # Select models to use
     models = []
     if "openai" in api_keys:
-        models.append("gpt-4o")
+        models.append("gpt-5.5")
     if "anthropic" in api_keys:
-        models.append("claude-3-5-sonnet-latest")
+        models.append("claude-opus-4-7")
     if "gemini" in api_keys:
-        models.append("gemini-3-pro")
+        models.append("gemini-3.1-pro-preview")
     if "qwen" in api_keys:
-        models.append("qwen-max")
+        models.append("qwen3.6-plus")
 
     print(f"Using models: {', '.join(models)}")
 
@@ -220,11 +220,7 @@ def main():
     print("\nDiscussion logs for controversial clusters:")
     discussion_logs = consensus_results.get("discussion_logs", {})
     if discussion_logs:
-        for cluster, logs in discussion_logs.items():
-            print(f"\nCluster {cluster} discussion:")
-            for round_num, log in enumerate(logs):
-                print(f"  Round {round_num + 1}:")
-                print(f"  {log[:100]}...")  # Only print the first 100 characters
+        print(format_discussion_report(consensus_results))
     else:
         print("No discussion logs found.")
 
@@ -237,11 +233,10 @@ def main():
             entropy = consensus_results["entropy"][cluster]
             f.write(f"{cluster}\t{final_annotations[cluster]}\t{cp:.2f}\t{entropy:.2f}\n")
 
-        f.write("\n\nDiscussion Logs:\n")
-        for cluster, logs in discussion_logs.items():
-            f.write(f"\nCluster {cluster} discussion:\n")
-            for round_num, log in enumerate(logs):
-                f.write(f"Round {round_num + 1}:\n{log}\n")
+        if discussion_logs:
+            f.write("\n\nDiscussion Logs:\n")
+            f.write(format_discussion_report(consensus_results))
+            f.write("\n")
 
     print(f"\nDetailed results saved to {result_file}")
     print("\nTest completed successfully!")

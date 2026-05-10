@@ -138,19 +138,8 @@ facilitate_cluster_discussion <- function(cluster_id,
     log_warn(sprintf("Only %d valid responses received for cluster %s. Skipping discussion.",
                     length(valid_round1_responses), char_cluster_id))
 
-    # Extract best available prediction or "Unknown"
     best_prediction <- if(length(valid_round1_responses) == 1) {
-      response_text <- valid_round1_responses[[1]]
-      if (is.character(response_text) && length(response_text) > 0) {
-        cell_type_match <- regexpr("CELL TYPE:\\s*(.+)", response_text[1], ignore.case = TRUE)
-        if (cell_type_match > 0) {
-          trimws(sub("CELL TYPE:\\s*", "", response_text[1], ignore.case = TRUE))
-        } else {
-          "Unknown"
-        }
-      } else {
-        "Unknown"
-      }
+      extract_discussion_cell_type(valid_round1_responses[[1]])
     } else {
       "Unknown"
     }

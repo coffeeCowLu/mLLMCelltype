@@ -9,7 +9,7 @@ register_custom_provider(provider_name, process_fn, description = NULL)
 \arguments{
 \item{provider_name}{Unique name for the custom provider}
 
-\item{process_fn}{Function that processes LLM requests. Must accept parameters: prompt, model, api_key}
+\item{process_fn}{Function that processes LLM requests. Must accept parameters: prompt, model, api_key; may optionally accept model_config}
 
 \item{description}{Optional description of the provider}
 }

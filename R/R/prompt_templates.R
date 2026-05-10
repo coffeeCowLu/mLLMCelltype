@@ -1,7 +1,18 @@
-#' Prompt templates for mLLMCelltype
-#' 
-#' This file contains all prompt template functions used in mLLMCelltype.
-#' These functions create various prompts for different stages of the cell type annotation process.
+# Prompt templates for mLLMCelltype
+#
+# This file contains all prompt template functions used in mLLMCelltype.
+# These functions create various prompts for different stages of the cell type annotation process.
+
+extract_cluster_item_genes <- function(item) {
+  if (is.list(item) && "genes" %in% names(item)) {
+    return(as.character(item$genes))
+  }
+  if (is.character(item)) {
+    return(item)
+  }
+  stop("When input is a list, each element must be a character vector of genes or a list containing a 'genes' field")
+}
+
 #' Normalize list input into a canonical cluster->genes mapping
 #'
 #' For list input, each element can be either:
@@ -16,16 +27,6 @@
 #' @param input List input for cluster annotation
 #' @return Named list of character vectors (cluster_id -> genes)
 #' @keywords internal
-extract_cluster_item_genes <- function(item) {
-  if (is.list(item) && "genes" %in% names(item)) {
-    return(as.character(item$genes))
-  }
-  if (is.character(item)) {
-    return(item)
-  }
-  stop("When input is a list, each element must be a character vector of genes or a list containing a 'genes' field")
-}
-
 normalize_cluster_gene_list <- function(input) {
   if (!is.list(input) || is.data.frame(input)) {
     stop("normalize_cluster_gene_list expects a list input")
@@ -55,6 +56,7 @@ normalize_cluster_gene_list <- function(input) {
 #' @param top_gene_count Maximum number of genes to include
 #' @return Comma-separated marker genes for the requested cluster
 #' @keywords internal
+#' @noRd
 extract_cluster_genes_for_discussion <- function(input, cluster_id, top_gene_count) {
   cluster_key <- as.character(cluster_id)
 
@@ -202,7 +204,7 @@ create_consensus_check_prompt <- function(round_responses, controversy_threshold
     "CALCULATE THE FOLLOWING METRICS:",
     "1. Consensus Proportion = Number of models supporting the majority prediction / Total number of models",
     "2. Shannon Entropy = -sum(p_i * log2(p_i)) where p_i is the proportion of models predicting each unique cell type",
-    sprintf("3. Determine if consensus is reached (Consensus Proportion > %s AND Entropy <= %s)", 
+    sprintf("3. Determine if consensus is reached (Consensus Proportion >= %s AND Entropy <= %s)",
             format(controversy_threshold, nsmall=1), format(entropy_threshold, nsmall=1)),
     "",
     "RESPONSE FORMAT:",

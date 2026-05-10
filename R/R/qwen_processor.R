@@ -76,9 +76,9 @@ QwenProcessor <- R6::R6Class("QwenProcessor",
     #
     #
     get_working_api_url = function(api_key) {
-      # Check package-level cache first (persists across instances)
-      if (!is.null(.qwen_endpoint_cache$url)) {
-        return(.qwen_endpoint_cache$url)
+      cache_key <- digest::digest(api_key, algo = "xxhash64")
+      if (exists(cache_key, envir = .qwen_endpoint_cache, inherits = FALSE)) {
+        return(get(cache_key, envir = .qwen_endpoint_cache, inherits = FALSE))
       }
 
       international_url <- "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
@@ -89,14 +89,14 @@ QwenProcessor <- R6::R6Class("QwenProcessor",
       # Try international endpoint first
       if (private$test_endpoint(international_url, api_key)) {
         self$logger$info("Using Qwen international endpoint", list(url = international_url))
-        .qwen_endpoint_cache$url <- international_url
+        assign(cache_key, international_url, envir = .qwen_endpoint_cache)
         return(international_url)
       }
 
       # Fallback to domestic endpoint
       if (private$test_endpoint(domestic_url, api_key)) {
         self$logger$info("Using Qwen domestic endpoint (international failed)", list(url = domestic_url))
-        .qwen_endpoint_cache$url <- domestic_url
+        assign(cache_key, domestic_url, envir = .qwen_endpoint_cache)
         return(domestic_url)
       }
 

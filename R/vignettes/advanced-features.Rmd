@@ -641,7 +641,7 @@ log_info("Starting analysis of cluster 0", list(
 # Log API calls with performance tracking
 log_info("API call completed", list(
   provider = "anthropic",
-  model = "claude-3.5-sonnet",
+  model = "claude-sonnet-4-6",
   duration_seconds = 2.34,
   success = TRUE
 ))

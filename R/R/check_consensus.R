@@ -25,6 +25,27 @@ normalize_annotation <- function(annotation) {
   return(normalized)
 }
 
+#' Extract discussion cell type label
+#'
+#' @keywords internal
+#' @noRd
+extract_discussion_cell_type <- function(response, default = "Unknown") {
+  if (!is.character(response) || length(response) == 0) {
+    return(default)
+  }
+
+  lines <- unlist(strsplit(response, "\n", fixed = TRUE), use.names = FALSE)
+  cell_type_lines <- grep("^CELL TYPE:", trimws(lines), value = TRUE, ignore.case = TRUE)
+  if (length(cell_type_lines) > 0) {
+    return(trimws(sub("^CELL TYPE:\\s*", "", cell_type_lines[1], ignore.case = TRUE)))
+  }
+  if (length(response) == 1 && !grepl("\n", response, fixed = TRUE)) {
+    return(response)
+  }
+
+  default
+}
+
 #' Calculate simple consensus without LLM
 #
 #
@@ -45,7 +66,7 @@ calculate_simple_consensus <- function(round_responses) {
   
   # Find original annotation that matches the most common normalized form
   matching_idx <- which(normalized_responses == most_common_normalized)[1]
-  majority_prediction <- round_responses[matching_idx]
+  majority_prediction <- unname(round_responses[matching_idx])
   
   # Calculate consensus proportion
   consensus_proportion <- most_common_count / total_responses
@@ -420,23 +441,7 @@ check_consensus <- function(round_responses, api_keys = NULL, controversy_thresh
   get_logger()$info("Starting with simple consensus calculation")
   
   # Extract cell types from responses if they are discussion format
-  extracted_cell_types <- sapply(round_responses, function(response) {
-    if (is.character(response) && length(response) > 1) {
-      # Multi-line response (discussion format)
-      # Look for line starting with "CELL TYPE:"
-      cell_type_lines <- grep("^CELL TYPE:", response, value = TRUE, ignore.case = TRUE)
-      if (length(cell_type_lines) > 0) {
-        # Extract cell type after "CELL TYPE:"
-        cell_type <- trimws(sub("^CELL TYPE:\\s*", "", cell_type_lines[1], ignore.case = TRUE))
-        return(cell_type)
-      }
-    } else if (is.character(response) && length(response) == 1) {
-      # Single line response - return as is
-      return(response)
-    }
-    # Default to "Unknown" if extraction fails
-    return("Unknown")
-  })
+  extracted_cell_types <- sapply(round_responses, extract_discussion_cell_type)
   
   
   # Calculate simple consensus

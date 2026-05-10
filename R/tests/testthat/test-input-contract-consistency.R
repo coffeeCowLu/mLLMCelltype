@@ -412,6 +412,103 @@ test_that("annotate_cell_types supports custom providers", {
   expect_identical(result, "custom-ok")
 })
 
+test_that("process_custom forwards model_config when provider supports it", {
+  skip_if_not_installed("testthat", minimum_version = "3.2.0")
+  original_providers <- as.list(custom_providers)
+  original_models <- as.list(custom_models)
+  rm(list = ls(envir = custom_providers), envir = custom_providers)
+  rm(list = ls(envir = custom_models), envir = custom_models)
+  on.exit({
+    rm(list = ls(envir = custom_providers), envir = custom_providers)
+    rm(list = ls(envir = custom_models), envir = custom_models)
+    list2env(original_providers, envir = custom_providers)
+    list2env(original_models, envir = custom_models)
+  }, add = TRUE)
+
+  captured_config <- NULL
+  assign("customx",
+         list(
+           process_fn = function(prompt, model, api_key, model_config) {
+             captured_config <<- model_config
+             "custom-ok"
+           },
+           description = NULL,
+           models = "custom-model"
+         ),
+         envir = custom_providers)
+  assign("custom-model",
+         list(provider = "customx", config = list(temperature = 0.2, max_tokens = 100)),
+         envir = custom_models)
+
+  result <- testthat::with_mocked_bindings({
+    suppressMessages(process_custom("prompt", "custom-model", "k"))
+  },
+  get_logger = function() {
+    list(
+      info = function(...) NULL,
+      error = function(...) NULL
+    )
+  })
+
+  expect_identical(result, "custom-ok")
+  expect_identical(captured_config, list(temperature = 0.2, max_tokens = 100))
+
+  captured_config <- NULL
+  custom_providers$customx$process_fn <- function(prompt, model, api_key, ...) {
+    captured_config <<- list(...)[["model_config"]]
+    "custom-ok"
+  }
+
+  result <- testthat::with_mocked_bindings({
+    suppressMessages(process_custom("prompt", "custom-model", "k"))
+  },
+  get_logger = function() {
+    list(
+      info = function(...) NULL,
+      error = function(...) NULL
+    )
+  })
+
+  expect_identical(result, "custom-ok")
+  expect_identical(captured_config, list(temperature = 0.2, max_tokens = 100))
+})
+
+test_that("check_consensus normalizes discussion cell type labels", {
+  result <- testthat::with_mocked_bindings({
+    suppressMessages(check_consensus(
+      list(
+        m1 = "CELL TYPE: T cell",
+        m2 = "Reasoning\nCELL TYPE: T cell"
+      ),
+      controversy_threshold = 1,
+      entropy_threshold = 0
+    ))
+  },
+  get_logger = function() {
+    list(
+      info = function(...) NULL,
+      debug = function(...) NULL,
+      warn = function(...) NULL,
+      error = function(...) NULL
+    )
+  })
+
+  expect_true(result$reached)
+  expect_identical(result$majority_prediction, "T cell")
+})
+
+
+test_that("consensus prompt documents inclusive consensus threshold", {
+  prompt <- create_consensus_check_prompt(
+    c("T cell", "B cell"),
+    controversy_threshold = 0.5,
+    entropy_threshold = 1
+  )
+
+  expect_true(grepl("Consensus Proportion >= 0.5", prompt, fixed = TRUE))
+})
+
+
 test_that("parse_consensus_response handles NA_character_ safely", {
   result <- testthat::with_mocked_bindings({
     parse_consensus_response(NA_character_)
@@ -444,6 +541,26 @@ test_that("print_consensus_summary handles vector predictions without crashing",
 
   expect_no_error(capture.output(print_consensus_summary(results)))
 })
+
+test_that("QwenProcessor caches endpoint selection per API key", {
+  original_cache <- as.list(.qwen_endpoint_cache)
+  rm(list = ls(envir = .qwen_endpoint_cache), envir = .qwen_endpoint_cache)
+  on.exit({
+    rm(list = ls(envir = .qwen_endpoint_cache), envir = .qwen_endpoint_cache)
+    list2env(original_cache, envir = .qwen_endpoint_cache)
+  }, add = TRUE)
+
+  key_a <- digest::digest("key-a", algo = "xxhash64")
+  key_b <- digest::digest("key-b", algo = "xxhash64")
+  assign(key_a, "https://intl.example.test", envir = .qwen_endpoint_cache)
+  assign(key_b, "https://domestic.example.test", envir = .qwen_endpoint_cache)
+
+  processor <- QwenProcessor$new()
+
+  expect_identical(processor$get_working_api_url("key-a"), "https://intl.example.test")
+  expect_identical(processor$get_working_api_url("key-b"), "https://domestic.example.test")
+})
+
 
 test_that("BaseAPIProcessor rejects non-scalar prompt cleanly", {
   TP <- R6::R6Class(

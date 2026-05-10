@@ -15,7 +15,7 @@ custom_models <- new.env(parent = emptyenv())
 #' Register a custom LLM provider
 #'
 #' @param provider_name Unique name for the custom provider
-#' @param process_fn Function that processes LLM requests. Must accept parameters: prompt, model, api_key
+#' @param process_fn Function that processes LLM requests. Must accept parameters: prompt, model, api_key; may optionally accept model_config
 #' @param description Optional description of the provider
 #'
 #' @return Invisible NULL
@@ -158,7 +158,12 @@ process_custom <- function(prompt, model, api_key) {
   # Call provider's process function
   get_logger()$info("Processing request with custom model", list(model = model))
   tryCatch({
-    response <- provider_data$process_fn(prompt, model, api_key)
+    process_args <- names(formals(provider_data$process_fn))
+    if ("model_config" %in% process_args || "..." %in% process_args) {
+      response <- provider_data$process_fn(prompt, model, api_key, model_config = model_data$config)
+    } else {
+      response <- provider_data$process_fn(prompt, model, api_key)
+    }
     get_logger()$info("Custom model request processed successfully")
     return(response)
   }, error = function(e) {

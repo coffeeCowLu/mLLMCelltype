@@ -24,7 +24,7 @@ import scanpy as sc
 from dotenv import load_dotenv
 
 # Add python directory to path for local development
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "python")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Import mLLMCelltype functions
 from mllmcelltype import annotate_clusters, interactive_consensus_annotation, setup_logging
@@ -116,13 +116,13 @@ if not available_apis:
 # Determine which models to use based on available API keys
 models = []
 if os.getenv("OPENAI_API_KEY"):
-    models.append("gpt-4o")
+    models.append("gpt-5.5")
 if os.getenv("ANTHROPIC_API_KEY"):
-    models.append("claude-opus-4-20250514")
+    models.append("claude-opus-4-7")
 if os.getenv("GEMINI_API_KEY"):
-    models.append("gemini-3-pro")
+    models.append("gemini-3.1-pro-preview")
 if os.getenv("QWEN_API_KEY"):
-    models.append("qwen-max")
+    models.append("qwen3.6-plus")
 
 print(f"Using models: {', '.join(models)}")
 

@@ -79,9 +79,9 @@ The optimal number depends on the quality of your marker genes and the complexit
 
 mLLMCelltype implements a caching system to avoid redundant API calls, which saves time and reduces costs:
 
-- By default, caching is enabled (`cache = TRUE`)
-- The cache is based on a hash of the input data, model, and other parameters
-- Results are stored in a local directory (default: a temporary directory)
+- `interactive_consensus_annotation()` uses caching by default (`use_cache = TRUE`)
+- `annotate_cell_types()` supports direct caching through `use_cache` and `cache_dir`
+- The cache is based on a hash of the input data, model, cluster ID, tissue context, and marker-gene count
 - You can specify a custom cache directory using the `cache_dir` parameter
 
 To clear the cache:
@@ -91,7 +91,7 @@ cache_manager <- CacheManager$new()
 cache_manager$clear_cache()
 ```
 
-Note: The `annotate_cell_types` function does not have built-in caching. If you need caching, you'll need to implement it separately.
+For one-off prompt generation, set `api_key = NA`; no cache entry is created because no provider call is made.
 
 ### How does mLLMCelltype handle rate limits and API errors?
 
@@ -123,7 +123,7 @@ Typical runtimes:
 - Multi-model consensus with discussion, 10 clusters: 5-10 minutes
 
 To optimize runtime:
-- Implement your own caching mechanism if needed
+- Keep `use_cache = TRUE` and set a persistent `cache_dir` for repeated runs
 - Start with fewer models for initial exploration
 - Use a higher `controversy_threshold` to reduce the number of controversial clusters
 - Process large datasets in batches
@@ -132,9 +132,9 @@ To optimize runtime:
 
 The API costs depend on the models you use and the number of clusters:
 
-- **OpenAI models** (GPT-4o, etc.): $0.01-0.05 per cluster for annotation
-- **Anthropic models** (Claude 3.7, etc.): $0.01-0.03 per cluster for annotation
-- **Google models** (Gemini 3, etc.): $0.001-0.01 per cluster for annotation
+- **OpenAI models** (GPT-5.5, etc.): $0.01-0.05 per cluster for annotation
+- **Anthropic models** (Claude Opus 4.7, Sonnet 4.6, etc.): $0.01-0.03 per cluster for annotation
+- **Google models** (Gemini 3.1, etc.): $0.001-0.01 per cluster for annotation
 - **Other models**: Generally lower cost
 - **OpenRouter free models**: $0.00 (free with `:free` suffix)
 
@@ -145,7 +145,7 @@ For a typical dataset with 10-20 clusters:
 - Using OpenRouter free models: $0.00 total
 
 To reduce costs:
-- Implement your own caching mechanism to avoid redundant API calls
+- Keep caching enabled to avoid redundant API calls
 - Start with more economical models
 - Use fewer models for initial exploration
 - Reserve multi-model consensus for final analysis
@@ -194,7 +194,7 @@ results <- annotate_cell_types(
 
 To get the most accurate annotations:
 
-1. **Use multiple high-quality models**: Include diverse, high-performing models like Claude Sonnet 4.6, GPT-5.5, and Gemini 3.1
+1. **Use multiple high-quality models**: Include diverse, high-performing models like Claude Opus 4.7, GPT-5.5, and Gemini 3.1
 
 2. **Provide good marker genes**: Use robust differential expression analysis to identify strong marker genes
 
@@ -221,7 +221,7 @@ There are several possible reasons for getting different results with the same i
 4. **API changes**: Providers may change how their APIs work
 
 To ensure reproducibility:
-- Implement your own caching mechanism to reuse results
+- Keep `use_cache = TRUE` and set a persistent `cache_dir` to reuse results
 - Specify model versions explicitly when available
 - Save and document your results
 - Consider saving the raw API responses for future reference

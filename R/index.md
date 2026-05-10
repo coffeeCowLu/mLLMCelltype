@@ -61,8 +61,8 @@ Sys.setenv(GEMINI_API_KEY = "your-gemini-api-key")
 
 # Use multiple models for annotation
 models <- c(
-  "claude-3-7-sonnet-20250219",
-  "gpt-4o",
+  "claude-sonnet-4-6",
+  "gpt-5.5",
   "gemini-3.1-pro-preview"
 )
 
@@ -98,7 +98,7 @@ consensus_results <- interactive_consensus_annotation(
   controversy_threshold = 0.7,
   entropy_threshold = 1.0,
   max_discussion_rounds = 3,
-  consensus_check_model = "claude-3-7-sonnet-20250219"
+  consensus_check_model = "claude-sonnet-4-6"
 )
 
 ```
