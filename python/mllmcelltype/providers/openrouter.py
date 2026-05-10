@@ -20,7 +20,7 @@ def process_openrouter(
 
     Args:
         prompt: The prompt to send to the API
-        model: The model name (e.g., 'openai/gpt-5', 'anthropic/claude-sonnet-4.5', 'anthropic/claude-opus-4.1')
+        model: The model name (e.g., 'openai/gpt-5.5', 'anthropic/claude-sonnet-4.6', 'anthropic/claude-opus-4.7')
         api_key: OpenRouter API key
         base_url: Optional custom base URL
 

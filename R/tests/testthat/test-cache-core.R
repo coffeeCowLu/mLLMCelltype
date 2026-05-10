@@ -68,7 +68,7 @@ test_that("Cache key generation works", {
   
   key1 <- cache_manager$generate_key(test_data, "gpt-5.5", "cluster_0")
   key2 <- cache_manager$generate_key(test_data, "gpt-5.5", "cluster_1")
-  key3 <- cache_manager$generate_key(test_data, "claude-sonnet-4-20250514", "cluster_0")
+  key3 <- cache_manager$generate_key(test_data, "claude-sonnet-4-6", "cluster_0")
 
   # Keys should be different for different inputs
   expect_true(nchar(key1) > 0)

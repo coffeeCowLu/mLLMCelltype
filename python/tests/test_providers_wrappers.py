@@ -283,6 +283,33 @@ def test_process_gemini_non_string_text_is_coerced():
     assert result == ["123"]
 
 
+def test_process_gemini_trims_api_key_for_client():
+    """Test Gemini passes normalized API key to the SDK client."""
+    fake_response = SimpleNamespace(text="Cluster 1: T cells")
+    fake_client = SimpleNamespace(models=SimpleNamespace(generate_content=MagicMock(return_value=fake_response)))
+
+    fake_modules = _build_fake_google_modules(client=fake_client)
+
+    with patch.dict("sys.modules", fake_modules, clear=False):
+        result = process_gemini("genes", "gemini-3.1-pro-preview", "  test-key  ")
+
+    assert result == ["Cluster 1: T cells"]
+    fake_modules["google.genai"].Client.assert_called_once_with(api_key="test-key")
+
+
+def test_process_gemini_cleans_blank_lines_whitespace_and_commas():
+    """Test Gemini response cleanup keeps only cleaned annotation lines."""
+    fake_response = SimpleNamespace(text="  Cluster 1: T cells,\n\n Cluster 2: B cells,  \n   ")
+    fake_client = SimpleNamespace(models=SimpleNamespace(generate_content=MagicMock(return_value=fake_response)))
+
+    fake_modules = _build_fake_google_modules(client=fake_client)
+
+    with patch.dict("sys.modules", fake_modules, clear=False):
+        result = process_gemini("genes", "gemini-3.1-pro-preview", "test-key")
+
+    assert result == ["Cluster 1: T cells", "Cluster 2: B cells"]
+
+
 @patch("mllmcelltype.providers.gemini.time.sleep")
 def test_process_gemini_missing_text_fails_fast_without_retry(mock_sleep):
     """Test missing response text raises ValueError immediately (no useless retries)."""
@@ -338,6 +365,29 @@ def test_process_gemini_base_url_is_ignored_with_warning(mock_write_log):
     )
 
 
+@patch("mllmcelltype.providers.gemini.write_log")
+def test_process_gemini_whitespace_base_url_does_not_warn(mock_write_log):
+    """Test blank base_url values are ignored without noisy warnings."""
+    fake_response = SimpleNamespace(text="Cluster 1: T cells")
+    fake_client = SimpleNamespace(models=SimpleNamespace(generate_content=MagicMock(return_value=fake_response)))
+    fake_modules = _build_fake_google_modules(client=fake_client)
+
+    with patch.dict("sys.modules", fake_modules, clear=False):
+        result = process_gemini(
+            "genes",
+            "gemini-3.1-pro-preview",
+            "test-key",
+            base_url="   ",
+        )
+
+    assert result == ["Cluster 1: T cells"]
+    assert not any(
+        "base_url parameter is ignored for Gemini" in call.args[0]
+        and call.kwargs.get("level") == "warning"
+        for call in mock_write_log.call_args_list
+    )
+
+
 @patch("mllmcelltype.providers.gemini.time.sleep")
 def test_process_gemini_retries_exhausted_raises(mock_sleep):
     """Test Gemini raises final error after exhausting retries."""
@@ -351,4 +401,4 @@ def test_process_gemini_retries_exhausted_raises(mock_sleep):
         process_gemini("genes", "gemini-3.1-pro-preview", "test-key")
 
     assert fake_client.models.generate_content.call_count == 3
-    assert mock_sleep.call_count == 2
+    assert [call.args[0] for call in mock_sleep.call_args_list] == [2, 4]

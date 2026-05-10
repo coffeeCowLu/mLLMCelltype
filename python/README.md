@@ -152,7 +152,8 @@ annotations = annotate_clusters(
     marker_genes=marker_genes,
     species='human',
     tissue='peripheral blood',
-    provider_config={"provider": "openrouter", "model": "openai/gpt-5.5"}
+    provider='openrouter',
+    model='openai/gpt-5.5'
 )
 ```
 

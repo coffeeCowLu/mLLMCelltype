@@ -65,7 +65,7 @@ Supported models:
 }
 \enumerate{
 \item With provider names as keys: \code{list("openai" = "sk-...", "anthropic" = "sk-ant-...", "openrouter" = "sk-or-...")}
-\item With model names as keys: \code{list("gpt-5" = "sk-...", "claude-sonnet-4-6" = "sk-ant-...")}
+\item With model names as keys: \code{list("gpt-5.5" = "sk-...", "claude-sonnet-4-6" = "sk-ant-...")}
 }
 
 The system first tries to find the API key using the provider name. If not found, it then tries using the model name.

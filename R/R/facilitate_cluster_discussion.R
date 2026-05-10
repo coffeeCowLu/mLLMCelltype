@@ -36,31 +36,7 @@ facilitate_cluster_discussion <- function(cluster_id,
 
   # Get marker genes for this cluster
   cluster_genes <- tryCatch({
-    if (inherits(input, 'list')) {
-      # Check the structure of input[[char_cluster_id]]
-      if (is.list(input[[char_cluster_id]]) && "genes" %in% names(input[[char_cluster_id]])) {
-        # If it's a list containing a 'genes' element, extract genes and convert to string
-        paste(head(input[[char_cluster_id]]$genes, top_gene_count), collapse = ",")
-      } else if (is.character(input[[char_cluster_id]])) {
-        # If it's already a character vector, use directly
-        paste(head(input[[char_cluster_id]], top_gene_count), collapse = ",")
-      } else {
-        # If it's another type, provide fallback
-        warning("Unable to extract genes from input for cluster ", char_cluster_id)
-        log_warn("Unable to extract genes from input", list(cluster_id = char_cluster_id))
-        paste("Cluster", char_cluster_id, "- Unable to extract specific genes")
-      }
-    } else {
-      # For dataframe input
-      cluster_data <- input[input$cluster == char_cluster_id & input$avg_log2FC > 0, ]
-      if (nrow(cluster_data) > 0 && "gene" %in% names(cluster_data)) {
-        paste(head(cluster_data$gene, top_gene_count), collapse = ",")
-      } else {
-        warning("No significant genes found for cluster ", char_cluster_id)
-        log_warn("No significant genes found", list(cluster_id = char_cluster_id))
-        paste("Cluster", char_cluster_id, "- No significant genes found")
-      }
-    }
+    extract_cluster_genes_for_discussion(input, char_cluster_id, top_gene_count)
   }, error = function(e) {
     warning("Error extracting genes for cluster ", char_cluster_id, ": ", e$message)
     log_warn("Error extracting genes", list(cluster_id = char_cluster_id, error = e$message))

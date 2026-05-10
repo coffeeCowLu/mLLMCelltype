@@ -12,12 +12,12 @@ test_that("Cache saves and retrieves mock consensus results", {
   mock_consensus <- list(
     consensus_annotation = "T cell",
     confidence_score = 0.95,
-    models_used = c("gpt-5.5", "claude-sonnet-4-20250514"),
+    models_used = c("gpt-5.5", "claude-sonnet-4-6"),
     timestamp = Sys.time()
   )
   
   # Generate cache key
-  key <- cache_manager$generate_key(mock_input, c("gpt-5.5", "claude-sonnet-4-20250514"), "cluster_1")
+  key <- cache_manager$generate_key(mock_input, c("gpt-5.5", "claude-sonnet-4-6"), "cluster_1")
   
   # Test saving
   cache_manager$save_to_cache(key, mock_consensus)

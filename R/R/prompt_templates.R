@@ -16,23 +16,23 @@
 #' @param input List input for cluster annotation
 #' @return Named list of character vectors (cluster_id -> genes)
 #' @keywords internal
+extract_cluster_item_genes <- function(item) {
+  if (is.list(item) && "genes" %in% names(item)) {
+    return(as.character(item$genes))
+  }
+  if (is.character(item)) {
+    return(item)
+  }
+  stop("When input is a list, each element must be a character vector of genes or a list containing a 'genes' field")
+}
+
 normalize_cluster_gene_list <- function(input) {
   if (!is.list(input) || is.data.frame(input)) {
     stop("normalize_cluster_gene_list expects a list input")
   }
 
-  extract_item_genes <- function(item) {
-    if (is.list(item) && "genes" %in% names(item)) {
-      return(as.character(item$genes))
-    }
-    if (is.character(item)) {
-      return(item)
-    }
-    stop("When input is a list, each element must be a character vector of genes or a list containing a 'genes' field")
-  }
-
   names_vec <- names(input)
-  gene_vectors <- lapply(input, extract_item_genes)
+  gene_vectors <- lapply(input, extract_cluster_item_genes)
 
   if (is.null(names_vec)) {
     canonical_names <- as.character(seq_along(gene_vectors) - 1)
@@ -46,6 +46,68 @@ normalize_cluster_gene_list <- function(input) {
 
   names(gene_vectors) <- canonical_names
   gene_vectors
+}
+
+#' Extract marker genes for a discussion prompt
+#'
+#' @param input Marker gene input in list or data.frame format
+#' @param cluster_id Cluster ID to extract
+#' @param top_gene_count Maximum number of genes to include
+#' @return Comma-separated marker genes for the requested cluster
+#' @keywords internal
+extract_cluster_genes_for_discussion <- function(input, cluster_id, top_gene_count) {
+  cluster_key <- as.character(cluster_id)
+
+  if (is.list(input) && !is.data.frame(input)) {
+    cluster_names <- names(input)
+    if (is.null(cluster_names)) {
+      cluster_names <- as.character(seq_along(input) - 1)
+    }
+    if (anyDuplicated(cluster_names)) {
+      stop("Duplicate cluster IDs detected after normalization")
+    }
+    cluster_index <- match(cluster_key, cluster_names)
+    if (is.na(cluster_index)) {
+      stop(sprintf("Cluster '%s' was not found in list input", cluster_key))
+    }
+
+    genes <- extract_cluster_item_genes(input[[cluster_index]])
+    if (length(genes) == 0) {
+      stop(sprintf("No genes found for cluster '%s'", cluster_key))
+    }
+
+    return(paste(head(genes, top_gene_count), collapse = ","))
+  }
+
+  if (is.data.frame(input)) {
+    required_columns <- c("cluster", "gene")
+    if (!all(required_columns %in% names(input))) {
+      stop("Data frame input must contain 'cluster' and 'gene' columns")
+    }
+
+    cluster_mask <- as.character(input$cluster) == cluster_key
+    numeric_cluster <- suppressWarnings(as.numeric(cluster_key))
+    if (!any(cluster_mask) && !is.na(numeric_cluster)) {
+      cluster_mask <- suppressWarnings(as.numeric(input$cluster)) == numeric_cluster
+      cluster_mask[is.na(cluster_mask)] <- FALSE
+    }
+
+    cluster_data <- input[cluster_mask, , drop = FALSE]
+    if ("avg_log2FC" %in% names(cluster_data)) {
+      cluster_data <- cluster_data[!is.na(cluster_data$avg_log2FC) & cluster_data$avg_log2FC > 0, , drop = FALSE]
+      cluster_data <- cluster_data[order(cluster_data$avg_log2FC, decreasing = TRUE), , drop = FALSE]
+    }
+
+    genes <- as.character(cluster_data$gene)
+    genes <- genes[!is.na(genes) & nzchar(genes)]
+    if (length(genes) == 0) {
+      stop(sprintf("No genes found for cluster '%s'", cluster_key))
+    }
+
+    return(paste(head(genes, top_gene_count), collapse = ","))
+  }
+
+  stop("Input must be either a data.frame or a list of gene lists")
 }
 
 #' Create prompt for cell type annotation

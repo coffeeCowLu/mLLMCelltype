@@ -67,7 +67,7 @@ def get_provider(model: str) -> str:
 
     model_lower = model_normalized.lower()
 
-    # OpenRouter models contain '/' (e.g., 'anthropic/claude-sonnet-4.5')
+    # OpenRouter models contain '/' (e.g., 'anthropic/claude-sonnet-4.6')
     if "/" in model_normalized:
         return "openrouter"
 

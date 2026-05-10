@@ -38,7 +38,7 @@ test_that("Cache I/O performance", {
     confidence_score = 0.95,
     metadata = list(
       processing_time = 45.2,
-      models_used = c("gpt-5.5", "claude-sonnet-4-20250514", "gemini-3.1-pro-preview"),
+      models_used = c("gpt-5.5", "claude-sonnet-4-6", "gemini-3.1-pro-preview"),
       gene_count = 50
     )
   )

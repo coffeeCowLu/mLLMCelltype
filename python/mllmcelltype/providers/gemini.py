@@ -3,9 +3,26 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
 from ..logger import write_log
 from .common import ensure_api_key
+
+
+def _parse_gemini_response(response: Any) -> list[str]:
+    """Parse Gemini SDK response into cleaned non-empty lines."""
+    response_text = getattr(response, "text", None)
+    if response_text is None:
+        raise ValueError("Gemini response missing text content")
+    if not isinstance(response_text, str):
+        write_log("Unexpected non-string response content from Gemini, coercing to string", level="warning")
+        response_text = str(response_text)
+
+    return [
+        line.strip().rstrip(",")
+        for line in response_text.strip().split("\n")
+        if line.strip().rstrip(",")
+    ]
 
 
 def process_gemini(
@@ -39,7 +56,7 @@ def process_gemini(
     write_log(f"Starting Gemini API request with model: {model}")
 
     # Warn if base_url is provided (Gemini SDK doesn't support custom URLs)
-    if base_url:
+    if isinstance(base_url, str) and base_url.strip():
         write_log(
             "base_url parameter is ignored for Gemini (SDK doesn't support custom URLs)",
             level="warning",
@@ -67,20 +84,10 @@ def process_gemini(
                 config=types.GenerateContentConfig(temperature=0.7, max_output_tokens=4096),
             )
 
-            # Parse the response
-            response_text = getattr(response, "text", None)
-            if response_text is None:
-                raise ValueError("Gemini response missing text content")
-            if not isinstance(response_text, str):
-                write_log("Unexpected non-string response content from Gemini, coercing to string", level="warning")
-                response_text = str(response_text)
-
-            result = response_text.strip().split("\n")
+            result = _parse_gemini_response(response)
             write_log(f"Got response with {len(result)} lines")
             write_log(f"Raw response from Gemini:\n{result}", level="debug")
-
-            # Clean up results (remove commas at the end of lines)
-            return [line.rstrip(",") for line in result]
+            return result
 
         except ValueError:
             # Response shape/content errors are deterministic; fail fast.

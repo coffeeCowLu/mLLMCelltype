@@ -70,6 +70,59 @@ test_that("compare_model_predictions pads unequal lengths without recycling", {
   expect_true(is.na(res$consensus_predictions[3]))
   expect_true(is.na(res$consensus_proportions[3]))
   expect_true(is.na(res$entropies[3]))
+  expect_identical(rownames(res$comparison_matrix), c("0", "..prediction_2", "..prediction_3"))
+  expect_identical(names(res$consensus_predictions), c("0", "..prediction_2", "..prediction_3"))
+  expect_false(is.nan(res$summary_stats$mean_consensus_proportion))
+  expect_false(is.nan(res$summary_stats$mean_entropy))
+})
+
+test_that("standardize_cell_type_names ignores prose and accepts numbered mapping keys", {
+  result <- testthat::with_mocked_bindings({
+    suppressMessages(standardize_cell_type_names(
+      predictions = list(m1 = c("1: T cell", "B cell")),
+      models = "m1",
+      api_keys = list(openai = "k"),
+      standardization_model = "gpt-5.5"
+    ))
+  },
+  get_api_key = function(...) "k",
+  get_model_response = function(...) c(
+    "Here is the requested mapping:",
+    "1: T cell: CD4 T cell",
+    "B cell: B cell",
+    "Note: keep broad immune labels unchanged"
+  ),
+  log_warn = function(...) NULL)
+
+  expect_identical(result$m1, c("CD4 T cell", "B cell"))
+})
+
+test_that("compare_model_predictions skips invalid models and uses valid remaining models", {
+  res <- testthat::with_mocked_bindings({
+    capture.output({
+      result <- suppressWarnings(suppressMessages(compare_model_predictions(
+        input = list("0" = list(genes = c("G1"))),
+        tissue_name = "PBMC",
+        models = c("bad-model", "m1", "m2"),
+        api_keys = list(openai = "k")
+      )))
+    })
+    result
+  },
+  get_api_key = function(model, api_keys) {
+    if (identical(model, "bad-model")) stop("unknown model") else "k"
+  },
+  get_provider = function(model) {
+    if (identical(model, "bad-model")) stop("unknown model") else "openai"
+  },
+  annotate_cell_types = function(input, tissue_name, model, api_key, top_gene_count = 10, ...) {
+    c("T cell")
+  },
+  standardize_cell_type_names = function(predictions, models, api_keys, standardization_model = "x", base_urls = NULL) {
+    predictions
+  })
+
+  expect_identical(colnames(res$comparison_matrix), c("m1", "m2"))
 })
 
 test_that("interactive_consensus_annotation supports mapped cluster selectors", {
@@ -236,41 +289,78 @@ test_that("combine_results provides stable aliases for return fields", {
   expect_identical(result$final_consensus, result$final_annotations)
 })
 
-test_that("facilitate_cluster_discussion keeps fallback cluster_genes on extraction error", {
+capture_discussion_genes <- function(input, cluster_id = "0", top_gene_count = 5) {
   captured_cluster_genes <- NULL
+  testthat::with_mocked_bindings({
+    suppressWarnings(suppressMessages(facilitate_cluster_discussion(
+      cluster_id = cluster_id,
+      input = input,
+      tissue_name = "PBMC",
+      models = c("m1", "m2"),
+      api_keys = list(openai = "k"),
+      initial_predictions = list(m1 = c("0:T"), m2 = c("0:T")),
+      top_gene_count = top_gene_count,
+      max_rounds = 2
+    )))
+  },
+  create_initial_discussion_prompt = function(cluster_id, cluster_genes, tissue_name, initial_predictions) {
+    captured_cluster_genes <<- cluster_genes
+    "prompt"
+  },
+  get_model_response = function(...) "CELL TYPE: T cell",
+  check_consensus = function(...) {
+    list(reached = TRUE, consensus_proportion = 1, entropy = 0, majority_prediction = "T cell")
+  },
+  get_api_key = function(model, api_keys) "k",
+  get_provider = function(model) "openai",
+  get_logger = function() {
+    list(log_discussion = function(...) NULL)
+  },
+  log_warn = function(...) NULL,
+  log_info = function(...) NULL)
+  captured_cluster_genes
+}
 
-  expect_warning(
-    testthat::with_mocked_bindings({
-      facilitate_cluster_discussion(
-        cluster_id = "0",
-        input = 42,
-        tissue_name = "PBMC",
-        models = c("m1", "m2"),
-        api_keys = list(openai = "k"),
-        initial_predictions = list(m1 = c("0:T"), m2 = c("0:T")),
-        top_gene_count = 5,
-        max_rounds = 2
-      )
-    },
-    create_initial_discussion_prompt = function(cluster_id, cluster_genes, tissue_name, initial_predictions) {
-      captured_cluster_genes <<- cluster_genes
-      "prompt"
-    },
-    get_model_response = function(...) "CELL TYPE: T cell",
-    check_consensus = function(...) {
-      list(reached = TRUE, consensus_proportion = 1, entropy = 0, majority_prediction = "T cell")
-    },
-    get_api_key = function(model, api_keys) "k",
-    get_provider = function(model) "openai",
-    get_logger = function() {
-      list(log_discussion = function(...) NULL)
-    },
-    log_warn = function(...) NULL,
-    log_info = function(...) NULL),
-    regexp = "Error extracting genes"
+test_that("facilitate_cluster_discussion extracts data-frame genes by marker rank", {
+  markers <- data.frame(
+    cluster = c(0, 0, 0, 1),
+    gene = c("low", "top", "negative", "other"),
+    avg_log2FC = c(1, 3, -2, 5)
   )
 
+  expect_identical(capture_discussion_genes(markers, cluster_id = "0", top_gene_count = 2), "top,low")
+})
+
+test_that("facilitate_cluster_discussion preserves data-frame row order without avg_log2FC", {
+  markers <- data.frame(
+    cluster = c("0", "0", "0"),
+    gene = c("G1", "G2", "G3")
+  )
+
+  expect_identical(capture_discussion_genes(markers, cluster_id = "0", top_gene_count = 2), "G1,G2")
+})
+
+test_that("facilitate_cluster_discussion keeps fallback cluster_genes on extraction error", {
+  captured_cluster_genes <- capture_discussion_genes(42, cluster_id = "0")
   expect_true(grepl("Error extracting genes", captured_cluster_genes, fixed = TRUE))
+})
+
+test_that("facilitate_cluster_discussion falls back for missing clusters and malformed target entries", {
+  missing_cluster_genes <- capture_discussion_genes(list("1" = c("G1")), cluster_id = "0")
+  malformed_entry_genes <- capture_discussion_genes(list("0" = list(markers = c("G1"))), cluster_id = "0")
+
+  expect_true(grepl("Cluster '0' was not found", missing_cluster_genes, fixed = TRUE))
+  expect_true(grepl("character vector of genes", malformed_entry_genes, fixed = TRUE))
+})
+
+
+test_that("facilitate_cluster_discussion ignores malformed unrelated list entries", {
+  cluster_genes <- capture_discussion_genes(
+    list("0" = c("G1", "G2"), "1" = list(markers = c("bad"))),
+    cluster_id = "0"
+  )
+
+  expect_identical(cluster_genes, "G1,G2")
 })
 
 test_that("is_error_response detects error sentinels consistently", {

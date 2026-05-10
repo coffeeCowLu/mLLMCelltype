@@ -25,7 +25,7 @@
 #'     - Stepfun models: 'stepfun/step-3.5-flash'
 #
 #'   1. With provider names as keys: `list("openai" = "sk-...", "anthropic" = "sk-ant-...", "openrouter" = "sk-or-...")`
-#'   2. With model names as keys: `list("gpt-5" = "sk-...", "claude-sonnet-4-6" = "sk-ant-...")`
+#'   2. With model names as keys: `list("gpt-5.5" = "sk-...", "claude-sonnet-4-6" = "sk-ant-...")`
 #'   
 #'   The system first tries to find the API key using the provider name. If not found, it then tries using the model name.
 #'   Example:
@@ -86,14 +86,24 @@ compare_model_predictions <- function(input,
     stop("api_keys must be a non-empty list with named elements corresponding to models")
   }
   
-  # Validate that each model can resolve an API key (via provider name or model name)
+  # Validate model/API-key pairs without letting one bad model block the rest
+  eligible_models <- character(0)
   for (m in models) {
-    if (is.null(get_api_key(m, api_keys))) {
-      stop(sprintf("No API key found for model '%s'. Provide a key using the provider name '%s' or the model name as the key.",
-                   m, get_provider(m)))
+    provider <- tryCatch(get_provider(m), error = function(e) NULL)
+    api_key <- if (is.null(provider)) NULL else get_api_key(m, api_keys)
+    if (is.null(provider)) {
+      warning(sprintf("Skipping model '%s': unsupported model name", m))
+    } else if (is.null(api_key)) {
+      warning(sprintf("Skipping model '%s': no API key found for provider '%s' or model name", m, provider))
+    } else {
+      eligible_models <- c(eligible_models, m)
     }
   }
-  
+  if (length(eligible_models) == 0) {
+    stop("No models have both a supported provider and an API key")
+  }
+  models <- eligible_models
+
   # Extract cluster IDs from input for display
   prompt_result <- create_annotation_prompt(input, tissue_name, top_gene_count)
   cluster_ids <- names(prompt_result$gene_lists)
@@ -139,13 +149,19 @@ compare_model_predictions <- function(input,
   max_len <- max(vapply(std_vectors, length, integer(1)),
                  vapply(all_vectors, length, integer(1)))
   pad <- function(x) { length(x) <- max_len; x }
+  cluster_labels <- cluster_ids
+  length(cluster_labels) <- max_len
+  missing_labels <- is.na(cluster_labels) | !nzchar(cluster_labels)
+  cluster_labels[missing_labels] <- paste0("..prediction_", seq_len(max_len)[missing_labels])
 
   comparison_matrix <- do.call(cbind, lapply(std_vectors, pad))
   colnames(comparison_matrix) <- successful_models
+  rownames(comparison_matrix) <- cluster_labels
   raw_matrix <- do.call(cbind, lapply(all_vectors, pad))
   colnames(raw_matrix) <- successful_models
+  rownames(raw_matrix) <- cluster_labels
   n_clusters <- nrow(comparison_matrix)
-  
+
   # Calculate consensus and agreement statistics
   consensus_results <- apply(comparison_matrix, 1, function(row) {
     # Remove NAs
@@ -186,7 +202,10 @@ compare_model_predictions <- function(input,
   consensus_predictions <- sapply(consensus_results, function(x) x$consensus)
   consensus_proportions <- sapply(consensus_results, function(x) x$consensus_proportion)
   entropies <- sapply(consensus_results, function(x) x$entropy)
-  
+  names(consensus_predictions) <- cluster_labels
+  names(consensus_proportions) <- cluster_labels
+  names(entropies) <- cluster_labels
+
   # Calculate overall statistics
   model_agreement_matrix <- matrix(NA, 
                                    nrow = length(successful_models), 
@@ -207,19 +226,23 @@ compare_model_predictions <- function(input,
     }
   }
   
+  mean_or_na <- function(x) {
+    if (all(is.na(x))) NA_real_ else mean(x, na.rm = TRUE)
+  }
+
   # Prepare summary statistics
   summary_stats <- list(
     total_clusters = n_clusters,
     consensus_reached = sum(!is.na(consensus_predictions)),
-    mean_consensus_proportion = mean(consensus_proportions, na.rm = TRUE),
-    mean_entropy = mean(entropies, na.rm = TRUE),
+    mean_consensus_proportion = mean_or_na(consensus_proportions),
+    mean_entropy = mean_or_na(entropies),
     model_agreement_matrix = model_agreement_matrix
   )
-  
+
   # Return results
   results <- list(
     individual_predictions = all_predictions[successful_models],
-    standardized_predictions = standardized_predictions,
+    standardized_predictions = standardized_predictions[successful_models],
     comparison_matrix = comparison_matrix,
     consensus_predictions = consensus_predictions,
     consensus_proportions = consensus_proportions,
@@ -233,15 +256,25 @@ compare_model_predictions <- function(input,
   message(sprintf("Clusters with consensus: %d (%.1f%%)",
               summary_stats$consensus_reached,
               100 * summary_stats$consensus_reached / summary_stats$total_clusters))
-  message(sprintf("Mean consensus proportion: %.2f", summary_stats$mean_consensus_proportion))
-  message(sprintf("Mean entropy: %.2f", summary_stats$mean_entropy))
+  mean_consensus_label <- if (is.na(summary_stats$mean_consensus_proportion)) {
+    "NA"
+  } else {
+    sprintf("%.2f", summary_stats$mean_consensus_proportion)
+  }
+  mean_entropy_label <- if (is.na(summary_stats$mean_entropy)) {
+    "NA"
+  } else {
+    sprintf("%.2f", summary_stats$mean_entropy)
+  }
+  message(sprintf("Mean consensus proportion: %s", mean_consensus_label))
+  message(sprintf("Mean entropy: %s", mean_entropy_label))
 
   message("\nPairwise Model Agreement:")
   message(paste(utils::capture.output(print(model_agreement_matrix)), collapse = "\n"))
 
   message("\nDetailed Results:")
   for (i in 1:n_clusters) {
-    cluster_label <- if (i <= length(cluster_ids)) cluster_ids[i] else as.character(i)
+    cluster_label <- cluster_labels[i]
     message(sprintf("\nCluster %s:", cluster_label))
     for (model in successful_models) {
       message(sprintf("  %s: %s (Standardized: %s)",
@@ -249,10 +282,20 @@ compare_model_predictions <- function(input,
                 raw_matrix[i, model],
                 comparison_matrix[i, model]))
     }
-    message(sprintf("  Consensus: %s (Consensus Proportion: %.2f, Entropy: %.2f)",
+    consensus_proportion_label <- if (is.na(consensus_proportions[i])) {
+      "NA"
+    } else {
+      sprintf("%.2f", consensus_proportions[i])
+    }
+    entropy_label <- if (is.na(entropies[i])) {
+      "NA"
+    } else {
+      sprintf("%.2f", entropies[i])
+    }
+    message(sprintf("  Consensus: %s (Consensus Proportion: %s, Entropy: %s)",
                 consensus_predictions[i],
-                consensus_proportions[i],
-                entropies[i]))
+                consensus_proportion_label,
+                entropy_label))
   }
   
   invisible(results)
@@ -267,14 +310,14 @@ compare_model_predictions <- function(input,
 #
 #
 #'   1. With provider names as keys: `list("openai" = "sk-...", "anthropic" = "sk-ant-...", "openrouter" = "sk-or-...")`
-#'   2. With model names as keys: `list("gpt-5" = "sk-...", "claude-sonnet-4-6" = "sk-ant-...")`
+#'   2. With model names as keys: `list("gpt-5.5" = "sk-...", "claude-sonnet-4-6" = "sk-ant-...")`
 #
 #
 #' @keywords internal
 standardize_cell_type_names <- function(predictions,
                                        models,
                                        api_keys,
-                                       standardization_model = "claude-sonnet-4-20250514",
+                                       standardization_model = "claude-sonnet-4-6",
                                        base_urls = NULL) {
   # Get API key for standardization model
   api_key <- get_api_key(standardization_model, api_keys)
@@ -320,19 +363,6 @@ standardize_cell_type_names <- function(predictions,
     mapping_lines <- strsplit(paste(response, collapse = "\n"), "\n")[[1]]
     mapping <- list()
     
-    for (line in mapping_lines) {
-      # Skip empty lines
-      if (nchar(trimws(line)) == 0) next
-      
-      # Extract original and standardized names
-      parts <- strsplit(line, ":")[[1]]
-      if (length(parts) >= 2) {
-        original <- trimws(parts[1])
-        standardized <- trimws(paste(parts[-1], collapse = ":"))
-        mapping[[original]] <- standardized
-      }
-    }
-    
     # Function to clean cell type names by removing prefixes, numbers, etc.
     clean_cell_type <- function(cell_type) {
       if (is.na(cell_type)) return(cell_type)
@@ -349,7 +379,25 @@ standardize_cell_type_names <- function(predictions,
       
       return(cleaned)
     }
-    
+
+    valid_mapping_keys <- unique(c(all_cell_types, vapply(all_cell_types, clean_cell_type, character(1))))
+    valid_mapping_keys <- valid_mapping_keys[order(nchar(valid_mapping_keys), decreasing = TRUE)]
+    for (line in mapping_lines) {
+      line <- trimws(line)
+      if (!nzchar(line)) next
+
+      for (original in valid_mapping_keys) {
+        prefix <- paste0(original, ":")
+        if (startsWith(line, prefix)) {
+          standardized <- trimws(substring(line, nchar(prefix) + 1))
+          if (nzchar(standardized)) {
+            mapping[[original]] <- standardized
+          }
+          break
+        }
+      }
+    }
+
     # Apply standardization to all predictions
     standardized_predictions <- predictions
     for (model in models) {

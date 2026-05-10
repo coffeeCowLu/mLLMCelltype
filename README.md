@@ -700,8 +700,8 @@ for(cluster in names(consensus_results$final_annotations)) {
 ```
 
 **Notes on CSV format**:
-- The CSV file should have values in the first column that will be used as indices (these can be cluster names, numbers like 0,1,2,3 or 1,2,3,4, etc.)
-- The values in the first column are only used for reference and are not passed to the LLMs
+- The CSV file should have values in the first column that will be used as cluster IDs (these can be cluster names, numbers like 0,1,2,3 or 1,2,3,4, etc.)
+- Cluster IDs are included in prompts so returned annotations can be mapped back to the original clusters
 - Subsequent columns should contain marker genes for each cluster
 - An example CSV file for cat heart tissue is included in the package at `inst/extdata/Cat_Heart_markers.csv`
 

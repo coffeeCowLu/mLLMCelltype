@@ -158,11 +158,11 @@ def test_complex_consensus():
         api_keys["openai"] = openai_key
         models_to_use.append("gpt-5.5")  # Latest GPT model
 
-    # Anthropic - claude-opus-4-5
+    # Anthropic - claude-opus-4-7
     anthropic_key = load_api_key("anthropic")
     if anthropic_key:
         api_keys["anthropic"] = anthropic_key
-        models_to_use.append("claude-opus-4-5-20251101")  # Latest Opus
+        models_to_use.append("claude-opus-4-7")  # Latest Opus
 
     # DeepSeek - V3.2
     deepseek_key = load_api_key("deepseek")

@@ -21,9 +21,7 @@ MODEL_ALIASES = {
     "claude-opus-4.6": "claude-opus-4-6",
     "claude-sonnet-4.6": "claude-sonnet-4-6",
     "claude-sonnet-latest": "claude-sonnet-4-6",
-    # Claude 4.5 series (compatibility)
-    "claude-opus-4.5": "claude-opus-4-5-20251101",
-    "claude-sonnet-4.5": "claude-sonnet-4-5-20250929",
+    # Claude Haiku 4.5 series
     "claude-haiku-4.5": "claude-haiku-4-5-20251001",
     "claude-haiku-latest": "claude-haiku-4-5-20251001",
     # Claude 4.1 series (Aug 2025)
@@ -84,7 +82,6 @@ def process_anthropic(
 
     api_key = ensure_api_key(api_key, "Anthropic")
 
-    # Resolve model aliases (e.g., claude-opus-4.5 -> claude-opus-4-5-20251101)
     model = _resolve_model_name(model)
     write_log(f"Using model: {model}")
 
