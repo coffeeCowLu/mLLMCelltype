@@ -1,7 +1,7 @@
 Package: mLLMCelltype
 Type: Package
 Title: Cell Type Annotation Using Large Language Models
-Version: 2.0.4
+Version: 2.0.5
 Author: Chen Yang [aut, cre, cph]
 Maintainer: Chen Yang <cafferychen777@tamu.edu>
 Authors@R:
@@ -29,7 +29,8 @@ Imports:
 Suggests:
     knitr,
     rmarkdown,
-    Seurat
+    Seurat,
+    testthat
 RoxygenNote: 7.3.3
 Roxygen: list(markdown = TRUE)
 Config/build/clean-inst-doc: TRUE

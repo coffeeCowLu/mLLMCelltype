@@ -1,5 +1,15 @@
 # mLLMCelltype Changelog
 
+## 2.0.5 (2026-05-11)
+
+### Bug Fixes
+* Unified discussion cell-type extraction across consensus checking and early discussion fallback paths.
+* Scoped Qwen endpoint detection cache by API key to avoid cross-credential endpoint reuse.
+* Forwarded registered custom model configuration to custom providers that accept `model_config` or `...`.
+
+### Documentation
+* Updated caching guidance, model examples, and Python integration examples for current package behavior.
+
 ## 2.0.4 (2026-05-10)
 
 ### Bug Fixes

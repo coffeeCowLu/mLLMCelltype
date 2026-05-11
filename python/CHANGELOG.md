@@ -2,11 +2,20 @@
 
 All notable changes to the Python implementation of mLLMCelltype will be documented in this file.
 
+## [2.0.5] - 2026-05-11
+
+### Fixed
+- Unified discussion report handling in examples with the package formatter.
+- Updated examples to use current model identifiers and correct local import paths.
+
+### Documentation
+- Updated the package badge for the 2.0.5 release.
+
 ## [2.0.4] - 2026-05-10
 
 ### Fixed
 - Made the complex consensus test an explicit integration test so default pytest runs stay offline and deterministic.
-- Aligned Python documentation with the 2.0.4 package metadata and current optional dependencies.
+- Aligned Python documentation with the package metadata and current optional dependencies.
 - Clarified that providers using OpenAI-compatible HTTP endpoints do not require nonexistent provider extras.
 
 ## [1.2.5] - 2025-10-12
