@@ -6,6 +6,7 @@ import requests
 
 from ..logger import write_log
 from .common import (
+    UsageSink,
     build_chat_completions_body,
     call_openai_compatible_api,
     ensure_api_key,
@@ -14,7 +15,11 @@ from .common import (
 
 
 def process_stepfun(
-    prompt: str, model: str, api_key: str, base_url: str | None = None
+    prompt: str,
+    model: str,
+    api_key: str,
+    base_url: str | None = None,
+    usage_sink: UsageSink | None = None,
 ) -> list[str]:
     """Process request using StepFun models.
 
@@ -23,6 +28,7 @@ def process_stepfun(
         model: The model name (e.g., 'step-3.5-flash', 'step-3.5-flash-2603', 'step-3')
         api_key: StepFun API key
         base_url: Optional custom base URL
+        usage_sink: Optional dict populated in place with token usage.
 
     Returns:
         List[str]: Processed responses, one per cluster
@@ -48,4 +54,5 @@ def process_stepfun(
         url=url,
         body=body,
         post_func=requests.post,
+        usage_sink=usage_sink,
     )

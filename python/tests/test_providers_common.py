@@ -14,6 +14,7 @@ from mllmcelltype.providers.common import (
     call_http_api_with_retry,
     call_openai_compatible_api,
     ensure_api_key,
+    extract_chat_completions_usage,
     parse_chat_completions_response,
     resolve_endpoint_url,
 )
@@ -342,3 +343,161 @@ def test_resolve_endpoint_url_unknown_provider_without_default_fails_fast():
     """Test missing provider default URL raises clear error before HTTP layer."""
     with pytest.raises(ValueError, match="No default API URL configured"):
         resolve_endpoint_url("unknown_provider", "Unknown Provider", None)
+
+
+def test_extract_chat_completions_usage_normalizes_block():
+    """Test usage extractor maps the OpenAI usage block to the shared schema."""
+    usage = extract_chat_completions_usage(
+        {
+            "choices": [{"message": {"content": "x"}}],
+            "usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18},
+        }
+    )
+    assert usage == {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18}
+
+
+def test_extract_chat_completions_usage_includes_native_cost():
+    """Test native USD cost (e.g. OpenRouter) is surfaced when present."""
+    usage = extract_chat_completions_usage(
+        {"usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3, "cost": 0.0042}}
+    )
+    assert usage["cost"] == 0.0042
+
+
+def test_extract_chat_completions_usage_absent_returns_none():
+    """Test extractor returns None (does not raise) when no usage block exists."""
+    assert extract_chat_completions_usage({"choices": []}) is None
+
+
+# --- Format-drift resilience: pin behavior so a provider changing shape is caught ---
+
+
+def test_extract_chat_completions_usage_ignores_unknown_fields():
+    """Extra/unknown usage fields are dropped; only canonical keys are read."""
+    usage = extract_chat_completions_usage(
+        {
+            "usage": {
+                "prompt_tokens": 11,
+                "completion_tokens": 7,
+                "total_tokens": 18,
+                "prompt_tokens_details": {"cached_tokens": 4},  # newer OpenAI field
+                "reasoning_tokens": 2,  # future/unknown field
+            }
+        }
+    )
+    assert usage == {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18}
+
+
+def test_extract_chat_completions_usage_partial_reports_none_not_zero():
+    """Missing token keys are reported as None (not fabricated to 0)."""
+    usage = extract_chat_completions_usage({"usage": {"prompt_tokens": 5}})
+    assert usage == {"prompt_tokens": 5, "completion_tokens": None, "total_tokens": None}
+
+
+def test_extract_chat_completions_usage_no_cost_key_when_absent():
+    """`cost` is only present in output when the provider actually returned one."""
+    usage = extract_chat_completions_usage(
+        {"usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}
+    )
+    assert "cost" not in usage
+
+
+def test_extract_chat_completions_usage_malformed_block_returns_none():
+    """A non-dict `usage` (e.g. provider sends a string/null) yields None, not a crash."""
+    assert extract_chat_completions_usage({"usage": "unexpected"}) is None
+    assert extract_chat_completions_usage({"usage": None}) is None
+
+
+def test_call_http_api_with_retry_populates_usage_sink_when_provided():
+    """Test usage sink is filled in place from a successful response's usage block."""
+    response_200 = MagicMock()
+    response_200.status_code = 200
+    response_200.json.return_value = {
+        "choices": [{"message": {"content": "Cluster 1: T cells"}}],
+        "usage": {"prompt_tokens": 42, "completion_tokens": 8, "total_tokens": 50},
+    }
+    post_func = MagicMock(return_value=response_200)
+    sink: dict = {}
+
+    result = call_http_api_with_retry(
+        provider_name="OpenAI",
+        url="https://example.com",
+        body={"messages": []},
+        headers={"Authorization": "Bearer test"},
+        post_func=post_func,
+        response_parser=lambda payload: parse_chat_completions_response(payload, "OpenAI"),
+        max_retries=1,
+        usage_sink=sink,
+    )
+
+    assert result == ["Cluster 1: T cells"]
+    assert sink == {"prompt_tokens": 42, "completion_tokens": 8, "total_tokens": 50}
+
+
+def test_call_http_api_with_retry_default_sink_none_leaves_no_trace():
+    """Test default path (no sink) returns exactly today's value and captures nothing."""
+    response_200 = MagicMock()
+    response_200.status_code = 200
+    response_200.json.return_value = {
+        "choices": [{"message": {"content": "Cluster 1: T cells"}}],
+        "usage": {"prompt_tokens": 42, "completion_tokens": 8, "total_tokens": 50},
+    }
+    post_func = MagicMock(return_value=response_200)
+
+    result = call_http_api_with_retry(
+        provider_name="OpenAI",
+        url="https://example.com",
+        body={"messages": []},
+        headers={"Authorization": "Bearer test"},
+        post_func=post_func,
+        response_parser=lambda payload: parse_chat_completions_response(payload, "OpenAI"),
+        max_retries=1,
+    )
+
+    assert result == ["Cluster 1: T cells"]
+
+
+def test_call_http_api_with_retry_sink_untouched_when_usage_absent():
+    """Test a missing usage block leaves the caller's sink empty (no KeyError)."""
+    response_200 = MagicMock()
+    response_200.status_code = 200
+    response_200.json.return_value = {"choices": [{"message": {"content": "x"}}]}
+    post_func = MagicMock(return_value=response_200)
+    sink: dict = {}
+
+    call_http_api_with_retry(
+        provider_name="OpenAI",
+        url="https://example.com",
+        body={"messages": []},
+        headers={"Authorization": "Bearer test"},
+        post_func=post_func,
+        response_parser=lambda payload: parse_chat_completions_response(payload, "OpenAI"),
+        max_retries=1,
+        usage_sink=sink,
+    )
+
+    assert sink == {}
+
+
+def test_call_openai_compatible_api_surfaces_usage_to_sink():
+    """Test the OpenAI-compatible wrapper threads usage through to the caller's sink."""
+    response_200 = MagicMock()
+    response_200.status_code = 200
+    response_200.json.return_value = {
+        "choices": [{"message": {"content": "Cluster 1: T cells"}}],
+        "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
+    }
+    post_func = MagicMock(return_value=response_200)
+    sink: dict = {}
+
+    result = call_openai_compatible_api(
+        provider_name="OpenAI",
+        api_key="secret-key",
+        url="https://api.example.com/v1/chat/completions",
+        body={"model": "gpt-5.5", "messages": [{"role": "user", "content": "test"}]},
+        post_func=post_func,
+        usage_sink=sink,
+    )
+
+    assert result == ["Cluster 1: T cells"]
+    assert sink["total_tokens"] == 8

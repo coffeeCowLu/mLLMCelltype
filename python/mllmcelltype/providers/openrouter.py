@@ -6,6 +6,7 @@ import requests
 
 from ..logger import write_log
 from .common import (
+    UsageSink,
     build_chat_completions_body,
     call_openai_compatible_api,
     ensure_api_key,
@@ -14,7 +15,11 @@ from .common import (
 
 
 def process_openrouter(
-    prompt: str, model: str, api_key: str, base_url: str | None = None
+    prompt: str,
+    model: str,
+    api_key: str,
+    base_url: str | None = None,
+    usage_sink: UsageSink | None = None,
 ) -> list[str]:
     """Process request using OpenRouter API, which provides access to various LLM models.
 
@@ -23,6 +28,9 @@ def process_openrouter(
         model: The model name (e.g., 'openai/gpt-5.5', 'anthropic/claude-sonnet-4.6', 'anthropic/claude-opus-4.7')
         api_key: OpenRouter API key
         base_url: Optional custom base URL
+        usage_sink: Optional dict populated in place with token usage. When
+            provided, the request opts in to OpenRouter's ``usage: {include: true}``
+            so the response carries an accounted ``cost`` (USD) field.
 
     Returns:
         List[str]: Processed responses, one per cluster
@@ -44,6 +52,11 @@ def process_openrouter(
         )
 
     body = build_chat_completions_body(model=model, prompt=prompt)
+    if usage_sink is not None:
+        # Opt in to OpenRouter accounting only when the caller wants usage back,
+        # so the default request shape is unchanged.
+        body["usage"] = {"include": True}
+
     return call_openai_compatible_api(
         provider_name="OpenRouter",
         api_key=api_key,
@@ -54,4 +67,5 @@ def process_openrouter(
             "HTTP-Referer": "https://github.com/cafferychen777/mLLMCelltype",
             "X-Title": "mLLMCelltype",
         },
+        usage_sink=usage_sink,
     )

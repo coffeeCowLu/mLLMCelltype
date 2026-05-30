@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import builtins
+import json
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -11,7 +12,7 @@ import pytest
 from mllmcelltype.providers.anthropic import _parse_anthropic_response, process_anthropic
 from mllmcelltype.providers.common import NonRetryableProviderError
 from mllmcelltype.providers.deepseek import process_deepseek
-from mllmcelltype.providers.gemini import process_gemini
+from mllmcelltype.providers.gemini import extract_gemini_usage, process_gemini
 from mllmcelltype.providers.grok import process_grok
 from mllmcelltype.providers.minimax import (
     _parse_minimax_response,
@@ -386,6 +387,170 @@ def test_process_gemini_whitespace_base_url_does_not_warn(mock_write_log):
         and call.kwargs.get("level") == "warning"
         for call in mock_write_log.call_args_list
     )
+
+
+def _ok_response(payload: dict) -> MagicMock:
+    """Build a 200 OK mock requests.Response returning ``payload`` from .json()."""
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = payload
+    return response
+
+
+@patch("mllmcelltype.providers.openai.requests.post")
+@patch("mllmcelltype.providers.openai.resolve_endpoint_url")
+def test_process_openai_surfaces_usage_through_sink(mock_resolve_endpoint, mock_post):
+    """Test an OpenAI-compatible provider fills the caller's usage sink end-to-end."""
+    mock_resolve_endpoint.return_value = "https://openai.example/v1"
+    mock_post.return_value = _ok_response(
+        {
+            "choices": [{"message": {"content": "Cluster 1: T cells"}}],
+            "usage": {"prompt_tokens": 30, "completion_tokens": 6, "total_tokens": 36},
+        }
+    )
+    sink: dict = {}
+
+    result = process_openai("genes", "gpt-5.5", "test-key", usage_sink=sink)
+
+    assert result == ["Cluster 1: T cells"]
+    assert sink == {"prompt_tokens": 30, "completion_tokens": 6, "total_tokens": 36}
+
+
+@patch("mllmcelltype.providers.openai.requests.post")
+@patch("mllmcelltype.providers.openai.resolve_endpoint_url")
+def test_process_openai_default_path_unchanged(mock_resolve_endpoint, mock_post):
+    """Test default invocation (no sink) returns exactly what it does today."""
+    mock_resolve_endpoint.return_value = "https://openai.example/v1"
+    mock_post.return_value = _ok_response(
+        {
+            "choices": [{"message": {"content": "Cluster 1: T cells"}}],
+            "usage": {"prompt_tokens": 30, "completion_tokens": 6, "total_tokens": 36},
+        }
+    )
+
+    assert process_openai("genes", "gpt-5.5", "test-key") == ["Cluster 1: T cells"]
+
+
+@patch("mllmcelltype.providers.openrouter.requests.post")
+@patch("mllmcelltype.providers.openrouter.resolve_endpoint_url")
+def test_process_openrouter_surfaces_native_cost(mock_resolve_endpoint, mock_post):
+    """Test OpenRouter surfaces native USD cost when a usage sink is requested."""
+    mock_resolve_endpoint.return_value = "https://openrouter.example/v1"
+    mock_post.return_value = _ok_response(
+        {
+            "choices": [{"message": {"content": "Cluster 1: T cells"}}],
+            "usage": {
+                "prompt_tokens": 20,
+                "completion_tokens": 4,
+                "total_tokens": 24,
+                "cost": 0.0009,
+            },
+        }
+    )
+    sink: dict = {}
+
+    result = process_openrouter("openai/gpt-5.5", "openai/gpt-5.5", "test-key", usage_sink=sink)
+
+    assert result == ["Cluster 1: T cells"]
+    assert sink["total_tokens"] == 24
+    assert sink["cost"] == 0.0009
+
+
+def _posted_body(mock_post: MagicMock) -> dict:
+    """Decode the JSON body actually sent to requests.post (data= or json=)."""
+    kwargs = mock_post.call_args.kwargs
+    if "json" in kwargs:
+        return kwargs["json"]
+    return json.loads(kwargs["data"])
+
+
+@patch("mllmcelltype.providers.openrouter.requests.post")
+@patch("mllmcelltype.providers.openrouter.resolve_endpoint_url")
+def test_process_openrouter_opt_in_changes_request_body_only_with_sink(
+    mock_resolve_endpoint, mock_post
+):
+    """Test the ``usage: {include: true}`` opt-in appears in the body ONLY with a sink.
+
+    Pins the observable request shape (not an internal kwarg): default calls must
+    not perturb the outgoing body, while a sink opts into OpenRouter accounting.
+    """
+    mock_resolve_endpoint.return_value = "https://openrouter.example/v1"
+    payload = {"choices": [{"message": {"content": "Cluster 1: T cells"}}]}
+
+    mock_post.return_value = _ok_response(payload)
+    process_openrouter("openai/gpt-5.5", "openai/gpt-5.5", "test-key")
+    assert "usage" not in _posted_body(mock_post)
+
+    mock_post.return_value = _ok_response(payload)
+    process_openrouter("openai/gpt-5.5", "openai/gpt-5.5", "test-key", usage_sink={})
+    assert _posted_body(mock_post)["usage"] == {"include": True}
+
+
+def test_process_gemini_surfaces_usage_through_sink():
+    """Test Gemini's usage_metadata is normalized into the caller's usage sink."""
+    fake_response = SimpleNamespace(
+        text="Cluster 1: T cells",
+        usage_metadata=SimpleNamespace(
+            prompt_token_count=12,
+            candidates_token_count=5,
+            total_token_count=17,
+        ),
+    )
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=MagicMock(return_value=fake_response))
+    )
+    fake_modules = _build_fake_google_modules(client=fake_client)
+    sink: dict = {}
+
+    with patch.dict("sys.modules", fake_modules, clear=False):
+        result = process_gemini("genes", "gemini-3.1-pro-preview", "test-key", usage_sink=sink)
+
+    assert result == ["Cluster 1: T cells"]
+    assert sink == {"prompt_tokens": 12, "completion_tokens": 5, "total_tokens": 17}
+
+
+# --- Gemini usage extractor: resilience to provider/SDK format drift ---
+
+
+def test_extract_gemini_usage_ignores_extra_metadata_fields():
+    """Unknown usage_metadata attributes are ignored; canonical keys captured."""
+    metadata = SimpleNamespace(
+        prompt_token_count=40,
+        candidates_token_count=10,
+        total_token_count=50,
+        cached_content_token_count=8,  # future/unknown SDK field
+        thoughts_token_count=3,
+    )
+    usage = extract_gemini_usage(SimpleNamespace(usage_metadata=metadata))
+    assert usage == {"prompt_tokens": 40, "completion_tokens": 10, "total_tokens": 50}
+
+
+def test_extract_gemini_usage_absent_metadata_returns_none():
+    """No usage_metadata attribute → None (sink left untouched, no crash)."""
+    assert extract_gemini_usage(SimpleNamespace(text="x")) is None
+
+
+def test_extract_gemini_usage_partial_metadata_reports_none_not_zero():
+    """A metadata object missing some counts reports None for those, not a guess."""
+    metadata = SimpleNamespace(prompt_token_count=9)  # other counts absent
+    usage = extract_gemini_usage(SimpleNamespace(usage_metadata=metadata))
+    assert usage == {"prompt_tokens": 9, "completion_tokens": None, "total_tokens": None}
+
+
+def test_process_gemini_missing_usage_metadata_leaves_sink_empty():
+    """End-to-end: a response without usage_metadata must not crash or touch the sink."""
+    fake_response = SimpleNamespace(text="Cluster 1: T cells")  # no usage_metadata
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=MagicMock(return_value=fake_response))
+    )
+    fake_modules = _build_fake_google_modules(client=fake_client)
+    sink: dict = {}
+
+    with patch.dict("sys.modules", fake_modules, clear=False):
+        result = process_gemini("genes", "gemini-3.1-pro-preview", "test-key", usage_sink=sink)
+
+    assert result == ["Cluster 1: T cells"]
+    assert sink == {}
 
 
 @patch("mllmcelltype.providers.gemini.time.sleep")
