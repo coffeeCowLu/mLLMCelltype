@@ -170,6 +170,43 @@ class TestConsensus:
         # A stable phrase from DEFAULT_PROMPT_TEMPLATE.
         assert "IN NUMERICAL ORDER" in prompts[0]
 
+    @patch("mllmcelltype.consensus.check_consensus")
+    @patch("mllmcelltype.consensus.annotate_clusters")
+    def test_interactive_consensus_annotation_preserves_legacy_positional_thresholds(
+        self,
+        mock_annotate_clusters,
+        mock_check_consensus,
+    ):
+        """Adding prompt_template must not shift existing positional arguments."""
+        mock_annotate_clusters.return_value = {"1": "T cells"}
+        mock_check_consensus.return_value = (
+            {"1": "T cells"},
+            {"1": 1.0},
+            {"1": 0.0},
+            [],
+        )
+
+        result = interactive_consensus_annotation(
+            {"1": ["CD3D"]},
+            "human",
+            [{"provider": "openai", "model": "gpt-4o"}],
+            {"openai": "test-key"},
+            "blood",
+            None,
+            0.8,
+            1.2,
+            0,
+            False,
+        )
+
+        assert result["consensus"]["1"] == "T cells"
+        annotate_kwargs = mock_annotate_clusters.call_args.kwargs
+        assert annotate_kwargs["prompt_template"] is None
+        assert annotate_kwargs["use_cache"] is False
+        check_kwargs = mock_check_consensus.call_args.kwargs
+        assert check_kwargs["consensus_threshold"] == 0.8
+        assert check_kwargs["entropy_threshold"] == 1.2
+
     def test_normalize_api_keys_strips_and_drops_blank(self):
         """Test api key normalization trims and removes blank entries."""
         normalized = _normalize_api_keys(
