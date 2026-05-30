@@ -21,6 +21,7 @@ from mllmcelltype.consensus import (
     _merge_consensus_and_resolved,
     _normalize_api_keys,
     _normalize_consensus_model_spec,
+    _run_initial_annotations,
     check_consensus,
     check_consensus_for_discussion_round,
     interactive_consensus_annotation,
@@ -115,6 +116,96 @@ class TestConsensus:
         assert merged["2"] == "Unknown"
         assert merged["3"] == "Unknown"
         assert merged["4"] == "B cells"
+
+    @staticmethod
+    def _capture_initial_prompts(prompt_template):
+        """Run the initial-annotation phase with the network stubbed; return prompts sent.
+
+        Patches the provider registry (not the annotation function), so the real
+        ``create_prompt`` runs and we observe the actual outgoing prompt text.
+        """
+        captured: list[str] = []
+
+        def fake_provider_func(prompt, model, api_key, base_url):
+            captured.append(prompt)
+            return ["Cluster 1: T cells"]
+
+        with patch.dict(
+            "mllmcelltype.annotate.PROVIDER_FUNCTIONS",
+            {"openai": fake_provider_func},
+        ):
+            _run_initial_annotations(
+                marker_genes={"1": ["CD3D", "CD3E"]},
+                species="human",
+                models=[{"provider": "openai", "model": "gpt-4o"}],
+                api_keys={"openai": "sk-test"},
+                tissue="blood",
+                additional_context=None,
+                prompt_template=prompt_template,
+                use_cache=False,
+                force_rerun=False,
+                cache_dir=None,
+                base_urls=None,
+                verbose=False,
+            )
+        return captured
+
+    def test_custom_prompt_template_reaches_outgoing_prompt(self):
+        """A custom prompt_template's text actually lands in the prompt sent to the model."""
+        sentinel = "QQQ_CUSTOM_STATE_TASK_QQQ"
+        custom_template = f"{sentinel}\nSpecies {{species}}, tissue {{tissue}}.\n{{markers}}"
+
+        prompts = self._capture_initial_prompts(custom_template)
+
+        assert prompts, "provider was never called"
+        assert sentinel in prompts[0]
+        # The default template's instruction must NOT survive a full override.
+        assert "IN NUMERICAL ORDER" not in prompts[0]
+
+    def test_default_prompt_template_used_when_none(self):
+        """With prompt_template=None the built-in default template is used (no regression)."""
+        prompts = self._capture_initial_prompts(None)
+
+        assert prompts, "provider was never called"
+        # A stable phrase from DEFAULT_PROMPT_TEMPLATE.
+        assert "IN NUMERICAL ORDER" in prompts[0]
+
+    @patch("mllmcelltype.consensus.check_consensus")
+    @patch("mllmcelltype.consensus.annotate_clusters")
+    def test_interactive_consensus_annotation_preserves_legacy_positional_thresholds(
+        self,
+        mock_annotate_clusters,
+        mock_check_consensus,
+    ):
+        """Adding prompt_template must not shift existing positional arguments."""
+        mock_annotate_clusters.return_value = {"1": "T cells"}
+        mock_check_consensus.return_value = (
+            {"1": "T cells"},
+            {"1": 1.0},
+            {"1": 0.0},
+            [],
+        )
+
+        result = interactive_consensus_annotation(
+            {"1": ["CD3D"]},
+            "human",
+            [{"provider": "openai", "model": "gpt-4o"}],
+            {"openai": "test-key"},
+            "blood",
+            None,
+            0.8,
+            1.2,
+            0,
+            False,
+        )
+
+        assert result["consensus"]["1"] == "T cells"
+        annotate_kwargs = mock_annotate_clusters.call_args.kwargs
+        assert annotate_kwargs["prompt_template"] is None
+        assert annotate_kwargs["use_cache"] is False
+        check_kwargs = mock_check_consensus.call_args.kwargs
+        assert check_kwargs["consensus_threshold"] == 0.8
+        assert check_kwargs["entropy_threshold"] == 1.2
 
     def test_normalize_api_keys_strips_and_drops_blank(self):
         """Test api key normalization trims and removes blank entries."""

@@ -2140,6 +2140,7 @@ def _run_initial_annotations(
     cache_dir: str | None,
     base_urls: str | dict[str, str] | None,
     verbose: bool,
+    prompt_template: str | None = None,
 ) -> dict[str, dict[str, str]]:
     """Run initial annotation phase across models with de-dup and error isolation."""
     model_results: dict[str, dict[str, str]] = {}
@@ -2180,6 +2181,7 @@ def _run_initial_annotations(
                 api_key=api_key,
                 tissue=tissue,
                 additional_context=additional_context,
+                prompt_template=prompt_template,
                 use_cache=use_cache and not force_rerun,
                 cache_dir=cache_dir,
                 base_urls=base_urls,
@@ -2353,6 +2355,7 @@ def interactive_consensus_annotation(
     base_urls: str | dict[str, str] | None = None,
     clusters_to_analyze: list[str] | None = None,
     force_rerun: bool = False,
+    prompt_template: str | None = None,
 ) -> dict[str, Any]:
     """Perform consensus annotation of cell types using multiple LLMs and interactive resolution.
 
@@ -2384,6 +2387,11 @@ def interactive_consensus_annotation(
             discussion phase for controversial clusters. Useful when you want to
             re-analyze clusters with different context or for subtype identification.
             Default is False. Only effective when use_cache is True.
+        prompt_template: Optional custom prompt template for the initial annotation
+            phase. Supports the ``{species}``, ``{tissue}`` and ``{markers}``
+            placeholders. If None (default), the built-in
+            ``DEFAULT_PROMPT_TEMPLATE`` is used. Placed at the end of the
+            signature to preserve compatibility with existing positional calls.
 
     Returns:
         dict[str, Any]: Dictionary containing consensus results and metadata
@@ -2412,6 +2420,7 @@ def interactive_consensus_annotation(
         api_keys=api_keys,
         tissue=tissue,
         additional_context=additional_context,
+        prompt_template=prompt_template,
         use_cache=use_cache,
         force_rerun=force_rerun,
         cache_dir=cache_dir,
