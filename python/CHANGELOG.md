@@ -2,6 +2,16 @@
 
 All notable changes to the Python implementation of mLLMCelltype will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- `interactive_consensus_annotation` now accepts an optional `prompt_template`
+  argument, forwarded to the initial annotation phase (`create_prompt`). This
+  exposes the existing per-prompt customization of `annotate_clusters` through
+  the consensus entry point, enabling custom task framing / output contracts
+  (e.g. functional-state annotation) without monkeypatching
+  `DEFAULT_PROMPT_TEMPLATE`. Defaults to `None`, preserving current behavior.
+
 ## [2.0.5] - 2026-05-11
 
 ### Fixed

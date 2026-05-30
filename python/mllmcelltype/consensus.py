@@ -2135,6 +2135,7 @@ def _run_initial_annotations(
     api_keys: dict[str, str],
     tissue: str | None,
     additional_context: str | None,
+    prompt_template: str | None,
     use_cache: bool,
     force_rerun: bool,
     cache_dir: str | None,
@@ -2180,6 +2181,7 @@ def _run_initial_annotations(
                 api_key=api_key,
                 tissue=tissue,
                 additional_context=additional_context,
+                prompt_template=prompt_template,
                 use_cache=use_cache and not force_rerun,
                 cache_dir=cache_dir,
                 base_urls=base_urls,
@@ -2343,6 +2345,7 @@ def interactive_consensus_annotation(
     api_keys: dict[str, str] | None = None,
     tissue: str | None = None,
     additional_context: str | None = None,
+    prompt_template: str | None = None,
     consensus_threshold: float = 0.7,
     entropy_threshold: float = 1.0,
     max_discussion_rounds: int = 3,
@@ -2363,6 +2366,10 @@ def interactive_consensus_annotation(
         api_keys: Dictionary mapping provider names to API keys
         tissue: Optional tissue name (e.g., 'brain', 'liver')
         additional_context: Additional context to include in the prompt
+        prompt_template: Optional custom prompt template for the initial annotation
+            phase. Supports the ``{species}``, ``{tissue}`` and ``{markers}``
+            placeholders. If None (default), the built-in
+            ``DEFAULT_PROMPT_TEMPLATE`` is used.
         consensus_threshold: Agreement threshold below which a cluster is considered controversial
         entropy_threshold: Entropy threshold above which a cluster is considered controversial
         max_discussion_rounds: Maximum number of discussion rounds for controversial clusters
@@ -2412,6 +2419,7 @@ def interactive_consensus_annotation(
         api_keys=api_keys,
         tissue=tissue,
         additional_context=additional_context,
+        prompt_template=prompt_template,
         use_cache=use_cache,
         force_rerun=force_rerun,
         cache_dir=cache_dir,
