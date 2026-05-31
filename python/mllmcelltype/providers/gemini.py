@@ -108,6 +108,7 @@ def process_gemini(
 
             result = _parse_gemini_response(response)
             if usage_sink is not None:
+                usage_sink.clear()
                 usage = extract_gemini_usage(response)
                 if usage is not None:
                     usage_sink.update(usage)

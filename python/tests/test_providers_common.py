@@ -479,6 +479,53 @@ def test_call_http_api_with_retry_sink_untouched_when_usage_absent():
     assert sink == {}
 
 
+def test_call_http_api_with_retry_replaces_stale_usage_sink_values():
+    """Test each call reports only current usage when callers reuse a sink."""
+    response_200 = MagicMock()
+    response_200.status_code = 200
+    response_200.json.return_value = {
+        "choices": [{"message": {"content": "x"}}],
+        "usage": {"prompt_tokens": 4, "completion_tokens": 5, "total_tokens": 9},
+    }
+    post_func = MagicMock(return_value=response_200)
+    sink: dict = {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3, "cost": 0.1}
+
+    call_http_api_with_retry(
+        provider_name="OpenAI",
+        url="https://example.com",
+        body={"messages": []},
+        headers={"Authorization": "Bearer test"},
+        post_func=post_func,
+        response_parser=lambda payload: parse_chat_completions_response(payload, "OpenAI"),
+        max_retries=1,
+        usage_sink=sink,
+    )
+
+    assert sink == {"prompt_tokens": 4, "completion_tokens": 5, "total_tokens": 9}
+
+
+def test_call_http_api_with_retry_clears_stale_sink_when_usage_absent():
+    """Test absent usage means no current-call usage, not stale previous usage."""
+    response_200 = MagicMock()
+    response_200.status_code = 200
+    response_200.json.return_value = {"choices": [{"message": {"content": "x"}}]}
+    post_func = MagicMock(return_value=response_200)
+    sink: dict = {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
+
+    call_http_api_with_retry(
+        provider_name="OpenAI",
+        url="https://example.com",
+        body={"messages": []},
+        headers={"Authorization": "Bearer test"},
+        post_func=post_func,
+        response_parser=lambda payload: parse_chat_completions_response(payload, "OpenAI"),
+        max_retries=1,
+        usage_sink=sink,
+    )
+
+    assert sink == {}
+
+
 def test_call_openai_compatible_api_surfaces_usage_to_sink():
     """Test the OpenAI-compatible wrapper threads usage through to the caller's sink."""
     response_200 = MagicMock()

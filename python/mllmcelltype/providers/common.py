@@ -238,6 +238,7 @@ def call_http_api_with_retry(
                     f"{provider_name} response parser returned {type(res).__name__}, expected list"
                 )
             if usage_sink is not None:
+                usage_sink.clear()
                 usage = usage_parser(content)
                 if usage is not None:
                     usage_sink.update(usage)

@@ -553,6 +553,22 @@ def test_process_gemini_missing_usage_metadata_leaves_sink_empty():
     assert sink == {}
 
 
+def test_process_gemini_missing_usage_metadata_clears_stale_sink():
+    """A reused sink must not keep previous usage when Gemini omits metadata."""
+    fake_response = SimpleNamespace(text="Cluster 1: T cells")  # no usage_metadata
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=MagicMock(return_value=fake_response))
+    )
+    fake_modules = _build_fake_google_modules(client=fake_client)
+    sink: dict = {"prompt_tokens": 12, "completion_tokens": 5, "total_tokens": 17}
+
+    with patch.dict("sys.modules", fake_modules, clear=False):
+        result = process_gemini("genes", "gemini-3.1-pro-preview", "test-key", usage_sink=sink)
+
+    assert result == ["Cluster 1: T cells"]
+    assert sink == {}
+
+
 @patch("mllmcelltype.providers.gemini.time.sleep")
 def test_process_gemini_retries_exhausted_raises(mock_sleep):
     """Test Gemini raises final error after exhausting retries."""
