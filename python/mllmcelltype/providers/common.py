@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, MutableMapping
 from typing import Any
 
 import requests
@@ -13,6 +13,45 @@ from ..logger import write_log
 from ..url_utils import get_default_api_url, validate_base_url
 
 ResponseParser = Callable[[dict[str, Any]], list[str]]
+
+# A caller-supplied dict that, when passed, is populated in place with token
+# usage for the call: prompt_tokens / completion_tokens / total_tokens, plus an
+# optional native `cost` (USD) when the provider returns one. None = no capture.
+UsageSink = MutableMapping[str, Any]
+
+# Maps a raw response payload to the normalized usage schema (or None if absent).
+UsageParser = Callable[[dict[str, Any]], dict[str, Any] | None]
+
+
+def extract_chat_completions_usage(content: dict[str, Any]) -> dict[str, Any] | None:
+    """Extract token usage from an OpenAI-compatible chat completions payload.
+
+    Returns a normalized ``{prompt_tokens, completion_tokens, total_tokens}`` dict
+    (plus ``cost`` when the provider includes a native USD cost, e.g. OpenRouter
+    when ``usage: {include: true}`` was requested), or ``None`` when no usage block
+    is present. Never raises on a malformed/absent ``usage`` block.
+
+    Resilient to provider format drift by design: only the three canonical keys
+    (plus ``cost``) are read; any extra/unknown fields are ignored. Missing keys
+    are reported as ``None`` rather than fabricated, so callers can tell "not
+    reported" from a real zero. Validated live against OpenRouter; the other
+    OpenAI-compatible providers (OpenAI, DeepSeek, Qwen, Grok, StepFun, Zhipu,
+    MiniMax) share this exact path but were not run against their native endpoints.
+    """
+    if not isinstance(content, dict):
+        return None
+    usage = content.get("usage")
+    if not isinstance(usage, dict):
+        return None
+
+    normalized: dict[str, Any] = {
+        "prompt_tokens": usage.get("prompt_tokens"),
+        "completion_tokens": usage.get("completion_tokens"),
+        "total_tokens": usage.get("total_tokens"),
+    }
+    if usage.get("cost") is not None:
+        normalized["cost"] = usage["cost"]
+    return normalized
 
 
 class NonRetryableProviderError(ValueError):
@@ -138,8 +177,16 @@ def call_http_api_with_retry(
     timeout: int = 30,
     request_json: bool = False,
     non_retry_exceptions: tuple[type[Exception], ...] = (),
+    usage_sink: UsageSink | None = None,
+    usage_parser: UsageParser = extract_chat_completions_usage,
 ) -> list[str]:
-    """Execute an HTTP API request with retry and unified error handling."""
+    """Execute an HTTP API request with retry and unified error handling.
+
+    When ``usage_sink`` is provided, it is populated in place with token usage
+    parsed from the successful response via ``usage_parser`` (default: the
+    OpenAI-compatible extractor). Leaving it ``None`` is byte-identical to the
+    prior behavior.
+    """
     write_log("Sending API request...")
 
     for attempt in range(max_retries):
@@ -190,6 +237,12 @@ def call_http_api_with_retry(
                 raise NonRetryableProviderError(
                     f"{provider_name} response parser returned {type(res).__name__}, expected list"
                 )
+            if usage_sink is not None:
+                usage_sink.clear()
+                usage = usage_parser(content)
+                if usage is not None:
+                    usage_sink.update(usage)
+
             normalized_res = [str(line) for line in res]
             write_log(f"Got response with {len(normalized_res)} lines")
             write_log(f"Raw response from {provider_name}:\n{normalized_res}", level="debug")
@@ -235,8 +288,14 @@ def call_openai_compatible_api(
     timeout: int = 30,
     request_json: bool = False,
     non_retry_exceptions: tuple[type[Exception], ...] = (),
+    usage_sink: UsageSink | None = None,
 ) -> list[str]:
-    """Execute a request against an OpenAI-compatible endpoint with retries."""
+    """Execute a request against an OpenAI-compatible endpoint with retries.
+
+    When ``usage_sink`` is provided, it is populated in place with the call's
+    token usage (see :func:`extract_chat_completions_usage`). Default ``None``
+    preserves prior behavior exactly.
+    """
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
@@ -258,4 +317,5 @@ def call_openai_compatible_api(
         timeout=timeout,
         request_json=request_json,
         non_retry_exceptions=non_retry_exceptions,
+        usage_sink=usage_sink,
     )

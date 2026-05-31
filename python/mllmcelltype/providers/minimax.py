@@ -11,6 +11,7 @@ from ..logger import write_log
 from ..url_utils import get_working_minimax_endpoint
 from .common import (
     NonRetryableProviderError,
+    UsageSink,
     build_chat_completions_body,
     call_openai_compatible_api,
     ensure_api_key,
@@ -43,7 +44,11 @@ def _parse_minimax_response(content: dict[str, Any]) -> list[str]:
 
 
 def process_minimax(
-    prompt: str, model: str, api_key: str, base_url: str | None = None
+    prompt: str,
+    model: str,
+    api_key: str,
+    base_url: str | None = None,
+    usage_sink: UsageSink | None = None,
 ) -> list[str]:
     """Process request using MiniMax models.
 
@@ -52,6 +57,7 @@ def process_minimax(
         model: The model name (e.g., 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5')
         api_key: MiniMax API key
         base_url: Optional custom base URL
+        usage_sink: Optional dict populated in place with token usage.
 
     Returns:
         List[str]: Processed responses, one per cluster
@@ -87,4 +93,5 @@ def process_minimax(
         post_func=requests.post,
         response_parser=_parse_minimax_response,
         non_retry_exceptions=(NonRetryableProviderError,),
+        usage_sink=usage_sink,
     )

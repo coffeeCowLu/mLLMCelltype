@@ -6,7 +6,24 @@ import time
 from typing import Any
 
 from ..logger import write_log
-from .common import ensure_api_key
+from .common import UsageSink, ensure_api_key
+
+
+def extract_gemini_usage(response: Any) -> dict[str, Any] | None:
+    """Extract token usage from a Gemini SDK response's ``usage_metadata``.
+
+    Returns the shared ``{prompt_tokens, completion_tokens, total_tokens}`` schema,
+    or ``None`` when no usage metadata is present. Never raises on absent/odd
+    metadata.
+    """
+    metadata = getattr(response, "usage_metadata", None)
+    if metadata is None:
+        return None
+    return {
+        "prompt_tokens": getattr(metadata, "prompt_token_count", None),
+        "completion_tokens": getattr(metadata, "candidates_token_count", None),
+        "total_tokens": getattr(metadata, "total_token_count", None),
+    }
 
 
 def _parse_gemini_response(response: Any) -> list[str]:
@@ -26,7 +43,11 @@ def _parse_gemini_response(response: Any) -> list[str]:
 
 
 def process_gemini(
-    prompt: str, model: str, api_key: str, base_url: str | None = None
+    prompt: str,
+    model: str,
+    api_key: str,
+    base_url: str | None = None,
+    usage_sink: UsageSink | None = None,
 ) -> list[str]:
     """Process request using Google Gemini models.
 
@@ -35,6 +56,7 @@ def process_gemini(
         model: The model name (e.g., 'gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite')
         api_key: Google API key
         base_url: Optional custom base URL (Note: Gemini uses SDK, base_url may not be applicable)
+        usage_sink: Optional dict populated in place with token usage.
 
     Returns:
         List[str]: Processed responses, one per cluster
@@ -85,6 +107,11 @@ def process_gemini(
             )
 
             result = _parse_gemini_response(response)
+            if usage_sink is not None:
+                usage_sink.clear()
+                usage = extract_gemini_usage(response)
+                if usage is not None:
+                    usage_sink.update(usage)
             write_log(f"Got response with {len(result)} lines")
             write_log(f"Raw response from Gemini:\n{result}", level="debug")
             return result
