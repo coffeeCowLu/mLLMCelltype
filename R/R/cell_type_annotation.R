@@ -199,6 +199,10 @@ annotate_cell_types <- function(input,
   if (is.null(tissue_name) || !nzchar(trimws(tissue_name))) {
     stop("tissue_name is required. Specify the tissue type (e.g., 'human PBMC', 'mouse brain').")
   }
+  if (!is.character(model) || length(model) != 1 || is.na(model) || !nzchar(trimws(model))) {
+    stop("model must be a non-empty character scalar")
+  }
+  model <- trimws(model)
 
   # Determine provider from model name
   provider <- get_provider(model)
@@ -248,6 +252,7 @@ annotate_cell_types <- function(input,
   if (api_key_missing) {
     stop("api_key must be a non-empty character scalar, or NA to return prompt only")
   }
+  api_key <- trimws(as.character(api_key))
 
   # Delegate to get_model_response which handles provider dispatch
   result <- get_model_response(prompt, model, api_key, base_urls)

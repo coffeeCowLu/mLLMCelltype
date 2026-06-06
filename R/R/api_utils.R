@@ -14,20 +14,38 @@
 #' @export
 get_api_key <- function(model, api_keys) {
   provider <- get_provider(model)
+  model_normalized <- trimws(model)
   is_valid_key <- function(key) {
     is.character(key) && length(key) == 1 && !is.na(key) && nzchar(trimws(key))
   }
+  get_named_key <- function(key_name) {
+    api_key_names <- names(api_keys)
+    if (is.null(api_key_names)) {
+      return(NULL)
+    }
+
+    match_idx <- match(tolower(trimws(key_name)), tolower(trimws(api_key_names)))
+    if (is.na(match_idx)) {
+      return(NULL)
+    }
+
+    key <- api_keys[[match_idx]]
+    if (is_valid_key(key)) {
+      return(trimws(key))
+    }
+    NULL
+  }
 
   # First try to get by provider name
-  if (provider %in% names(api_keys)) {
-    key <- api_keys[[provider]]
-    if (is_valid_key(key)) return(trimws(key))
+  key <- get_named_key(provider)
+  if (!is.null(key)) {
+    return(key)
   }
 
   # If not found, try to get by model name
-  if (model %in% names(api_keys)) {
-    key <- api_keys[[model]]
-    if (is_valid_key(key)) return(trimws(key))
+  key <- get_named_key(model_normalized)
+  if (!is.null(key)) {
+    return(key)
   }
 
   # If still not found or all keys empty, return NULL

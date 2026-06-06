@@ -212,7 +212,7 @@ class TestQwenSmartEndpointSelection:
         assert mock_test_post.call_count >= 1
         # First call should be the endpoint connectivity test
         first_call_args = mock_test_post.call_args_list[0]
-        assert "dashscope-intl.aliyuncs.com" in first_call_args[0][0]
+        assert "dashscope-us.aliyuncs.com" in first_call_args[0][0]
 
         # Verify actual API call used the international endpoint
         # Note: Both mocks may capture calls since they share the same requests module
@@ -221,12 +221,12 @@ class TestQwenSmartEndpointSelection:
         for call in all_calls:
             if (
                 call[1].get("url")
-                == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
+                == "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions"
             ):
                 api_call_found = True
                 break
             # Also check positional args
-            if call[0] and "dashscope-intl" in str(call[0]):
+            if call[0] and "dashscope-us" in str(call[0]):
                 api_call_found = True
                 break
         assert api_call_found, "Expected international endpoint to be used"

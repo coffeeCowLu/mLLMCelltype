@@ -27,7 +27,8 @@ get_provider <- function(model) {
   }
 
   # Normalize model name to lowercase for case-insensitive matching
-  model_lower <- tolower(model)
+  model_normalized <- trimws(model)
+  model_lower <- tolower(model_normalized)
 
   # OpenRouter models always contain '/' (e.g., 'openai/gpt-5.5')
   if (grepl("/", model_lower)) {
@@ -68,7 +69,7 @@ get_provider <- function(model) {
     collapse = "\n"
   )
   stop(
-    "Cannot determine provider for model: '", model, "'\n",
+    "Cannot determine provider for model: '", model_normalized, "'\n",
     "Supported model name patterns:\n", supported, "\n",
     "  openrouter: any model containing '/'\n",
     "Tip: Check for typos in the model name."

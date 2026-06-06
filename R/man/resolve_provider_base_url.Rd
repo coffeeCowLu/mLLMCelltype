@@ -2,7 +2,7 @@
 % Please edit documentation in R/url_utils.R
 \name{resolve_provider_base_url}
 \alias{resolve_provider_base_url}
-\title{URL Utilities for Base URL Resolution}
+\title{Resolve provider-specific base URL}
 \usage{
 resolve_provider_base_url(provider, base_urls)
 }
@@ -15,11 +15,6 @@ resolve_provider_base_url(provider, base_urls)
 Resolved and normalized base URL, or NULL if not specified
 }
 \description{
-This file contains utility functions for resolving custom base URLs
-for different API providers.
-Resolve provider-specific base URL
-}
-\details{
 This is the single entry point for all base URL resolution. It resolves
 the appropriate URL and normalizes it (strips trailing slashes).
 }

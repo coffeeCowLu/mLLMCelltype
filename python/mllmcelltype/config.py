@@ -50,7 +50,7 @@ PROVIDER_CONFIGS: dict[str, ProviderConfig] = {
     "qwen": ProviderConfig(
         default_model="qwen3.6-plus",
         api_key_env_var="QWEN_API_KEY",
-        default_api_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+        default_api_url="https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions",
     ),
     "stepfun": ProviderConfig(
         default_model="step-3.5-flash",
@@ -65,7 +65,7 @@ PROVIDER_CONFIGS: dict[str, ProviderConfig] = {
     "minimax": ProviderConfig(
         default_model="MiniMax-M2.7",
         api_key_env_var="MINIMAX_API_KEY",
-        default_api_url="https://api.minimaxi.com/v1/chat/completions",
+        default_api_url="https://api.minimax.io/v1/chat/completions",
     ),
     "grok": ProviderConfig(
         default_model="grok-4.3",
