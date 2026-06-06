@@ -38,8 +38,8 @@ class TestResolveProviderBaseUrl:
         assert result == base_url
 
     def test_resolve_with_string_trims_whitespace(self):
-        """Test resolving with string base_urls trims leading/trailing spaces."""
-        result = resolve_provider_base_url("openai", "  https://proxy.example.com/v1  ")
+        """Test resolving with string base_urls trims spaces and trailing slashes."""
+        result = resolve_provider_base_url("openai", "  https://proxy.example.com/v1/  ")
         assert result == "https://proxy.example.com/v1"
 
     def test_resolve_with_dict_existing_provider(self):
@@ -71,7 +71,7 @@ class TestResolveProviderBaseUrl:
 
     def test_resolve_with_whitespace_provider_key(self):
         """Test provider key with whitespace in dict is normalized."""
-        base_urls = {"  openai  ": "https://openai-proxy.com/v1/chat/completions"}
+        base_urls = {"  openai  ": "https://openai-proxy.com/v1/chat/completions/"}
         result = resolve_provider_base_url("openai", base_urls)
         assert result == "https://openai-proxy.com/v1/chat/completions"
 
@@ -117,7 +117,7 @@ class TestGetDefaultApiUrl:
     def test_get_qwen_url(self):
         """Test getting Qwen default URL."""
         result = get_default_api_url("qwen")
-        assert result == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
+        assert result == "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions"
 
     def test_get_deepseek_url(self):
         """Test getting DeepSeek default URL."""
@@ -152,7 +152,7 @@ class TestGetDefaultApiUrl:
     def test_get_minimax_url(self):
         """Test getting MiniMax default URL."""
         result = get_default_api_url("minimax")
-        assert result == "https://api.minimaxi.com/v1/chat/completions"
+        assert result == "https://api.minimax.io/v1/chat/completions"
 
     def test_get_unknown_provider(self):
         """Test getting URL for unknown provider."""
@@ -218,7 +218,7 @@ class TestGetWorkingQwenEndpoint:
 
         result = get_working_qwen_endpoint("test-api-key")
 
-        assert result == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
+        assert result == "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions"
         mock_post.assert_called_once()
 
     @patch("mllmcelltype.url_utils.requests.post")
@@ -228,7 +228,7 @@ class TestGetWorkingQwenEndpoint:
 
         # Mock failed response for international, success for domestic
         def side_effect(*args, **kwargs):
-            if "dashscope-intl" in args[0]:
+            if "dashscope-us" in args[0]:
                 raise requests.RequestException("Connection failed")
             else:
                 mock_response = MagicMock()
@@ -252,22 +252,25 @@ class TestGetWorkingQwenEndpoint:
         result = get_working_qwen_endpoint("test-api-key")
 
         # Should return international endpoint as fallback
-        assert result == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
-        assert mock_post.call_count == 2
+        assert result == "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions"
+        assert mock_post.call_count == 3
 
     @patch("mllmcelltype.url_utils.requests.post")
     @patch("mllmcelltype.url_utils.write_log")
-    def test_auth_error_considered_accessible(self, mock_log, mock_post):
-        """Test that authentication errors are considered as accessible endpoints."""
-        # Mock 401 response (auth error) for international endpoint
-        mock_response = MagicMock()
-        mock_response.status_code = 401
-        mock_post.return_value = mock_response
+    def test_auth_error_tries_next_region(self, mock_log, mock_post):
+        """Test that regional auth errors do not lock endpoint selection."""
+
+        def side_effect(*args, **kwargs):
+            mock_response = MagicMock()
+            mock_response.status_code = 401 if "dashscope-us" in args[0] else 200
+            return mock_response
+
+        mock_post.side_effect = side_effect
 
         result = get_working_qwen_endpoint("test-api-key")
 
-        assert result == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
-        mock_post.assert_called_once()
+        assert result == "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+        assert mock_post.call_count == 2
 
     @patch("mllmcelltype.url_utils.requests.post")
     @patch("mllmcelltype.url_utils.write_log")

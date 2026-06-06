@@ -12,11 +12,12 @@ Qwen API Processor
 Concrete implementation of BaseAPIProcessor for Qwen models.
 Handles Qwen-specific API calls, authentication, and response parsing.
 
-Qwen has two API endpoints:
+Qwen has OpenAI-compatible chat completions endpoints:
 \itemize{
-\item International: https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation (preferred)
-\item Domestic (China): https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation (fallback)
-The processor automatically tries international first, then falls back to domestic if needed.
+\item International (US): https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions
+\item Domestic (China): https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
+\item Legacy international: https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions
+The processor automatically tries international first, then domestic, then legacy international.
 }
 }
 \section{Super class}{
@@ -58,7 +59,7 @@ Initialize Qwen processor
 \if{html}{\out{<a id="method-QwenProcessor-get_default_api_url"></a>}}
 \if{latex}{\out{\hypertarget{method-QwenProcessor-get_default_api_url}{}}}
 \subsection{Method \code{get_default_api_url()}}{
-Get default Qwen API URL with intelligent endpoint selection
+Get default Qwen OpenAI-compatible chat completions API URL
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{QwenProcessor$get_default_api_url()}\if{html}{\out{</div>}}
 }

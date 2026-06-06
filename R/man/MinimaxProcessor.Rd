@@ -47,7 +47,7 @@ Initialize Minimax processor
 \if{html}{\out{<a id="method-MinimaxProcessor-get_default_api_url"></a>}}
 \if{latex}{\out{\hypertarget{method-MinimaxProcessor-get_default_api_url}{}}}
 \subsection{Method \code{get_default_api_url()}}{
-Get default Minimax API URL
+Get default MiniMax OpenAI-compatible chat completions API URL
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{MinimaxProcessor$get_default_api_url()}\if{html}{\out{</div>}}
 }

@@ -37,13 +37,15 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
     #
     process_request = function(prompt, model, api_key) {
       start_time <- Sys.time()
-      
-      self$logger$info(sprintf("Starting %s API request", self$provider_name), 
-                      list(model = model, provider = self$provider_name))
-      
+
       tryCatch({
         # Validate inputs
         private$validate_inputs(prompt, model, api_key)
+        model <- trimws(as.character(model))
+        api_key <- trimws(as.character(api_key))
+
+        self$logger$info(sprintf("Starting %s API request", self$provider_name),
+                        list(model = model, provider = self$provider_name))
 
         # Make the API call and extract response
         final_result <- private$call_and_extract(prompt, model, api_key)
@@ -140,7 +142,7 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
       }
       
       self$logger$debug("Input validation passed",
-                       list(provider = self$provider_name, model = model))
+                       list(provider = self$provider_name, model = trimws(as.character(model))))
     },
     
     #' Make API call and extract response content
@@ -209,6 +211,154 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
                             lines_count = length(res),
                             response_length = nchar(content)))
       return(res)
+    },
+
+    provider_display_name = function() {
+      provider_names <- list(
+        openai = "OpenAI",
+        anthropic = "Anthropic",
+        deepseek = "DeepSeek",
+        gemini = "Gemini",
+        qwen = "Qwen",
+        stepfun = "StepFun",
+        zhipu = "Zhipu",
+        minimax = "MiniMax",
+        grok = "Grok",
+        openrouter = "OpenRouter"
+      )
+      provider_label <- provider_names[[self$provider_name]]
+      if (is.null(provider_label)) {
+        return(self$provider_name)
+      }
+      provider_label
+    },
+
+    build_chat_completions_body = function(chunk_content, model, extra = list()) {
+      body <- list(
+        model = model,
+        messages = list(
+          list(
+            role = "user",
+            content = chunk_content
+          )
+        )
+      )
+
+      if (length(extra) > 0) {
+        for (field in names(extra)) {
+          body[[field]] <- extra[[field]]
+        }
+      }
+
+      body
+    },
+
+    extract_error_message = function(response) {
+      error_content <- tryCatch(
+        httr::content(response, "parsed"),
+        error = function(e) NULL
+      )
+      is_non_empty_string <- function(value) {
+        is.character(value) && length(value) == 1 && !is.na(value) && nzchar(value)
+      }
+
+      if (is.list(error_content) &&
+          is.list(error_content$error) &&
+          is_non_empty_string(error_content$error$message)) {
+        return(error_content$error$message)
+      }
+      if (is.list(error_content) &&
+          is_non_empty_string(error_content$error)) {
+        return(error_content$error)
+      }
+      if (is.list(error_content) &&
+          is_non_empty_string(error_content$message)) {
+        return(error_content$message)
+      }
+
+      sprintf("HTTP %d error", httr::status_code(response))
+    },
+
+    stop_for_http_error = function(response, model, provider_label = private$provider_display_name()) {
+      if (!httr::http_error(response)) {
+        return(invisible(NULL))
+      }
+
+      error_message <- private$extract_error_message(response)
+
+      self$logger$error(sprintf("%s API request failed", provider_label),
+                       list(error = error_message,
+                            provider = self$provider_name,
+                            model = model,
+                            status_code = httr::status_code(response)))
+
+      stop(sprintf("%s API request failed: %s", provider_label, error_message))
+    },
+
+    post_chat_completions_request = function(chunk_content,
+                                            model,
+                                            api_key,
+                                            api_url = self$get_api_url(),
+                                            body_extra = list(),
+                                            headers = list(),
+                                            provider_label = private$provider_display_name()) {
+      body <- private$build_chat_completions_body(
+        chunk_content = chunk_content,
+        model = model,
+        extra = body_extra
+      )
+
+      self$logger$debug(sprintf("Sending API request to %s", provider_label),
+                       list(model = model, provider = self$provider_name))
+
+      request_headers <- c(
+        list(
+          "Authorization" = paste("Bearer", api_key),
+          "Content-Type" = "application/json"
+        ),
+        headers
+      )
+
+      response <- httr::POST(
+        url = api_url,
+        do.call(httr::add_headers, request_headers),
+        body = jsonlite::toJSON(body, auto_unbox = TRUE),
+        encode = "json"
+      )
+
+      private$stop_for_http_error(response, model, provider_label)
+      response
+    },
+
+    extract_chat_completions_content = function(response,
+                                               model,
+                                               provider_label = private$provider_display_name()) {
+      self$logger$debug(sprintf("Parsing %s API response", provider_label),
+                       list(provider = self$provider_name, model = model))
+
+      content <- httr::content(response, "parsed")
+
+      if (is.null(content) ||
+          is.null(content$choices) ||
+          length(content$choices) == 0 ||
+          is.null(content$choices[[1]]$message) ||
+          is.null(content$choices[[1]]$message$content)) {
+
+        self$logger$error(sprintf("Unexpected response format from %s API", provider_label),
+                         list(provider = self$provider_name,
+                              model = model,
+                              content_structure = names(content),
+                              choices_available = !is.null(content$choices),
+                              choices_count = if (!is.null(content$choices)) {
+                                length(content$choices)
+                              } else {
+                                0
+                              }))
+
+        stop(sprintf("Unexpected response format from %s API", provider_label))
+      }
+
+      content$choices[[1]]$message$content
     },
 
     is_successful_result = function(result) {

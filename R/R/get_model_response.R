@@ -1,6 +1,16 @@
 #' Get response from a specific model
 #' @keywords internal
 get_model_response <- function(prompt, model, api_key, base_urls = NULL) {
+  if (!is.character(model) || length(model) != 1 || is.na(model) || !nzchar(trimws(model))) {
+    stop("model must be a non-empty character scalar")
+  }
+  if (!is.character(api_key) || length(api_key) != 1 || is.na(api_key) || !nzchar(trimws(api_key))) {
+    stop("api_key must be a non-empty character scalar")
+  }
+
+  model <- trimws(model)
+  api_key <- trimws(api_key)
+
   # Get the provider for the model
   provider <- get_provider(model)
 

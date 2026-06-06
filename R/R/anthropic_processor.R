@@ -57,26 +57,7 @@ AnthropicProcessor <- R6::R6Class("AnthropicProcessor",
         encode = "json"
       )
       
-      # Check for HTTP errors
-      if (httr::http_error(response)) {
-        error_content <- tryCatch(
-          httr::content(response, "parsed"),
-          error = function(e) NULL
-        )
-        error_message <- if (is.list(error_content) && !is.null(error_content$error$message)) {
-          error_content$error$message
-        } else {
-          sprintf("HTTP %d error", httr::status_code(response))
-        }
-
-        self$logger$error("Anthropic API request failed",
-                         list(error = error_message,
-                              provider = self$provider_name,
-                              model = model,
-                              status_code = httr::status_code(response)))
-
-        stop(sprintf("Anthropic API request failed: %s", error_message))
-      }
+      private$stop_for_http_error(response, model, "Anthropic")
       
       return(response)
     },

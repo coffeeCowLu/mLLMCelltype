@@ -147,7 +147,7 @@ def resolve_endpoint_url(
                 f"Invalid base URL type for {provider_name}: "
                 f"expected str or None, got {type(base_url).__name__}"
             )
-        normalized_base_url = base_url.strip()
+        normalized_base_url = base_url.strip().rstrip("/")
         if normalized_base_url:
             if not validate_base_url(normalized_base_url):
                 raise ValueError(f"Invalid base URL: {base_url}")

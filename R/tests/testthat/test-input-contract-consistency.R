@@ -1,5 +1,28 @@
 # Input contract consistency tests
 
+make_test_json_response <- function(payload,
+                                    status_code = 200L,
+                                    url = "https://example.test/v1/chat/completions") {
+  structure(
+    list(
+      url = url,
+      status_code = status_code,
+      headers = list("Content-Type" = "application/json"),
+      all_headers = list(list(
+        status = status_code,
+        version = "HTTP/1.1",
+        headers = list("Content-Type" = "application/json")
+      )),
+      cookies = data.frame(),
+      content = charToRaw(jsonlite::toJSON(payload, auto_unbox = TRUE)),
+      date = Sys.time(),
+      times = c(),
+      request = list(method = "POST")
+    ),
+    class = "response"
+  )
+}
+
 test_that("normalize_cluster_gene_list canonicalizes list inputs", {
   unnamed <- normalize_cluster_gene_list(list(c("G1"), c("G2")))
   expect_identical(names(unnamed), c("0", "1"))
@@ -561,6 +584,39 @@ test_that("QwenProcessor caches endpoint selection per API key", {
   expect_identical(processor$get_working_api_url("key-b"), "https://domestic.example.test")
 })
 
+test_that("resolve_provider_base_url matches Python URL contract", {
+  expect_null(resolve_provider_base_url("openai", NULL))
+  expect_null(resolve_provider_base_url("openai", list(anthropic = "https://anthropic.example.test/v1")))
+
+  expect_identical(
+    resolve_provider_base_url("  OPENAI  ", "  https://proxy.example.test/v1/  "),
+    "https://proxy.example.test/v1"
+  )
+  expect_identical(
+    resolve_provider_base_url(
+      "openai",
+      list("  OpenAI  " = "https://openai-proxy.example.test/v1/chat/completions/")
+    ),
+    "https://openai-proxy.example.test/v1/chat/completions"
+  )
+
+  expect_error(resolve_provider_base_url("openai", "not-a-url"), "Invalid base URL")
+  expect_error(resolve_provider_base_url("openai", "https://api.example.test/v1?token=abc"), "Invalid base URL")
+  expect_error(resolve_provider_base_url("openai", list(openai = 123)), "must be a string URL")
+  expect_error(resolve_provider_base_url("openai", c("https://a.example", "https://b.example")), "base_urls must be")
+})
+
+test_that("provider default endpoints use current OpenAI-compatible chat APIs", {
+  expect_identical(
+    QwenProcessor$new()$get_default_api_url(),
+    "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions"
+  )
+  expect_identical(
+    MinimaxProcessor$new()$get_default_api_url(),
+    "https://api.minimax.io/v1/chat/completions"
+  )
+})
+
 
 test_that("BaseAPIProcessor rejects non-scalar prompt cleanly", {
   TP <- R6::R6Class(
@@ -580,7 +636,141 @@ test_that("BaseAPIProcessor rejects non-scalar prompt cleanly", {
   )
 })
 
+test_that("BaseAPIProcessor shared chat completion helpers keep canonical contract", {
+  testthat::with_mocked_bindings({
+    HelperProcessor <- R6::R6Class(
+      "HelperProcessor",
+      inherit = BaseAPIProcessor,
+      public = list(
+        initialize = function() super$initialize("openai", NULL),
+        get_default_api_url = function() "https://example.test/v1/chat/completions",
+        make_api_call = function(chunk_content, model, api_key) NULL,
+        extract_response_content = function(response, model) NULL,
+        build_body_for_test = function() {
+          private$build_chat_completions_body(
+            "genes",
+            "gpt-5.5",
+            extra = list(stream = FALSE)
+          )
+        },
+        extract_content_for_test = function(payload) {
+          private$extract_chat_completions_content(
+            make_test_json_response(payload),
+            "gpt-5.5"
+          )
+        }
+      )
+    )
+
+    processor <- HelperProcessor$new()
+    body <- processor$build_body_for_test()
+    expect_identical(body$model, "gpt-5.5")
+    expect_identical(body$messages[[1]], list(role = "user", content = "genes"))
+    expect_identical(body$stream, FALSE)
+    expect_identical(
+      processor$extract_content_for_test(list(
+        choices = list(list(message = list(content = "T cell\nB cell")))
+      )),
+      "T cell\nB cell"
+    )
+  },
+  get_logger = function() {
+    list(
+      info = function(...) NULL,
+      debug = function(...) NULL,
+      error = function(...) NULL
+    )
+  })
+})
+
+test_that("BaseAPIProcessor extracts provider error messages from common shapes", {
+  testthat::with_mocked_bindings({
+    HelperProcessor <- R6::R6Class(
+      "HelperProcessor",
+      inherit = BaseAPIProcessor,
+      public = list(
+        initialize = function() super$initialize("openai", NULL),
+        get_default_api_url = function() "https://example.test/v1/chat/completions",
+        make_api_call = function(chunk_content, model, api_key) NULL,
+        extract_response_content = function(response, model) NULL,
+        error_for_test = function(payload) {
+          private$extract_error_message(make_test_json_response(payload, status_code = 400L))
+        }
+      )
+    )
+
+    processor <- HelperProcessor$new()
+    expect_identical(
+      processor$error_for_test(list(error = list(message = "nested error"))),
+      "nested error"
+    )
+    expect_identical(
+      processor$error_for_test(list(error = "flat error")),
+      "flat error"
+    )
+    expect_identical(
+      processor$error_for_test(list(message = "top-level error")),
+      "top-level error"
+    )
+    expect_identical(
+      processor$error_for_test(list(error = list(message = NA_character_))),
+      "HTTP 400 error"
+    )
+  },
+  get_logger = function() {
+    list(
+      info = function(...) NULL,
+      debug = function(...) NULL,
+      error = function(...) NULL
+    )
+  })
+})
+
+test_that("MiniMax business error without status message is stable", {
+  response <- make_test_json_response(
+    list(base_resp = list(status_code = 1001, status_msg = NA_character_))
+  )
+
+  testthat::with_mocked_bindings({
+    expect_error(
+      MinimaxProcessor$new()$extract_response_content(response, "MiniMax-M2.7"),
+      "MiniMax API error: Unknown MiniMax API error"
+    )
+  },
+  get_logger = function() {
+    list(
+      info = function(...) NULL,
+      debug = function(...) NULL,
+      error = function(...) NULL
+    )
+  })
+})
+
+test_that("MiniMax strips think blocks from OpenAI-compatible content", {
+  response <- make_test_json_response(
+    list(
+      choices = list(list(message = list(
+        content = "<think>internal reasoning</think>\nCELL TYPE: T cell"
+      )))
+    )
+  )
+
+  testthat::with_mocked_bindings({
+    result <- MinimaxProcessor$new()$extract_response_content(response, "MiniMax-M2.7")
+    expect_identical(result, "CELL TYPE: T cell")
+  },
+  get_logger = function() {
+    list(
+      info = function(...) NULL,
+      debug = function(...) NULL,
+      error = function(...) NULL
+    )
+  })
+})
+
 test_that("get_provider validates model as non-empty scalar", {
+  expect_identical(get_provider("  gpt-5.5  "), "openai")
+  expect_identical(get_provider("  anthropic/claude-opus-4.7  "), "openrouter")
   expect_error(get_provider(character(0)), "model must be a non-empty character scalar")
   expect_error(get_provider(c("gpt-5.5", "grok-4.3")), "model must be a non-empty character scalar")
   expect_error(get_provider(NA_character_), "model must be a non-empty character scalar")
@@ -618,6 +808,35 @@ test_that("get_api_key ignores empty/NA/non-scalar keys and falls back correctly
   expect_null(get_api_key("gpt-5.5", list(openai = c("a", "b"))))
   expect_identical(get_api_key("gpt-5.5", list(openai = "", "gpt-5.5" = "k2")), "k2")
   expect_identical(get_api_key("gpt-5.5", list(openai = "  k1  ")), "k1")
+  expect_identical(get_api_key("  gpt-5.5  ", list(" OpenAI " = "  k1  ")), "k1")
+  expect_identical(get_api_key("  gpt-5.5  ", list(" GPT-5.5 " = "  k2  ")), "k2")
+})
+
+test_that("model and api_key are trimmed before R provider dispatch", {
+  direct_result <- testthat::with_mocked_bindings({
+    get_model_response("prompt", "  gpt-5.5  ", "  key  ")
+  },
+  process_openai = function(prompt, model, api_key, base_url = NULL) {
+    expect_identical(model, "gpt-5.5")
+    expect_identical(api_key, "key")
+    "ok"
+  })
+  expect_identical(direct_result, "ok")
+
+  public_result <- testthat::with_mocked_bindings({
+    suppressMessages(annotate_cell_types(
+      input = list("0" = list(genes = c("CD3D"))),
+      tissue_name = "PBMC",
+      model = "  gpt-5.5  ",
+      api_key = "  key  "
+    ))
+  },
+  get_model_response = function(prompt, model, api_key, base_urls = NULL) {
+    expect_identical(model, "gpt-5.5")
+    expect_identical(api_key, "key")
+    c("T cell")
+  })
+  expect_identical(public_result, c("T cell"))
 })
 
 test_that("facilitate_cluster_discussion uses last available consensus on early break", {

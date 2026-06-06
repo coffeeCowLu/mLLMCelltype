@@ -323,7 +323,11 @@ def test_call_openai_compatible_api_merges_extra_headers():
 
 def test_resolve_endpoint_url_trims_custom_base_url():
     """Test custom endpoint URL is stripped before validation/use."""
-    result = resolve_endpoint_url("openai", "OpenAI", "  https://proxy.example.com/v1/chat/completions  ")
+    result = resolve_endpoint_url(
+        "openai",
+        "OpenAI",
+        "  https://proxy.example.com/v1/chat/completions/  ",
+    )
     assert result == "https://proxy.example.com/v1/chat/completions"
 
 

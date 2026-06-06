@@ -47,7 +47,7 @@ def resolve_provider_base_url(provider: str, base_urls: str | dict | None) -> st
             return None
         if not isinstance(value, str):
             raise ValueError(f"base_urls{source} must be a string URL, got {type(value).__name__}")
-        normalized = value.strip()
+        normalized = value.strip().rstrip("/")
         if normalized and not validate_base_url(normalized):
             raise ValueError(f"Invalid base URL in base_urls{source}: {value}")
         return normalized or None
@@ -220,23 +220,31 @@ def get_working_qwen_endpoint(api_key: str) -> str:
 
             response = requests.post(endpoint, headers=headers, json=test_body, timeout=timeout)
 
-            # Any HTTP response indicates the endpoint is network-reachable
-            # 200: success, 400: bad request, 401/403: auth error - all mean endpoint works
-            # Only connection failures (timeout, DNS error, etc.) indicate unreachable endpoint
-            return response.status_code is not None
+            # Choose an endpoint likely to accept this key. Region-specific
+            # DashScope keys can return 401/403 on the wrong regional host.
+            status_code = response.status_code
+            if status_code in {401, 403, 404}:
+                return False
+            return status_code is not None and status_code < 500
 
         except requests.RequestException:
             return False
 
     endpoints = [
-        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",  # International
-        "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",  # Domestic (China)
+        (
+            "international",
+            "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions",
+        ),
+        ("domestic", "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"),
+        (
+            "legacy international",
+            "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+        ),
     ]
 
     write_log("Testing Qwen endpoint connectivity...", level="debug")
 
-    for i, endpoint in enumerate(endpoints):
-        endpoint_type = "international" if i == 0 else "domestic"
+    for endpoint_type, endpoint in endpoints:
         write_log(f"Testing {endpoint_type} endpoint: {endpoint}", level="debug")
 
         if test_endpoint_connectivity(endpoint, api_key):
@@ -248,5 +256,6 @@ def get_working_qwen_endpoint(api_key: str) -> str:
 
     # If none are reachable, return international endpoint as fallback
     write_log("No endpoints accessible, using international endpoint as fallback")
-    _SMART_ENDPOINT_CACHE[cache_key] = endpoints[0]
-    return endpoints[0]
+    fallback_endpoint = endpoints[0][1]
+    _SMART_ENDPOINT_CACHE[cache_key] = fallback_endpoint
+    return fallback_endpoint

@@ -491,7 +491,7 @@ results <- annotate_cell_types(
   base_urls = list(
     openai = "https://openai-proxy.com/v1",
     anthropic = "https://anthropic-proxy.com/v1",
-    qwen = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
+    qwen = "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions"
   )
 )
 
@@ -1475,7 +1475,7 @@ result <- annotate_cell_types(
   base_urls = list(
     openai = "https://openai-proxy.com/v1",
     anthropic = "https://anthropic-proxy.com/v1",
-    qwen = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation"  # 国际版
+    qwen = "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions"  # 国际版
   )
 )
 ```
@@ -1496,7 +1496,7 @@ consensus_results <- interactive_consensus_annotation(
   base_urls = list(
     openai = "https://openai-proxy.com/v1",
     anthropic = "https://anthropic-proxy.com/v1",
-    qwen = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
+    qwen = "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions"
   )
 )
 ```
@@ -1505,15 +1505,17 @@ consensus_results <- interactive_consensus_annotation(
 
 **新功能**：Qwen模型现在支持智能端点选择，自动检测最佳可用端点！
 
-Qwen有两个API端点：
-- **国际版**：`https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation`
-- **国内版**：`https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation`
+Qwen有多个API端点：
+- **国际版**：`https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions`
+- **国内版**：`https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions`
+- **旧国际版兼容兜底**：`https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions`
 
 **智能选择机制**：
-1. 🔍 首先尝试国际版端点
+1. 🔍 首先尝试当前国际版端点
 2. 🔄 如果国际版无法访问，自动切换到国内版
-3. 💾 缓存工作的端点，避免重复检测
-4. ⚡ 后续调用直接使用已验证的端点
+3. 🧭 必要时尝试旧国际版兼容端点
+4. 💾 缓存工作的端点，避免重复检测
+5. ⚡ 后续调用直接使用已验证的端点
 
 ```r
 # 推荐用法：让系统自动选择端点
@@ -1544,7 +1546,7 @@ result <- annotate_cell_types(
   tissue_name = "human PBMC",
   model = "qwen3.6-plus",
   api_key = "your-qwen-api-key",
-  base_urls = list(qwen = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation")  # 强制使用国内版
+  base_urls = list(qwen = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions")  # 强制使用国内版
 )
 ```
 

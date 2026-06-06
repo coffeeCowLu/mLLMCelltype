@@ -20,18 +20,15 @@ QwenProcessor <- R6::R6Class("QwenProcessor",
     #
     test_endpoint = function(url, api_key) {
       tryCatch({
-        # Simple test payload with correct Qwen format
+        # Simple OpenAI-compatible test payload. Region-specific DashScope
+        # keys can return 401/403 on the wrong regional host, so keep probing
+        # alternatives for those statuses.
         test_payload <- list(
           model = "qwen-turbo",
-          input = list(
-            messages = list(
-              list(role = "user", content = "test")
-            )
+          messages = list(
+            list(role = "user", content = "test")
           ),
-          parameters = list(
-            max_tokens = 1,
-            temperature = 0.1
-          )
+          max_tokens = 1
         )
 
         response <- httr::POST(
@@ -45,7 +42,10 @@ QwenProcessor <- R6::R6Class("QwenProcessor",
           httr::timeout(10)  # 10 second timeout for quick test
         )
 
-        return(httr::status_code(response) == 200)
+        status_code <- httr::status_code(response)
+        return(!is.null(status_code) &&
+                 !(status_code %in% c(401, 403, 404)) &&
+                 status_code < 500)
       }, error = function(e) {
         return(FALSE)
       })
@@ -61,14 +61,15 @@ QwenProcessor <- R6::R6Class("QwenProcessor",
     },
 
     #' @description
-    #' Get default Qwen API URL with intelligent endpoint selection
+    #' Get default Qwen OpenAI-compatible chat completions API URL
     #
-    #' @details Qwen has two API endpoints:
-    #'   - International: https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation (preferred)
-    #'   - Domestic (China): https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation (fallback)
-    #'   The processor automatically tries international first, then falls back to domestic if needed.
+    #' @details Qwen has OpenAI-compatible chat completions endpoints:
+    #'   - International (US): https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions
+    #'   - Domestic (China): https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
+    #'   - Legacy international: https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions
+    #'   The processor automatically tries international first, then domestic, then legacy international.
     get_default_api_url = function() {
-      return("https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation")
+      return("https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions")
     },
 
     #' @description
@@ -81,28 +82,33 @@ QwenProcessor <- R6::R6Class("QwenProcessor",
         return(get(cache_key, envir = .qwen_endpoint_cache, inherits = FALSE))
       }
 
-      international_url <- "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
-      domestic_url <- "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
+      endpoints <- list(
+        international = "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions",
+        domestic = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+        legacy_international = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
+      )
 
       self$logger$debug("Testing Qwen endpoints for accessibility")
 
-      # Try international endpoint first
-      if (private$test_endpoint(international_url, api_key)) {
-        self$logger$info("Using Qwen international endpoint", list(url = international_url))
-        assign(cache_key, international_url, envir = .qwen_endpoint_cache)
-        return(international_url)
+      for (endpoint_name in names(endpoints)) {
+        endpoint_url <- endpoints[[endpoint_name]]
+        if (private$test_endpoint(endpoint_url, api_key)) {
+          self$logger$info(
+            sprintf("Using Qwen %s endpoint", endpoint_name),
+            list(url = endpoint_url)
+          )
+          assign(cache_key, endpoint_url, envir = .qwen_endpoint_cache)
+          return(endpoint_url)
+        }
       }
 
-      # Fallback to domestic endpoint
-      if (private$test_endpoint(domestic_url, api_key)) {
-        self$logger$info("Using Qwen domestic endpoint (international failed)", list(url = domestic_url))
-        assign(cache_key, domestic_url, envir = .qwen_endpoint_cache)
-        return(domestic_url)
-      }
-
-      # If both fail, return international as default and let the main call handle the error
-      self$logger$warn("Both Qwen endpoints failed during testing, using international as default")
-      return(international_url)
+      # If all probes fail, return international as default and let the main call
+      # handle the error.
+      self$logger$warn(
+        "All Qwen endpoints failed during testing, using international as default"
+      )
+      assign(cache_key, endpoints$international, envir = .qwen_endpoint_cache)
+      return(endpoints$international)
     },
     
     #' @description
@@ -112,26 +118,6 @@ QwenProcessor <- R6::R6Class("QwenProcessor",
     #
     #
     make_api_call = function(chunk_content, model, api_key) {
-      # Prepare request body with proper Qwen format
-      body <- list(
-        model = model,
-        input = list(
-          messages = list(
-            list(
-              role = "user",
-              content = chunk_content
-            )
-          )
-        ),
-        parameters = list(
-          max_tokens = 2000,
-          temperature = 0.1
-        )
-      )
-      
-      self$logger$debug("Sending API request to Qwen",
-                       list(model = model, provider = self$provider_name))
-      
       # Get API URL: custom base_url takes priority, otherwise auto-detect endpoint
       api_url <- if (!is.null(self$base_url)) {
         self$base_url
@@ -139,39 +125,16 @@ QwenProcessor <- R6::R6Class("QwenProcessor",
         self$get_working_api_url(api_key)
       }
 
-      # Make the API request
-      response <- httr::POST(
-        url = api_url,
-        httr::add_headers(
-          "Authorization" = paste("Bearer", api_key),
-          "Content-Type" = "application/json"
-        ),
-        body = jsonlite::toJSON(body, auto_unbox = TRUE),
-        encode = "json"
-      )
-      
-      # Check for HTTP errors
-      if (httr::http_error(response)) {
-        error_content <- tryCatch(
-          httr::content(response, "parsed"),
-          error = function(e) NULL
+      private$post_chat_completions_request(
+        chunk_content,
+        model,
+        api_key,
+        api_url = api_url,
+        body_extra = list(
+          temperature = 0.7,
+          max_tokens = 4096
         )
-        error_message <- if (is.list(error_content) && !is.null(error_content$error$message)) {
-          error_content$error$message
-        } else {
-          sprintf("HTTP %d error", httr::status_code(response))
-        }
-        
-        self$logger$error("Qwen API request failed",
-                         list(error = error_message,
-                              provider = self$provider_name,
-                              model = model,
-                              status_code = httr::status_code(response)))
-        
-        stop(sprintf("Qwen API request failed: %s", error_message))
-      }
-      
-      return(response)
+      )
     },
     
     #' @description
@@ -186,9 +149,13 @@ QwenProcessor <- R6::R6Class("QwenProcessor",
       # Parse the response
       content <- httr::content(response, "parsed")
 
-      # Extract from Qwen's format: older models use output$text,
-      # newer models (qwen3-*) use output$choices[[1]]$message$content
-      if (!is.null(content$output$text)) {
+      # Extract from the current OpenAI-compatible format first, then retain
+      # legacy DashScope format support for older cached/mocked responses.
+      if (!is.null(content$choices) &&
+          length(content$choices) > 0 &&
+          !is.null(content$choices[[1]]$message$content)) {
+        response_content <- content$choices[[1]]$message$content
+      } else if (!is.null(content$output$text)) {
         response_content <- content$output$text
       } else if (!is.null(content$output$choices) &&
                  length(content$output$choices) > 0 &&
