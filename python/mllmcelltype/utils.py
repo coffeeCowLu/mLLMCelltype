@@ -711,16 +711,6 @@ def format_results(
             # Extract JSON content or use full text
             json_str = json_match.group(1) if json_match else full_text
 
-        # Fix common JSON formatting issues
-        # Add missing commas between JSON objects
-        json_str = re.sub(r'("[^"]+")\s*\n\s*("[^"]+")', r"\1,\n\2", json_str)
-        # Add missing commas after closing brackets
-        json_str = re.sub(r'(\])\s*\n\s*("[^"]+")', r"\1,\n\2", json_str)
-        # Add missing commas after closing braces
-        json_str = re.sub(r'(\})\s*\n\s*("[^"]+")', r"\1,\n\2", json_str)
-        # Add missing commas after closing braces before opening braces
-        json_str = re.sub(r"(\})\s*\n\s*(\{)", r"\1,\n\2", json_str)
-
         # Parse JSON
         data = json.loads(json_str)
 
