@@ -15,7 +15,7 @@
 <div align="center">
   <a href="https://CRAN.R-project.org/package=mLLMCelltype"><img src="https://www.r-pkg.org/badges/version/mLLMCelltype" alt="CRAN version"></a>
   <img src="https://img.shields.io/github/license/cafferychen777/mLLMCelltype" alt="License">
-  <a href="https://www.biorxiv.org/content/10.1101/2025.04.10.647852v1"><img src="https://img.shields.io/badge/bioRxiv-2025.04.10.647852-blue" alt="bioRxiv"></a>
+  <a href="https://doi.org/10.1038/s42003-026-10420-8"><img src="https://img.shields.io/badge/Communications%20Biology-10.1038%2Fs42003--026--10420--8-blue" alt="Communications Biology"></a>
   <a href="https://pypi.org/project/mllmcelltype/"><img src="https://img.shields.io/pypi/v/mllmcelltype" alt="PyPI version"></a>
 </div>
 
@@ -1721,21 +1721,21 @@ DoHeatmap(pbmc_data,
 如果您在研究中使用了mLLMCelltype，请引用：
 
 ```bibtex
-@article{Yang2025.04.10.647852,
+@article{yang2026llmconsensus,
   author = {Yang, Chen and Zhang, Xianyang and Chen, Jun},
-  title = {Large Language Model Consensus Substantially Improves the Cell Type Annotation Accuracy for scRNA-seq Data},
-  elocation-id = {2025.04.10.647852},
-  year = {2025},
-  doi = {10.1101/2025.04.10.647852},
-  publisher = {Cold Spring Harbor Laboratory},
-  URL = {https://www.biorxiv.org/content/early/2025/04/17/2025.04.10.647852},
-  journal = {bioRxiv}
+  title = {Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data},
+  journal = {Communications Biology},
+  year = {2026},
+  volume = {9},
+  pages = {779},
+  doi = {10.1038/s42003-026-10420-8},
+  publisher = {Nature Publishing Group}
 }
 ```
 
 您也可以使用纯文本格式引用：
 
-Yang, C., Zhang, X., & Chen, J. (2025). Large Language Model Consensus Substantially Improves the Cell Type Annotation Accuracy for scRNA-seq Data. *bioRxiv*. [在bioRxiv上阅读我们的完整研究论文](https://doi.org/10.1101/2025.04.10.647852)
+Yang, C., Zhang, X., & Chen, J. (2026). Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data. *Communications Biology*, 9, 779. [阅读论文](https://doi.org/10.1038/s42003-026-10420-8)
 
 ## 贡献
 

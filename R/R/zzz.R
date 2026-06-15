@@ -24,7 +24,7 @@ utils::globalVariables(c("custom_models", "cluster", "avg_log2FC", "gene"))
     "For more information, please visit:\n",
     "- Documentation: https://cafferychen777.github.io/mLLMCelltype/\n",
     "- GitHub: https://github.com/cafferychen777/mLLMCelltype\n",
-    "- Paper: https://doi.org/10.1101/2025.04.10.647852\n",
+    "- Paper: https://doi.org/10.1038/s42003-026-10420-8\n",
     "\n",
     "To cite this package in publications, use:\n",
     "  citation(\"mLLMCelltype\")"

@@ -17,7 +17,7 @@
   <img src="https://img.shields.io/github/last-commit/cafferychen777/mLLMCelltype" alt="Last Commit">
   <img src="https://img.shields.io/github/issues/cafferychen777/mLLMCelltype" alt="Issues">
   <img src="https://img.shields.io/github/v/release/cafferychen777/mLLMCelltype" alt="Release">
-  <a href="https://www.biorxiv.org/content/10.1101/2025.04.10.647852v1"><img src="https://img.shields.io/badge/bioRxiv-2025.04.10.647852-blue" alt="bioRxiv"></a>
+  <a href="https://doi.org/10.1038/s42003-026-10420-8"><img src="https://img.shields.io/badge/Communications%20Biology-10.1038%2Fs42003--026--10420--8-blue" alt="Communications Biology"></a>
 </p>
 
 </div>
@@ -112,21 +112,21 @@ consensus_results <- interactive_consensus_annotation(
 If you use mLLMCelltype in your research, please cite our paper:
 
 ```bibtex
-@article{Yang2025.04.10.647852,
-  author = {Chen Yang and Xianyang Zhang and Jun Chen},
-  title = {Large Language Model Consensus Substantially Improves the Cell Type Annotation Accuracy for scRNA-seq Data},
-  elocation-id = {2025.04.10.647852},
-  year = {2025},
-  doi = {10.1101/2025.04.10.647852},
-  publisher = {Cold Spring Harbor Laboratory},
-  URL = {https://www.biorxiv.org/content/early/2025/04/17/2025.04.10.647852},
-  journal = {bioRxiv}
+@article{yang2026llmconsensus,
+  author = {Yang, Chen and Zhang, Xianyang and Chen, Jun},
+  title = {Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data},
+  journal = {Communications Biology},
+  year = {2026},
+  volume = {9},
+  pages = {779},
+  doi = {10.1038/s42003-026-10420-8},
+  publisher = {Nature Publishing Group}
 }
 ```
 
 You can also cite this in plain text format:
 
-Yang, C., Zhang, X., & Chen, J. (2025). Large Language Model Consensus Substantially Improves the Cell Type Annotation Accuracy for scRNA-seq Data. *bioRxiv*. https://doi.org/10.1101/2025.04.10.647852
+Yang, C., Zhang, X., & Chen, J. (2026). Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data. *Communications Biology*, 9, 779. https://doi.org/10.1038/s42003-026-10420-8
 
 ### Learn More
 

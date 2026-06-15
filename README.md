@@ -15,7 +15,7 @@
 <div align="center">
   <a href="https://CRAN.R-project.org/package=mLLMCelltype"><img src="https://www.r-pkg.org/badges/version/mLLMCelltype" alt="CRAN version"></a>
   <img src="https://img.shields.io/github/license/cafferychen777/mLLMCelltype" alt="License">
-  <a href="https://www.biorxiv.org/content/10.1101/2025.04.10.647852v1"><img src="https://img.shields.io/badge/bioRxiv-2025.04.10.647852-blue" alt="bioRxiv preprint"></a>
+  <a href="https://doi.org/10.1038/s42003-026-10420-8"><img src="https://img.shields.io/badge/Communications%20Biology-10.1038%2Fs42003--026--10420--8-blue" alt="Communications Biology"></a>
   <a href="https://pypi.org/project/mllmcelltype/"><img src="https://img.shields.io/pypi/v/mllmcelltype" alt="PyPI version"></a>
   <a href="https://colab.research.google.com/github/cafferychen777/mLLMCelltype/blob/main/notebooks/mLLMCelltype_Tutorial.ipynb"><img src="https://img.shields.io/badge/Open%20in-Colab-F9AB00?logo=googlecolab&logoColor=white" alt="Open in Colab"></a>
 </div>
@@ -28,7 +28,7 @@ mLLMCelltype is a multi-LLM consensus framework for automated cell type annotati
 
 mLLMCelltype is an open-source tool for single-cell transcriptomics analysis that uses multiple large language models to identify cell types from gene expression data. The software implements a consensus approach where multiple models analyze the same data and their predictions are combined, which helps reduce errors and provides uncertainty metrics. This methodology offers advantages over single-model approaches through integration of multiple model predictions. mLLMCelltype integrates with single-cell analysis platforms such as Scanpy and Seurat, allowing researchers to incorporate it into existing workflows. The method does not require reference datasets for annotation.
 
-In our benchmarks ([Yang et al., 2025](https://doi.org/10.1101/2025.04.10.647852)), the consensus approach achieved up to 95% accuracy on tested datasets.
+In our benchmarks ([Yang et al., 2026](https://doi.org/10.1038/s42003-026-10420-8)), the consensus approach achieved up to 95% accuracy on tested datasets.
 
 ## Table of Contents
 - [Key Features](#key-features)
@@ -1121,21 +1121,21 @@ For detailed instructions and advanced customization options, see the [Visualiza
 If you use mLLMCelltype in your research, please cite:
 
 ```bibtex
-@article{Yang2025.04.10.647852,
+@article{yang2026llmconsensus,
   author = {Yang, Chen and Zhang, Xianyang and Chen, Jun},
-  title = {Large Language Model Consensus Substantially Improves the Cell Type Annotation Accuracy for scRNA-seq Data},
-  elocation-id = {2025.04.10.647852},
-  year = {2025},
-  doi = {10.1101/2025.04.10.647852},
-  publisher = {Cold Spring Harbor Laboratory},
-  URL = {https://www.biorxiv.org/content/early/2025/04/17/2025.04.10.647852},
-  journal = {bioRxiv}
+  title = {Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data},
+  journal = {Communications Biology},
+  year = {2026},
+  volume = {9},
+  pages = {779},
+  doi = {10.1038/s42003-026-10420-8},
+  publisher = {Nature Publishing Group}
 }
 ```
 
 You can also cite this in plain text format:
 
-Yang, C., Zhang, X., & Chen, J. (2025). Large Language Model Consensus Substantially Improves the Cell Type Annotation Accuracy for scRNA-seq Data. *bioRxiv*. [Read our full research paper on bioRxiv](https://doi.org/10.1101/2025.04.10.647852)
+Yang, C., Zhang, X., & Chen, J. (2026). Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data. *Communications Biology*, 9, 779. [Read the paper](https://doi.org/10.1038/s42003-026-10420-8)
 
 ## Contributing
 

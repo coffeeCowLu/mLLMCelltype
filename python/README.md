@@ -242,14 +242,14 @@ MIT License
 If you use mLLMCelltype in your research, please cite:
 
 ```bibtex
-@article{Yang2025.04.10.647852,
+@article{yang2026llmconsensus,
   author = {Yang, Chen and Zhang, Xianyang and Chen, Jun},
-  title = {Large Language Model Consensus Substantially Improves the Cell Type Annotation Accuracy for scRNA-seq Data},
-  elocation-id = {2025.04.10.647852},
-  year = {2025},
-  doi = {10.1101/2025.04.10.647852},
-  publisher = {Cold Spring Harbor Laboratory},
-  URL = {https://www.biorxiv.org/content/early/2025/04/17/2025.04.10.647852},
-  journal = {bioRxiv}
+  title = {Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data},
+  journal = {Communications Biology},
+  year = {2026},
+  volume = {9},
+  pages = {779},
+  doi = {10.1038/s42003-026-10420-8},
+  publisher = {Nature Publishing Group}
 }
 ```

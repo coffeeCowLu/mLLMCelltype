@@ -200,7 +200,9 @@ We would like to thank all contributors who have helped improve mLLMCelltype:
 If you use mLLMCelltype in your research, please cite:
 
 ```
-Yang, C., et al. (2024). mLLMCelltype: Multi-LLM Consensus Architecture for Robust Cell Type Annotation. bioRxiv 2024.04.10.647852; doi: https://doi.org/10.1101/2024.04.10.647852
+Yang, C., Zhang, X., & Chen, J. (2026). Large language model consensus substantially
+improves the cell type annotation accuracy for scRNA-seq data. Communications Biology, 9, 779.
+https://doi.org/10.1038/s42003-026-10420-8
 ```
 
 ## Feedback and Contributions

@@ -30,10 +30,12 @@ preferred-citation:
       given-names: "Xianyang"
     - family-names: "Chen"
       given-names: "Jun"
-  title: "Large Language Model Consensus Substantially Improves the Cell Type Annotation Accuracy for scRNA-seq Data"
-  journal: "bioRxiv"
-  year: 2025
-  date-released: 2025-04-10
-  doi: "10.1101/2025.04.10.647852"
-  url: "https://www.biorxiv.org/content/early/2025/04/17/2025.04.10.647852"
-  publisher: "Cold Spring Harbor Laboratory"
+  title: "Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data"
+  journal: "Communications Biology"
+  year: 2026
+  volume: 9
+  start: 779
+  date-released: 2026-06-08
+  doi: "10.1038/s42003-026-10420-8"
+  url: "https://doi.org/10.1038/s42003-026-10420-8"
+  publisher: "Nature Publishing Group"

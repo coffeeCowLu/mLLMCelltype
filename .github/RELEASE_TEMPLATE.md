@@ -131,7 +131,7 @@ Special thanks to all contributors to this release:
 - **Documentation**: https://cafferyang.com/mLLMCelltype/
 - **Web Application**: https://mllmcelltype.com/
 - **Discord Community**: https://discord.gg/pb2aZdG4
-- **bioRxiv Paper**: https://www.biorxiv.org/content/10.1101/2025.04.10.647852v1
+- **Paper**: https://doi.org/10.1038/s42003-026-10420-8
 
 ## 📅 **What's Next?**
 
