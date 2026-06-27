@@ -73,7 +73,7 @@ Consensus frameworks leverage multiple independent models:
 
 For benchmark results comparing the two approaches, see Yang et al. (2026):
 
-Yang, C., Zhang, X., & Chen, J. (2026). Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data. *Communications Biology*, 9, 779. https://doi.org/10.1038/s42003-026-10420-8
+Yang, C., Zhang, X., & Chen, J. (2026). Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data. *Communications Biology*. https://doi.org/10.1038/s42003-026-10420-8
 
 ## Cost and Resource Trade-offs
 

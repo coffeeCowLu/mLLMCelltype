@@ -177,7 +177,7 @@ home:
       
       <p>Yang, C., Zhang, X., & Chen, J. (2026).
       <em>Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data</em>.
-      Communications Biology, 9, 779. <a href="https://doi.org/10.1038/s42003-026-10420-8">doi:10.1038/s42003-026-10420-8</a>.</p>
+      Communications Biology. <a href="https://doi.org/10.1038/s42003-026-10420-8">doi:10.1038/s42003-026-10420-8</a>.</p>
 
       ```bibtex
       @article{yang2026llmconsensus,
@@ -185,10 +185,9 @@ home:
         title = {Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data},
         journal = {Communications Biology},
         year = {2026},
-        volume = {9},
-        pages = {779},
         doi = {10.1038/s42003-026-10420-8},
-        publisher = {Nature Publishing Group}
+        url = {https://doi.org/10.1038/s42003-026-10420-8},
+        publisher = {Springer Nature}
       }
       ```
   title: "mLLMCelltype: Cell Type Annotation Using Multi-LLM Consensus"

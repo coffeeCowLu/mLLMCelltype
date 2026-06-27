@@ -247,9 +247,8 @@ If you use mLLMCelltype in your research, please cite:
   title = {Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data},
   journal = {Communications Biology},
   year = {2026},
-  volume = {9},
-  pages = {779},
   doi = {10.1038/s42003-026-10420-8},
-  publisher = {Nature Publishing Group}
+  url = {https://doi.org/10.1038/s42003-026-10420-8},
+  publisher = {Springer Nature}
 }
 ```

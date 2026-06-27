@@ -1,5 +1,10 @@
 # mLLMCelltype Changelog
 
+## Unreleased
+
+### Documentation
+* Updated paper citation metadata to the Communications Biology publication DOI.
+
 ## 2.0.5 (2026-05-11)
 
 ### Bug Fixes

@@ -28,7 +28,9 @@ mLLMCelltype is a multi-LLM consensus framework for automated cell type annotati
 
 mLLMCelltype is an open-source tool for single-cell transcriptomics analysis that uses multiple large language models to identify cell types from gene expression data. The software implements a consensus approach where multiple models analyze the same data and their predictions are combined, which helps reduce errors and provides uncertainty metrics. This methodology offers advantages over single-model approaches through integration of multiple model predictions. mLLMCelltype integrates with single-cell analysis platforms such as Scanpy and Seurat, allowing researchers to incorporate it into existing workflows. The method does not require reference datasets for annotation.
 
-In our benchmarks ([Yang et al., 2026](https://doi.org/10.1038/s42003-026-10420-8)), the consensus approach achieved up to 95% accuracy on tested datasets.
+The mLLMCelltype paper was published online in *Communications Biology* on June 8, 2026.
+
+Across 49 benchmark datasets ([Yang et al., 2026](https://doi.org/10.1038/s42003-026-10420-8)), mLLMCelltype achieved 77.2% mean accuracy, improving on the best single-LLM baseline (61.5%) by 15.7 percentage points.
 
 ## Table of Contents
 - [Key Features](#key-features)
@@ -1126,16 +1128,15 @@ If you use mLLMCelltype in your research, please cite:
   title = {Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data},
   journal = {Communications Biology},
   year = {2026},
-  volume = {9},
-  pages = {779},
   doi = {10.1038/s42003-026-10420-8},
-  publisher = {Nature Publishing Group}
+  url = {https://doi.org/10.1038/s42003-026-10420-8},
+  publisher = {Springer Nature}
 }
 ```
 
 You can also cite this in plain text format:
 
-Yang, C., Zhang, X., & Chen, J. (2026). Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data. *Communications Biology*, 9, 779. [Read the paper](https://doi.org/10.1038/s42003-026-10420-8)
+Yang, C., Zhang, X., & Chen, J. (2026). Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data. *Communications Biology*. [Read the paper](https://doi.org/10.1038/s42003-026-10420-8)
 
 ## Contributing
 

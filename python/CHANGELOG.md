@@ -26,6 +26,9 @@ All notable changes to the Python implementation of mLLMCelltype will be documen
 - Default behavior is unchanged: omitting `usage_sink` leaves request shape and return
   values byte-identical to prior releases.
 
+### Documentation
+- Updated paper citation metadata to the Communications Biology publication DOI.
+
 ## [2.0.5] - 2026-05-11
 
 ### Fixed

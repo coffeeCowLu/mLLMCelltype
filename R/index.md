@@ -26,6 +26,8 @@
 
 mLLMCelltype is an R package that leverages various large language models (LLMs) for automated cell type annotation in single-cell RNA sequencing data. The package implements a **multi-LLM consensus architecture** where multiple LLMs collaborate through structured deliberation that aims to improve annotation reliability by combining multiple model predictions.
 
+The mLLMCelltype paper was published online in *Communications Biology* on June 8, 2026.
+
 ### Key Features
 
 * **Multi-LLM Consensus Mechanism**: Combines predictions from multiple LLMs to reduce individual model biases
@@ -117,16 +119,15 @@ If you use mLLMCelltype in your research, please cite our paper:
   title = {Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data},
   journal = {Communications Biology},
   year = {2026},
-  volume = {9},
-  pages = {779},
   doi = {10.1038/s42003-026-10420-8},
-  publisher = {Nature Publishing Group}
+  url = {https://doi.org/10.1038/s42003-026-10420-8},
+  publisher = {Springer Nature}
 }
 ```
 
 You can also cite this in plain text format:
 
-Yang, C., Zhang, X., & Chen, J. (2026). Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data. *Communications Biology*, 9, 779. https://doi.org/10.1038/s42003-026-10420-8
+Yang, C., Zhang, X., & Chen, J. (2026). Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data. *Communications Biology*. https://doi.org/10.1038/s42003-026-10420-8
 
 ### Learn More
 

@@ -8,8 +8,8 @@ authors:
   - family-names: "Chen"
     given-names: "Jun"
 title: "mLLMCelltype: Multi-LLM consensus framework for cell type annotation"
-version: 2.0.3
-date-released: 2025-04-10
+version: 2.0.5
+date-released: 2026-05-11
 url: "https://github.com/cafferychen777/mLLMCelltype"
 repository-code: "https://github.com/cafferychen777/mLLMCelltype"
 license: MIT
@@ -33,9 +33,7 @@ preferred-citation:
   title: "Large language model consensus substantially improves the cell type annotation accuracy for scRNA-seq data"
   journal: "Communications Biology"
   year: 2026
-  volume: 9
-  start: 779
   date-released: 2026-06-08
   doi: "10.1038/s42003-026-10420-8"
   url: "https://doi.org/10.1038/s42003-026-10420-8"
-  publisher: "Nature Publishing Group"
+  publisher: "Springer Nature"
