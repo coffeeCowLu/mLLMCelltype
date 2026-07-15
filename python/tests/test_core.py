@@ -252,7 +252,7 @@ def test_normalize_marker_genes_keys_preserves_rank_and_deduplicates_genes():
 )
 def test_normalize_marker_genes_keys_rejects_unordered_or_nested_gene_values(genes):
     """Marker rank cannot depend on set iteration or nested-value string coercion."""
-    with pytest.raises(ValueError, match="marker gene|marker_genes"):
+    with pytest.raises(ValueError, match=r"marker gene|marker_genes"):
         normalize_marker_genes_keys({"1": genes})
 
 
