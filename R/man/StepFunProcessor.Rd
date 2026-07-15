@@ -28,6 +28,7 @@ Handles StepFun-specific API calls, authentication, and response parsing.
 \if{html}{\out{
 <details open><summary>Inherited methods</summary>
 <ul>
+<li><span class="pkg-link" data-pkg="mLLMCelltype" data-topic="BaseAPIProcessor" data-id="extract_usage"><a href='../../mLLMCelltype/html/BaseAPIProcessor.html#method-BaseAPIProcessor-extract_usage'><code>mLLMCelltype::BaseAPIProcessor$extract_usage()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="mLLMCelltype" data-topic="BaseAPIProcessor" data-id="get_api_url"><a href='../../mLLMCelltype/html/BaseAPIProcessor.html#method-BaseAPIProcessor-get_api_url'><code>mLLMCelltype::BaseAPIProcessor$get_api_url()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="mLLMCelltype" data-topic="BaseAPIProcessor" data-id="process_request"><a href='../../mLLMCelltype/html/BaseAPIProcessor.html#method-BaseAPIProcessor-process_request'><code>mLLMCelltype::BaseAPIProcessor$process_request()</code></a></span></li>
 </ul>
@@ -42,6 +43,13 @@ Initialize StepFun processor
 \if{html}{\out{<div class="r">}}\preformatted{StepFunProcessor$new(base_url = NULL)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{base_url}}{Optional custom API endpoint}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-StepFunProcessor-get_default_api_url"></a>}}
@@ -62,6 +70,17 @@ Make API call to StepFun
 \if{html}{\out{<div class="r">}}\preformatted{StepFunProcessor$make_api_call(chunk_content, model, api_key)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{chunk_content}}{Prompt text to send}
+
+\item{\code{model}}{Model identifier}
+
+\item{\code{api_key}}{StepFun API key}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-StepFunProcessor-extract_response_content"></a>}}
@@ -72,6 +91,15 @@ Extract response content from StepFun API response
 \if{html}{\out{<div class="r">}}\preformatted{StepFunProcessor$extract_response_content(response, model)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{response}}{HTTP response object}
+
+\item{\code{model}}{Model identifier}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-StepFunProcessor-clone"></a>}}

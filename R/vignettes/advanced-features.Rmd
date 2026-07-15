@@ -9,7 +9,7 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, purl=FALSE}
 knitr::opts_chunk$set(
   echo = TRUE,
   message = FALSE,
@@ -30,7 +30,7 @@ Cell types often exist in hierarchical relationships. For example, T cells can b
 
 Here's a practical approach to perform hierarchical annotation:
 
-```{r}
+```{r, purl=FALSE}
 library(mLLMCelltype)
 library(Seurat)
 library(dplyr)
@@ -80,7 +80,7 @@ seurat_obj$detailed_celltype[t_cell_barcodes] <- plyr::mapvalues(
 
 After creating hierarchical annotations, it's important to validate the consistency between levels:
 
-```{r}
+```{r, purl=FALSE}
 # Create a simple function to check parent-child consistency
 validate_hierarchy <- function(high_level, detailed_level) {
   # Extract parent type from detailed annotation (before the colon)
@@ -118,7 +118,7 @@ Real-world scRNA-seq data often contains noise. Here are practical strategies fo
 
 For noisy datasets, using fewer top genes can help focus on the strongest signals:
 
-```{r}
+```{r, purl=FALSE}
 # For noisy data, use fewer top genes
 results_fewer_genes <- annotate_cell_types(
   input = marker_data,  # Your marker gene data
@@ -133,7 +133,7 @@ results_fewer_genes <- annotate_cell_types(
 
 Pre-filtering marker genes with stricter thresholds can improve annotation quality:
 
-```{r}
+```{r, purl=FALSE}
 # Apply stricter filtering to marker genes
 filtered_markers <- marker_data %>%
   filter(p_val_adj < 0.01, avg_log2FC > 1.0)  # Stricter thresholds
@@ -151,7 +151,7 @@ results_filtered <- annotate_cell_types(
 
 The consensus approach can help overcome noise by combining predictions from multiple models:
 
-```{r}
+```{r, purl=FALSE}
 # Set up API keys
 api_keys <- list(
   anthropic = Sys.getenv("ANTHROPIC_API_KEY"),
@@ -184,7 +184,7 @@ When working with data affected by batch effects, you can:
 
 #### 1. Use the consensus approach with a lower controversy threshold
 
-```{r}
+```{r, purl=FALSE}
 # For data with batch effects, use consensus with lower threshold
 batch_consensus <- interactive_consensus_annotation(
   input = marker_data,  # Your marker gene data with batch effects
@@ -198,7 +198,7 @@ batch_consensus <- interactive_consensus_annotation(
 
 #### 2. Include batch information in the tissue context
 
-```{r}
+```{r, purl=FALSE}
 # Include batch information in the tissue context
 batch_aware_results <- annotate_cell_types(
   input = marker_data,  # Your marker gene data with batch effects
@@ -214,7 +214,7 @@ batch_aware_results <- annotate_cell_types(
 
 One of the key features of mLLMCelltype is the ability to incorporate domain knowledge through the `tissue_name` parameter. This provides important context to the LLM:
 
-```{r}
+```{r, purl=FALSE}
 # Basic annotation without specific tissue context
 basic_results <- annotate_cell_types(
   input = marker_data,
@@ -236,7 +236,7 @@ specific_results <- annotate_cell_types(
 
 For advanced use cases, you can create and modify the annotation prompt directly:
 
-```{r}
+```{r, purl=FALSE}
 # Create a custom annotation prompt
 custom_prompt <- create_annotation_prompt(
   input = marker_data,
@@ -263,7 +263,7 @@ custom_results <- get_model_response(
 
 You can enhance your annotation workflow by combining mLLMCelltype with other R packages and resources:
 
-```{r}
+```{r, purl=FALSE}
 library(Seurat)
 library(dplyr)
 
@@ -338,7 +338,7 @@ validate_annotations <- function(annotations, marker_data, known_markers) {
 
 This example demonstrates a complete workflow for analyzing a PBMC dataset:
 
-```{r}
+```{r, purl=FALSE}
 library(Seurat)
 library(mLLMCelltype)
 library(ggplot2)
@@ -389,7 +389,7 @@ pbmc_small$cell_type <- plyr::mapvalues(
 
 When working with datasets containing rare cell populations, you can adjust parameters to improve detection:
 
-```{r}
+```{r, purl=FALSE}
 # For rare cell types, use these strategies:
 
 # 1. Increase the number of marker genes considered
@@ -425,7 +425,7 @@ specific_annotation <- annotate_cell_types(
 
 mLLMCelltype can be used to compare cell types across different species:
 
-```{r}
+```{r, purl=FALSE}
 # Example workflow for cross-species comparison
 
 # 1. Annotate human and mouse datasets separately
@@ -482,7 +482,7 @@ compare_species_annotations <- function(human_annotations, mouse_annotations) {
 
 When using mLLMCelltype, it's important to consider the costs associated with API calls to different LLM providers:
 
-```{r}
+```{r, purl=FALSE}
 # Example of cost-efficient model selection
 # Choose models based on your specific needs and budget
 
@@ -517,7 +517,7 @@ openrouter_annotation <- annotate_cell_types(
 
 To optimize runtime when working with large datasets:
 
-```{r}
+```{r, purl=FALSE}
 # 1. Use caching with interactive_consensus_annotation
 consensus_with_cache <- interactive_consensus_annotation(
   input = marker_data,  # Your marker gene data
@@ -573,7 +573,7 @@ fast_annotation <- annotate_cell_types(
 
 For advanced users, mLLMCelltype allows you to register custom providers and models:
 
-```{r}
+```{r, purl=FALSE}
 # Define a custom processing function
 # This function must accept prompt, model, and api_key parameters
 custom_process_fn <- function(prompt, model, api_key) {
@@ -627,7 +627,7 @@ register_custom_model(
 
 mLLMCelltype provides a comprehensive unified logging system with structured output, performance monitoring, and multi-level logging:
 
-```{r}
+```{r, purl=FALSE}
 # Configure the global logger (recommended approach)
 configure_logger(level = "INFO", console_output = TRUE, json_format = TRUE)
 
@@ -678,7 +678,7 @@ print(performance)
 
 The `CacheManager` class helps optimize performance by caching consensus results:
 
-```{r}
+```{r, purl=FALSE}
 # Create a cache manager
 cache_manager <- CacheManager$new(cache_dir = NULL)
 
@@ -710,7 +710,7 @@ cache_stats <- cache_manager$get_cache_stats()
 
 mLLMCelltype provides convenient functions for managing cache directories:
 
-```{r}
+```{r, purl=FALSE}
 # Check cache location
 mllmcelltype_cache_dir()
 

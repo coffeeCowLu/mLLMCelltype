@@ -142,6 +142,20 @@ class TestGetModelResponseBaseUrl:
         call_args = mock_post.call_args
         assert call_args[1]["url"] == "https://custom-proxy.com/v1/chat/completions"
 
+    @patch("mllmcelltype.annotate.load_api_key")
+    def test_get_model_response_rejects_invalid_base_url_before_credentials(self, mock_load_key):
+        """Test invalid endpoints fail before cache or credential resolution."""
+        with pytest.raises(ValueError, match="Invalid base URL"):
+            get_model_response(
+                prompt="Test prompt",
+                provider="openai",
+                model="gpt-5.5",
+                api_key=None,
+                base_url="invalid-url",
+            )
+
+        mock_load_key.assert_not_called()
+
 
 class TestInteractiveConsensusAnnotationBaseUrl:
     """Test base_url functionality in interactive_consensus_annotation function."""
@@ -181,21 +195,20 @@ class TestQwenSmartEndpointSelection:
     """Test Qwen smart endpoint selection functionality."""
 
     @patch("mllmcelltype.url_utils.requests.post")
-    @patch("mllmcelltype.providers.qwen.requests.post")
-    def test_qwen_smart_endpoint_selection(self, mock_qwen_post, mock_test_post):
+    def test_qwen_smart_endpoint_selection(self, mock_post):
         """Test Qwen smart endpoint selection when no base_url is provided."""
-        # Mock endpoint testing - international works
         mock_test_response = MagicMock()
         mock_test_response.status_code = 200
-        mock_test_post.return_value = mock_test_response
-
-        # Mock actual Qwen API response
         mock_qwen_response = MagicMock()
         mock_qwen_response.status_code = 200
         mock_qwen_response.json.return_value = {
             "choices": [{"message": {"content": "Cluster 1: T cells"}}]
         }
-        mock_qwen_post.return_value = mock_qwen_response
+
+        def route_request(*args, **kwargs):
+            return mock_test_response if args else mock_qwen_response
+
+        mock_post.side_effect = route_request
 
         marker_genes = {"1": ["CD3D", "CD3E"]}
 
@@ -208,28 +221,14 @@ class TestQwenSmartEndpointSelection:
             use_cache=False,
         )
 
-        # Verify endpoint testing was called (first call is for testing connectivity)
-        assert mock_test_post.call_count >= 1
-        # First call should be the endpoint connectivity test
-        first_call_args = mock_test_post.call_args_list[0]
+        assert mock_post.call_count == 2
+        first_call_args = mock_post.call_args_list[0]
         assert "dashscope-us.aliyuncs.com" in first_call_args[0][0]
-
-        # Verify actual API call used the international endpoint
-        # Note: Both mocks may capture calls since they share the same requests module
-        all_calls = mock_test_post.call_args_list + mock_qwen_post.call_args_list
-        api_call_found = False
-        for call in all_calls:
-            if (
-                call[1].get("url")
-                == "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions"
-            ):
-                api_call_found = True
-                break
-            # Also check positional args
-            if call[0] and "dashscope-us" in str(call[0]):
-                api_call_found = True
-                break
-        assert api_call_found, "Expected international endpoint to be used"
+        actual_call = mock_post.call_args_list[1]
+        assert (
+            actual_call.kwargs["url"]
+            == "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions"
+        )
 
     @patch("mllmcelltype.providers.qwen.requests.post")
     def test_qwen_with_custom_base_url_skips_smart_selection(self, mock_post):

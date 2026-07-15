@@ -12,16 +12,20 @@ from .config import get_default_model
 from .functions import PROVIDER_FUNCTIONS
 from .logger import setup_logging, write_log
 from .prompts import create_prompt
+from .providers.common import normalize_response_lines
 from .url_utils import resolve_provider_base_url
 from .utils import (
     cluster_sort_key,
     create_cache_key,
     format_results,
+    is_missing_value,
     load_api_key,
     load_from_cache,
     normalize_marker_genes_keys,
+    normalize_text,
     parse_marker_genes,
     save_to_cache,
+    validate_bool,
 )
 
 
@@ -44,43 +48,65 @@ def _resolve_provider(provider: str) -> tuple[str, Callable[..., Any]]:
     return normalized_provider, provider_func
 
 
-def _resolve_model_and_api_key(
-    provider: str,
-    model: str | None,
-    api_key: str | None,
-) -> tuple[str, str]:
-    """Resolve model and API key with consistent fallback behavior."""
-    def _normalize_optional_text(value: str | None, field_name: str) -> str | None:
-        if value is None:
-            return None
-        if not isinstance(value, str):
-            raise ValueError(f"{field_name} must be a string, got {type(value).__name__}")
-        normalized = value.strip()
-        return normalized or None
-
-    resolved_model = _normalize_optional_text(model, "model")
+def _resolve_model(provider: str, model: str | None) -> str:
+    """Resolve an explicit or provider-default model name."""
+    resolved_model = normalize_text(model, "model")
     if not resolved_model:
         resolved_model = get_default_model(provider)
         write_log(f"Using default model for {provider}: {resolved_model}")
+    return resolved_model
 
-    resolved_api_key = _normalize_optional_text(api_key, "api_key")
+
+def _resolve_api_key(provider: str, api_key: str | None) -> str:
+    """Resolve an API key only when an external provider call is required."""
+    resolved_api_key = normalize_text(api_key, "api_key")
     if not resolved_api_key:
-        resolved_api_key = _normalize_optional_text(load_api_key(provider), "api_key")
+        resolved_api_key = normalize_text(load_api_key(provider), "api_key")
     if not resolved_api_key:
         error_msg = f"API key not found for provider: {provider}"
         write_log(error_msg, level="error")
         raise ValueError(error_msg)
-
-    return resolved_model, resolved_api_key
+    return resolved_api_key
 
 
 def _to_text_response(result: Any) -> str:
-    """Normalize provider response to text."""
-    if isinstance(result, list):
-        return "\n".join(result)
-    if isinstance(result, str):
+    """Validate and normalize provider response to text."""
+    return "\n".join(normalize_response_lines(result, "model provider"))
+
+
+def _normalize_annotation_response(result: Any) -> list[str] | dict[str, Any]:
+    """Validate provider/cache payload before annotation parsing."""
+    if isinstance(result, dict):
+        for annotation in result.values():
+            if not is_missing_value(annotation) and not isinstance(annotation, str):
+                raise ValueError("Annotation response mappings must contain string values")
         return result
-    return str(result)
+    return normalize_response_lines(result, "annotation provider")
+
+
+def _load_valid_cached_response(
+    *,
+    cache_key: str | None,
+    cache_dir: str | None,
+    normalizer: Callable[[Any], Any],
+    response_kind: str,
+) -> Any | None:
+    """Load and validate cached data through one shared cache-read policy."""
+    if cache_key is None:
+        return None
+
+    cached_response = load_from_cache(cache_key, cache_dir)
+    if cached_response is None:
+        return None
+
+    try:
+        return normalizer(cached_response)
+    except ValueError as error:
+        write_log(
+            f"Ignoring invalid cached {response_kind} response: {error!s}",
+            level="warning",
+        )
+        return None
 
 
 def _split_analyzable_clusters(
@@ -107,7 +133,9 @@ def _merge_annotation_results(
     empty_cluster_set = set(empty_clusters)
     return {
         cluster_id: (
-            "Unknown" if cluster_id in empty_cluster_set else analyzed_results.get(cluster_id, "Unknown")
+            "Unknown"
+            if cluster_id in empty_cluster_set
+            else analyzed_results.get(cluster_id, "Unknown")
         )
         for cluster_id in all_clusters
     }
@@ -152,6 +180,9 @@ def annotate_clusters(
         Dict[str, str]: Dictionary mapping cluster names to annotations
 
     """
+    use_cache = validate_bool(use_cache, "use_cache")
+    species = normalize_text(species, "species", required=True)
+
     # Setup logging
     setup_logging(log_dir=log_dir, log_level=log_level)
 
@@ -190,7 +221,7 @@ def annotate_clusters(
         )
         return {cluster_id: "Unknown" for cluster_id in all_clusters}
 
-    model, api_key = _resolve_model_and_api_key(provider, model, api_key)
+    model = _resolve_model(provider, model)
 
     # Create prompt
     prompt = create_prompt(
@@ -205,17 +236,23 @@ def annotate_clusters(
     base_url = resolve_provider_base_url(provider, base_urls)
 
     # Check cache
-    if use_cache:
-        cache_key = create_cache_key(prompt, model, provider, base_url)
-        cached_results = load_from_cache(cache_key, cache_dir)
-        if cached_results is not None:
-            write_log("Using cached results")
-            analyzed_results = format_results(cached_results, analyzable_clusters)
-            return _merge_annotation_results(
-                all_clusters=all_clusters,
-                analyzed_results=analyzed_results,
-                empty_clusters=empty_clusters,
-            )
+    cache_key = create_cache_key(prompt, model, provider, base_url) if use_cache else None
+    cached_results = _load_valid_cached_response(
+        cache_key=cache_key,
+        cache_dir=cache_dir,
+        normalizer=_normalize_annotation_response,
+        response_kind="annotation",
+    )
+    if cached_results is not None:
+        write_log("Using cached results")
+        analyzed_results = format_results(cached_results, analyzable_clusters)
+        return _merge_annotation_results(
+            all_clusters=all_clusters,
+            analyzed_results=analyzed_results,
+            empty_clusters=empty_clusters,
+        )
+
+    api_key = _resolve_api_key(provider, api_key)
 
     # Process request
     try:
@@ -223,13 +260,13 @@ def annotate_clusters(
         start_time = time.time()
 
         # Call provider function with base_url
-        results = provider_func(prompt, model, api_key, base_url)
+        results = _normalize_annotation_response(provider_func(prompt, model, api_key, base_url))
 
         end_time = time.time()
         write_log(f"Request processed in {end_time - start_time:.2f} seconds")
 
         # Save to cache
-        if use_cache:
+        if cache_key is not None:
             save_to_cache(cache_key, results, cache_dir)
 
         # Format results
@@ -271,28 +308,37 @@ def get_model_response(
 
     """
 
+    use_cache = validate_bool(use_cache, "use_cache")
+    prompt = normalize_text(prompt, "prompt", required=True)
     provider, provider_func = _resolve_provider(provider)
-    model, api_key = _resolve_model_and_api_key(provider, model, api_key)
+    model = _resolve_model(provider, model)
+    base_url = resolve_provider_base_url(provider, base_url)
 
     # Check cache
-    if use_cache:
-        cache_key = create_cache_key(prompt, model, provider, base_url)
-        cached_result = load_from_cache(cache_key, cache_dir)
-        if cached_result is not None:
-            write_log(f"Using cached result for {model}")
-            return _to_text_response(cached_result)
+    cache_key = create_cache_key(prompt, model, provider, base_url) if use_cache else None
+    cached_text = _load_valid_cached_response(
+        cache_key=cache_key,
+        cache_dir=cache_dir,
+        normalizer=_to_text_response,
+        response_kind="model",
+    )
+    if cached_text is not None:
+        write_log(f"Using cached result for {model}")
+        return cached_text
+
+    api_key = _resolve_api_key(provider, api_key)
 
     # Call provider function
     try:
         write_log(f"Requesting response from {provider} ({model})")
         result = provider_func(prompt, model, api_key, base_url)
+        text_result = _to_text_response(result)
 
         # Save to cache
-        if use_cache:
-            save_to_cache(cache_key, result, cache_dir)
+        if cache_key is not None:
+            save_to_cache(cache_key, text_result, cache_dir)
 
-        # Convert list to string if needed
-        return _to_text_response(result)
+        return text_result
     except Exception as e:
         error_msg = f"Error getting model response: {e!s}"
         write_log(error_msg, level="error")

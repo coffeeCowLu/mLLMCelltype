@@ -69,6 +69,23 @@ Initialize the unified logger
 )}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{base_dir}}{Directory for log files}
+
+\item{\code{level}}{Minimum log level}
+
+\item{\code{max_size}}{Maximum main log size in megabytes}
+
+\item{\code{max_files}}{Maximum number of retained main logs}
+
+\item{\code{console_output}}{Whether to mirror logs to the console}
+
+\item{\code{json_format}}{Whether main logs use JSON format}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-UnifiedLogger-debug"></a>}}
@@ -79,6 +96,15 @@ Log a debug message
 \if{html}{\out{<div class="r">}}\preformatted{UnifiedLogger$debug(message, context = NULL)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{message}}{Log message}
+
+\item{\code{context}}{Optional structured context}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-UnifiedLogger-info"></a>}}
@@ -89,6 +115,15 @@ Log an info message
 \if{html}{\out{<div class="r">}}\preformatted{UnifiedLogger$info(message, context = NULL)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{message}}{Log message}
+
+\item{\code{context}}{Optional structured context}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-UnifiedLogger-warn"></a>}}
@@ -99,6 +134,15 @@ Log a warning message
 \if{html}{\out{<div class="r">}}\preformatted{UnifiedLogger$warn(message, context = NULL)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{message}}{Log message}
+
+\item{\code{context}}{Optional structured context}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-UnifiedLogger-error"></a>}}
@@ -109,6 +153,15 @@ Log an error message
 \if{html}{\out{<div class="r">}}\preformatted{UnifiedLogger$error(message, context = NULL)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{message}}{Log message}
+
+\item{\code{context}}{Optional structured context}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-UnifiedLogger-log_api_call"></a>}}
@@ -125,6 +178,21 @@ Log API call performance
 )}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{provider}}{Provider identifier}
+
+\item{\code{model}}{Model identifier}
+
+\item{\code{duration}}{Request duration in seconds}
+
+\item{\code{success}}{Whether the request succeeded}
+
+\item{\code{tokens}}{Optional token usage metadata}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-UnifiedLogger-log_api_request_response"></a>}}
@@ -142,6 +210,23 @@ Log complete API request and response for debugging and audit
 )}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{provider}}{Provider identifier}
+
+\item{\code{model}}{Model identifier}
+
+\item{\code{prompt_content}}{Request prompt}
+
+\item{\code{response_content}}{Provider response or error text}
+
+\item{\code{request_metadata}}{Optional request metadata}
+
+\item{\code{response_metadata}}{Optional response metadata}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-UnifiedLogger-log_cache_operation"></a>}}
@@ -152,6 +237,17 @@ Log cache operations
 \if{html}{\out{<div class="r">}}\preformatted{UnifiedLogger$log_cache_operation(operation, key, size = NULL)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{operation}}{Cache operation name}
+
+\item{\code{key}}{Cache key}
+
+\item{\code{size}}{Optional cache object size in bytes}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-UnifiedLogger-log_cluster_progress"></a>}}
@@ -162,6 +258,17 @@ Log cluster annotation progress
 \if{html}{\out{<div class="r">}}\preformatted{UnifiedLogger$log_cluster_progress(cluster_id, stage, progress = NULL)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{cluster_id}}{Cluster identifier}
+
+\item{\code{stage}}{Processing stage}
+
+\item{\code{progress}}{Optional progress value}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-UnifiedLogger-log_discussion"></a>}}
@@ -172,6 +279,17 @@ Log detailed cluster discussion with complete model conversations
 \if{html}{\out{<div class="r">}}\preformatted{UnifiedLogger$log_discussion(cluster_id, event_type, data = NULL)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{cluster_id}}{Cluster identifier}
+
+\item{\code{event_type}}{Discussion event type}
+
+\item{\code{data}}{Optional event payload}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-UnifiedLogger-log_model_response"></a>}}
@@ -188,6 +306,21 @@ Log model response with concise summary in main log and full text in file
 )}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{provider}}{Provider identifier}
+
+\item{\code{model}}{Model identifier}
+
+\item{\code{response}}{Model response}
+
+\item{\code{stage}}{Processing stage}
+
+\item{\code{cluster_id}}{Optional cluster identifier}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-UnifiedLogger-get_performance_summary"></a>}}
@@ -208,6 +341,13 @@ Clean up old log files
 \if{html}{\out{<div class="r">}}\preformatted{UnifiedLogger$cleanup_logs(force = FALSE)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{force}}{Whether to remove every main log file}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-UnifiedLogger-set_level"></a>}}
@@ -218,6 +358,13 @@ Set logging level
 \if{html}{\out{<div class="r">}}\preformatted{UnifiedLogger$set_level(level)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{level}}{Minimum log level}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-UnifiedLogger-clone"></a>}}

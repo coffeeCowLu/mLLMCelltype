@@ -3,7 +3,6 @@
 #' Concrete implementation of BaseAPIProcessor for StepFun models.
 #' Handles StepFun-specific API calls, authentication, and response parsing.
 #'
-#' @importFrom R6 R6Class
 #' @export
 StepFunProcessor <- R6::R6Class("StepFunProcessor",
   inherit = BaseAPIProcessor,
@@ -11,7 +10,7 @@ StepFunProcessor <- R6::R6Class("StepFunProcessor",
   public = list(
     #' @description
     #' Initialize StepFun processor
-    #
+    #' @param base_url Optional custom API endpoint
     initialize = function(base_url = NULL) {
       super$initialize("stepfun", base_url)
     },
@@ -25,10 +24,9 @@ StepFunProcessor <- R6::R6Class("StepFunProcessor",
     
     #' @description
     #' Make API call to StepFun
-    #
-    #
-    #
-    #
+    #' @param chunk_content Prompt text to send
+    #' @param model Model identifier
+    #' @param api_key StepFun API key
     make_api_call = function(chunk_content, model, api_key) {
       private$post_chat_completions_request(
         chunk_content,
@@ -43,9 +41,8 @@ StepFunProcessor <- R6::R6Class("StepFunProcessor",
     
     #' @description
     #' Extract response content from StepFun API response
-    #
-    #
-    #
+    #' @param response HTTP response object
+    #' @param model Model identifier
     extract_response_content = function(response, model) {
       private$extract_chat_completions_content(response, model)
     }

@@ -9,7 +9,7 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, purl=FALSE}
 knitr::opts_chunk$set(
   echo = TRUE,
   message = FALSE,
@@ -28,7 +28,7 @@ This tutorial provides detailed instructions for using mLLMCelltype for cell typ
 
 The main function for cell type annotation with a single model:
 
-```{r}
+```{r, purl=FALSE}
 library(mLLMCelltype)
 
 results <- annotate_cell_types(
@@ -45,7 +45,7 @@ results <- annotate_cell_types(
 
 Function for creating consensus annotations from multiple models through interactive discussion:
 
-```{r eval=FALSE}
+```{r eval=FALSE, purl=FALSE}
 consensus_results <- interactive_consensus_annotation(
   input,                # Original marker gene data (Seurat FindAllMarkers result or list of genes)
   tissue_name = NULL,   # Optional tissue name
@@ -77,7 +77,7 @@ See the main README for detailed recommendations and examples.
 
 For quick exploration or when API usage is a concern:
 
-```{r}
+```{r, purl=FALSE}
 # Load example data
 library(Seurat)
 data("pbmc_small")
@@ -109,7 +109,7 @@ DimPlot(pbmc_small, group.by = "cell_type_claude", label = TRUE)
 
 For publication-quality annotations with uncertainty quantification:
 
-```{r}
+```{r, purl=FALSE}
 # Define multiple models to use
 models <- c(
   "claude-sonnet-4-6",  # Anthropic
@@ -194,7 +194,7 @@ pbmc_small$shannon_entropy <- plyr::mapvalues(
 
 For users with limited API credits or budget constraints:
 
-```{r}
+```{r, purl=FALSE}
 # Set OpenRouter API key
 openrouter_api_key <- Sys.getenv("OPENROUTER_API_KEY")
 
@@ -253,7 +253,7 @@ print(comparison)
 
 For users who prefer working with files:
 
-```{r}
+```{r, purl=FALSE}
 # Save markers to CSV
 write.csv(pbmc_markers, "pbmc_markers.csv", row.names = FALSE)
 
@@ -270,7 +270,7 @@ results <- annotate_cell_types(
 
 For better control over caching behavior:
 
-```{r}
+```{r, purl=FALSE}
 # Note: The annotate_cell_types function does not have built-in caching.
 # If you need caching, you can implement it separately.
 
@@ -339,7 +339,7 @@ Some models may have limitations:
 
 These free models are accessed through OpenRouter and don't consume credits, but may have limitations compared to paid models. Use the `:free` suffix in the model name to access them.
 
-```{r}
+```{r, purl=FALSE}
 # Example of using a free model via OpenRouter
 # First, set your OpenRouter API key
 Sys.setenv(OPENROUTER_API_KEY = "your-openrouter-api-key")
@@ -358,7 +358,7 @@ free_model_results <- annotate_cell_types(
 
 Here's a complete example of integrating mLLMCelltype with a Seurat workflow:
 
-```{r}
+```{r, purl=FALSE}
 library(Seurat)
 library(mLLMCelltype)
 library(ggplot2)
@@ -483,7 +483,7 @@ p1 | p2 | p3
 
 The `top_gene_count` parameter controls how many top marker genes per cluster are used for annotation:
 
-```{r}
+```{r, purl=FALSE}
 # Using more genes (better for well-characterized tissues)
 results_more_genes <- annotate_cell_types(
   input = pbmc_markers,
@@ -507,7 +507,7 @@ results_fewer_genes <- annotate_cell_types(
 
 The `controversy_threshold` parameter in the `interactive_consensus_annotation` function controls which clusters are considered controversial and require discussion:
 
-```{r eval=FALSE}
+```{r eval=FALSE, purl=FALSE}
 # Example of using interactive_consensus_annotation with different controversy thresholds
 # Lower threshold (more clusters will be discussed)
 consensus_results_low_threshold <- interactive_consensus_annotation(

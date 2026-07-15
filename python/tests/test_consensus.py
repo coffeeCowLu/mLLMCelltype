@@ -15,7 +15,7 @@ from mllmcelltype.config import (
 )
 from mllmcelltype.consensus import (
     _build_interactive_result,
-    _call_llm_with_retry,
+    _call_llm_with_fallback,
     _extract_cell_type_via_llm,
     _extract_metrics_from_text,
     _merge_consensus_and_resolved,
@@ -160,7 +160,7 @@ class TestConsensus:
         assert prompts, "provider was never called"
         assert sentinel in prompts[0]
         # The default template's instruction must NOT survive a full override.
-        assert "IN NUMERICAL ORDER" not in prompts[0]
+        assert "IN THE ORDER SHOWN BELOW" not in prompts[0]
 
     def test_default_prompt_template_used_when_none(self):
         """With prompt_template=None the built-in default template is used (no regression)."""
@@ -168,7 +168,7 @@ class TestConsensus:
 
         assert prompts, "provider was never called"
         # A stable phrase from DEFAULT_PROMPT_TEMPLATE.
-        assert "IN NUMERICAL ORDER" in prompts[0]
+        assert "IN THE ORDER SHOWN BELOW" in prompts[0]
 
     @patch("mllmcelltype.consensus.check_consensus")
     @patch("mllmcelltype.consensus.annotate_clusters")
@@ -275,6 +275,16 @@ class TestConsensus:
         )
         assert result == {"provider": "openrouter", "model": "gpt-5.5"}
 
+    def test_interactive_models_reject_known_provider_model_mismatch(self):
+        """Test initial model specs enforce the same provider/model consistency rule."""
+        with pytest.raises(ValueError, match=r"models\[0\] provider/model mismatch"):
+            interactive_consensus_annotation(
+                marker_genes=self.marker_genes_dict,
+                species="human",
+                models=[{"provider": "openai", "model": "claude-sonnet-4-6"}],
+                api_keys={},
+            )
+
     def test_check_consensus_fallback(self):
         """Test check_consensus function fallback behavior."""
         # Test with disagreement to trigger fallback logic
@@ -303,9 +313,9 @@ class TestConsensus:
         assert len(consensus) == 2
         assert len(controversial) >= 0  # May or may not have controversial clusters
 
-    @patch("mllmcelltype.consensus._call_llm_with_retry")
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
     def test_check_consensus_without_api_keys_skips_llm_call(self, mock_call_llm):
-        """Test disagreement path skips LLM call when no API key is available."""
+        """Test conservative synonyms resolve deterministically without an API call."""
         predictions = {
             "model1": {"1": "T cells"},
             "model2": {"1": "T lymphocytes"},
@@ -318,10 +328,46 @@ class TestConsensus:
 
         mock_call_llm.assert_not_called()
         assert consensus["1"] == "T cells"
+        assert cp["1"] == 1.0
+        assert entropy["1"] == 0.0
+
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
+    def test_check_consensus_semantic_synonyms_skip_llm_even_with_api_key(self, mock_call_llm):
+        """Known nomenclature variants should not require a probabilistic adjudicator."""
+        consensus, cp, entropy, controversial = check_consensus(
+            predictions={
+                "model1": {"1": "Natural Killer cells"},
+                "model2": {"1": "NK cells"},
+            },
+            api_keys={"openai": "test-key"},
+        )
+
+        mock_call_llm.assert_not_called()
+        assert consensus["1"] == "Natural Killer cells"
+        assert cp["1"] == 1.0
+        assert entropy["1"] == 0.0
+        assert controversial == []
+
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
+    def test_check_consensus_preserves_biological_qualifiers(self, mock_call_llm):
+        """Subtype and state qualifiers remain separate deterministic vote groups."""
+        consensus, cp, entropy, controversial = check_consensus(
+            predictions={
+                "model1": {"1": "Activated T cells"},
+                "model2": {"1": "Naive T cells"},
+            },
+            api_keys={},
+            consensus_threshold=0.5,
+            entropy_threshold=1.0,
+        )
+
+        mock_call_llm.assert_not_called()
+        assert consensus["1"] == "Activated T cells"
         assert cp["1"] == 0.5
         assert entropy["1"] == 1.0
+        assert controversial == ["1"]
 
-    @patch("mllmcelltype.consensus._call_llm_with_retry")
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
     def test_check_consensus_invalid_llm_payload_falls_back(self, mock_call_llm):
         """Test non-parseable LLM consensus output falls back to deterministic majority."""
         mock_call_llm.return_value = "nonsense output without CP/H"
@@ -339,10 +385,10 @@ class TestConsensus:
         assert cp["1"] == 0.5
         assert entropy["1"] == 1.0
 
-    @patch("mllmcelltype.consensus._call_llm_with_retry")
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
     def test_check_consensus_llm_metrics_unknown_label_uses_majority_fallback(self, mock_call_llm):
         """Test parsed CP/H with Unknown label falls back to deterministic majority label."""
-        mock_call_llm.return_value = "1\n0.88\n0.42\nUnknown"
+        mock_call_llm.return_value = "1\n0.67\n0.92\nUnknown"
         predictions = {
             "model1": {"1": "T cells"},
             "model2": {"1": "T cells"},
@@ -355,10 +401,47 @@ class TestConsensus:
         )
 
         assert consensus["1"] == "T cells"
-        assert cp["1"] == 0.88
-        assert entropy["1"] == 0.42
+        assert cp["1"] == 0.67
+        assert entropy["1"] == 0.92
 
-    @patch("mllmcelltype.consensus._call_llm_with_retry")
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
+    def test_check_consensus_impossible_llm_metrics_use_deterministic_fallback(self, mock_call_llm):
+        """A consensus proportion must correspond to an integer number of votes."""
+        mock_call_llm.return_value = "1\n0.88\n0.42\nT cells"
+
+        consensus, cp, entropy, controversial = check_consensus(
+            predictions={
+                "model1": {"1": "T cells"},
+                "model2": {"1": "T cells"},
+                "model3": {"1": "B cells"},
+            },
+            api_keys={"openai": "test-key"},
+        )
+
+        assert consensus["1"] == "T cells"
+        assert cp["1"] == pytest.approx(2 / 3)
+        assert entropy["1"] == pytest.approx(0.9182958340544896)
+        assert controversial == ["1"]
+
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
+    def test_check_consensus_impossible_entropy_for_unanimous_vote_uses_fallback(
+        self, mock_call_llm
+    ):
+        """Unanimous votes cannot have positive Shannon entropy."""
+        mock_call_llm.return_value = "1\n1.0\n0.5\nT cells"
+
+        _consensus, cp, entropy, _controversial = check_consensus(
+            predictions={
+                "model1": {"1": "T cells"},
+                "model2": {"1": "B cells"},
+            },
+            api_keys={"openai": "test-key"},
+        )
+
+        assert cp["1"] == 0.5
+        assert entropy["1"] == 1.0
+
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
     def test_check_consensus_only_unsupported_provider_keys_skip_llm(self, mock_call_llm):
         """Test unknown provider keys do not trigger LLM calls in consensus flow."""
         predictions = {
@@ -381,17 +464,32 @@ class TestConsensus:
         with pytest.raises(ValueError, match="predictions must be a dict"):
             check_consensus(predictions=["not-a-dict"], api_keys={})  # type: ignore[arg-type]
 
+    @pytest.mark.parametrize(
+        "predictions",
+        [
+            {1: {"1": "T cells"}},
+            {"model": {"1": "T cells"}, " model ": {"1": "T cells"}},
+            {"model": {1: "T cells", "1": "B cells"}},
+            {"model": {"1": 123}},
+        ],
+    )
+    def test_check_consensus_rejects_ambiguous_prediction_identities(self, predictions):
+        """Consensus votes cannot depend on key coercion or dictionary insertion order."""
+        with pytest.raises(ValueError):
+            check_consensus(predictions=predictions, api_keys={})
+
     @patch("mllmcelltype.consensus.get_model_response")
-    def test_call_llm_with_retry_primary_missing_key_uses_supported_fallback(self, mock_get_model):
-        """Test retry helper ignores unsupported keys and uses first supported fallback."""
+    def test_call_llm_with_fallback_primary_missing_key_uses_supported_fallback(
+        self, mock_get_model
+    ):
+        """Test fallback helper ignores unsupported keys and uses a supported fallback."""
         mock_get_model.return_value = "fallback-response"
 
-        response = _call_llm_with_retry(
+        response = _call_llm_with_fallback(
             prompt="test prompt",
             provider="openai",
             model="gpt-5.5",
             api_key=None,
-            max_retries=1,
             api_keys={"custom": "custom-key", "anthropic": "anth-key"},
         )
 
@@ -400,8 +498,8 @@ class TestConsensus:
         assert mock_get_model.call_args.kwargs["provider"] == "anthropic"
 
     @patch("mllmcelltype.consensus.get_model_response")
-    def test_call_llm_with_retry_import_error_on_primary_uses_fallback(self, mock_get_model):
-        """Test ImportError on primary provider short-circuits retries and tries fallback."""
+    def test_call_llm_with_fallback_import_error_on_primary_uses_fallback(self, mock_get_model):
+        """Test ImportError on the primary provider proceeds to the fallback."""
 
         def side_effect(**kwargs):
             if kwargs["provider"] == "openai":
@@ -410,12 +508,11 @@ class TestConsensus:
 
         mock_get_model.side_effect = side_effect
 
-        response = _call_llm_with_retry(
+        response = _call_llm_with_fallback(
             prompt="test prompt",
             provider="openai",
             model="gpt-5.5",
             api_key="openai-key",
-            max_retries=3,
             api_keys={"openai": "openai-key", "anthropic": "anth-key"},
         )
 
@@ -423,7 +520,33 @@ class TestConsensus:
         assert mock_get_model.call_count == 2
 
     @patch("mllmcelltype.consensus.get_model_response")
-    def test_call_llm_with_retry_ignores_explicit_unsupported_fallback_provider(
+    def test_call_llm_with_fallback_runtime_failure_calls_each_provider_once(self, mock_get_model):
+        """Provider adapters own retries, so orchestration calls each target once."""
+
+        def side_effect(**kwargs):
+            if kwargs["provider"] == "openai":
+                raise RuntimeError("primary timeout")
+            return "fallback-ok"
+
+        mock_get_model.side_effect = side_effect
+
+        response = _call_llm_with_fallback(
+            prompt="test prompt",
+            provider="openai",
+            model="gpt-5.5",
+            api_key="openai-key",
+            api_keys={"openai": "openai-key", "anthropic": "anth-key"},
+        )
+
+        assert response == "fallback-ok"
+        assert mock_get_model.call_count == 2
+        assert [call.kwargs["provider"] for call in mock_get_model.call_args_list] == [
+            "openai",
+            "anthropic",
+        ]
+
+    @patch("mllmcelltype.consensus.get_model_response")
+    def test_call_llm_with_fallback_ignores_explicit_unsupported_fallback_provider(
         self, mock_get_model
     ):
         """Test explicit unsupported fallback provider is ignored instead of called."""
@@ -435,12 +558,11 @@ class TestConsensus:
 
         mock_get_model.side_effect = side_effect
 
-        response = _call_llm_with_retry(
+        response = _call_llm_with_fallback(
             prompt="test prompt",
             provider="openai",
             model="gpt-5.5",
             api_key="openai-key",
-            max_retries=1,
             fallback_provider="custom",
             fallback_model="custom-model",
             api_keys={"openai": "openai-key", "custom": "custom-key"},
@@ -465,8 +587,8 @@ class TestConsensus:
         assert cp["1"] == 0.0
         assert entropy["1"] == 0.0
 
-    def test_check_consensus_blank_annotations_with_zero_thresholds_not_controversial(self):
-        """Test blank-only clusters are not marked controversial when thresholds are both zero."""
+    def test_check_consensus_blank_annotations_remain_controversial_at_zero_thresholds(self):
+        """No prediction evidence cannot become consensus through permissive thresholds."""
         predictions = {
             "model1": {"1": "   "},
             "model2": {"1": None},  # type: ignore[dict-item]
@@ -480,7 +602,24 @@ class TestConsensus:
         assert consensus["1"] == "Unknown"
         assert cp["1"] == 0.0
         assert entropy["1"] == 0.0
-        assert controversial == []
+        assert controversial == ["1"]
+
+    def test_check_consensus_tied_vote_is_controversial_at_half_threshold(self):
+        """A 50/50 vote has no unique majority even when the numeric threshold is 0.5."""
+        consensus, cp, entropy, controversial = check_consensus(
+            predictions={
+                "first": {"1": "B cells"},
+                "second": {"1": "T cells"},
+            },
+            api_keys={},
+            consensus_threshold=0.5,
+            entropy_threshold=1.0,
+        )
+
+        assert consensus["1"] == "B cells"
+        assert cp["1"] == 0.5
+        assert entropy["1"] == 1.0
+        assert controversial == ["1"]
 
     def test_check_consensus_skips_invalid_model_prediction_payloads(self):
         """Test malformed model payloads are skipped instead of crashing."""
@@ -528,6 +667,21 @@ class TestConsensus:
         """Test non-dict discussion responses fail fast with clear error."""
         with pytest.raises(ValueError, match="round_responses must be a dict"):
             check_consensus_for_discussion_round(round_responses=["invalid"], api_keys={})  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize(
+        "round_responses",
+        [
+            {1: "T cells"},
+            {"model": "T cells", " model ": "B cells"},
+            {"model": 123},
+        ],
+    )
+    def test_check_consensus_for_discussion_round_rejects_ambiguous_responses(
+        self, round_responses
+    ):
+        """Discussion participant identities and response text require explicit types."""
+        with pytest.raises(ValueError):
+            check_consensus_for_discussion_round(round_responses=round_responses, api_keys={})
 
     @patch("mllmcelltype.consensus._extract_cell_type_via_llm")
     def test_check_consensus_for_discussion_round_single_response(self, mock_extract):
@@ -591,10 +745,10 @@ class TestConsensus:
         assert result["majority_prediction"] == "T cells"
         mock_extract.assert_called_once()
 
-    @patch("mllmcelltype.consensus._call_llm_with_retry")
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
     def test_check_consensus_for_discussion_round_multi_response_success(self, mock_call_llm):
         """Test multi-response round parses LLM consensus metrics."""
-        mock_call_llm.return_value = "1\n0.90\n0.20\nT cells"
+        mock_call_llm.return_value = "1\n1.0\n0.0\nT cells"
         result = check_consensus_for_discussion_round(
             round_responses={"modelA": "T cells", "modelB": "CD4 T cells"},
             api_keys={"openai": "test-key"},
@@ -602,11 +756,61 @@ class TestConsensus:
             entropy_threshold=1.0,
         )
         assert result["reached"] is True
-        assert result["consensus_proportion"] == 0.9
-        assert result["entropy"] == 0.2
+        assert result["consensus_proportion"] == 1.0
+        assert result["entropy"] == 0.0
         assert result["majority_prediction"] == "T cells"
 
-    @patch("mllmcelltype.consensus._call_llm_with_retry")
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
+    def test_discussion_consensus_respects_negative_llm_indicator(self, mock_call_llm):
+        """A line-1 rejection cannot be overridden by otherwise passing metrics."""
+        mock_call_llm.return_value = "0\n1.0\n0.0\nT cells"
+
+        result = check_consensus_for_discussion_round(
+            round_responses={"modelA": "T cells", "modelB": "CD4 T cells"},
+            api_keys={"openai": "test-key"},
+            consensus_threshold=0.7,
+            entropy_threshold=1.0,
+        )
+
+        assert result["reached"] is False
+
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
+    def test_discussion_consensus_impossible_metrics_use_structured_fallback(self, mock_call_llm):
+        """Discussion metrics must correspond to a realizable vote partition."""
+        mock_call_llm.return_value = "1\n0.90\n0.20\nT cells"
+
+        result = check_consensus_for_discussion_round(
+            round_responses={"modelA": "T cells", "modelB": "B cells"},
+            api_keys={"openai": "test-key"},
+            consensus_threshold=0.5,
+            entropy_threshold=1.0,
+        )
+
+        assert result == {
+            "reached": False,
+            "consensus_proportion": 0.5,
+            "entropy": 1.0,
+            "majority_prediction": "T cells",
+        }
+
+    @pytest.mark.parametrize(
+        ("kwargs", "message"),
+        [
+            ({"consensus_threshold": float("nan")}, "consensus_threshold must be"),
+            ({"consensus_threshold": True}, "consensus_threshold must be"),
+            ({"entropy_threshold": -1}, "entropy_threshold must be"),
+        ],
+    )
+    def test_check_consensus_validates_numeric_controls(self, kwargs, message):
+        """Consensus controls reject booleans, non-finite values, and invalid ranges."""
+        with pytest.raises(ValueError, match=message):
+            check_consensus(
+                predictions={"m1": {"1": "T cells"}, "m2": {"1": "T cells"}},
+                api_keys={},
+                **kwargs,
+            )
+
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
     def test_check_consensus_for_discussion_round_llm_failure_returns_default(self, mock_call_llm):
         """Test multi-response round falls back cleanly when LLM fails."""
         mock_call_llm.return_value = None
@@ -620,7 +824,7 @@ class TestConsensus:
         assert result["reached"] is False
         assert result["majority_prediction"] == "Unknown"
 
-    @patch("mllmcelltype.consensus._call_llm_with_retry")
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
     def test_check_consensus_for_discussion_round_llm_failure_plain_label_lines_use_fallback_majority(
         self, mock_call_llm
     ):
@@ -636,7 +840,7 @@ class TestConsensus:
         assert result["consensus_proportion"] == pytest.approx(2 / 3)
         assert result["reached"] is False
 
-    @patch("mllmcelltype.consensus._call_llm_with_retry")
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
     def test_check_consensus_for_discussion_round_llm_failure_multiline_plain_label_uses_fallback(
         self, mock_call_llm
     ):
@@ -657,7 +861,7 @@ class TestConsensus:
         assert result["reached"] is False
 
     @patch("mllmcelltype.consensus._extract_cell_type_via_llm")
-    @patch("mllmcelltype.consensus._call_llm_with_retry")
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
     def test_check_consensus_for_discussion_round_filters_unknown_like_responses(
         self, mock_call_llm, mock_extract
     ):
@@ -672,7 +876,7 @@ class TestConsensus:
         mock_call_llm.assert_not_called()
         mock_extract.assert_not_called()
 
-    @patch("mllmcelltype.consensus._call_llm_with_retry")
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
     def test_check_consensus_for_discussion_round_llm_failure_uses_structured_label_fallback(
         self, mock_call_llm
     ):
@@ -692,7 +896,7 @@ class TestConsensus:
         assert result["consensus_proportion"] == pytest.approx(2 / 3)
         assert result["reached"] is False
 
-    @patch("mllmcelltype.consensus._call_llm_with_retry")
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
     def test_check_consensus_for_discussion_round_llm_failure_claim_fullwidth_colon(
         self, mock_call_llm
     ):
@@ -700,8 +904,8 @@ class TestConsensus:
         mock_call_llm.return_value = None
         result = check_consensus_for_discussion_round(
             round_responses={
-                "m1": "CLAIM\uFF1A[T cells]\nGROUNDS: CD3D",
-                "m2": "CLAIM\uFF1AT cells\nGROUNDS: IL7R",
+                "m1": "CLAIM\uff1a[T cells]\nGROUNDS: CD3D",
+                "m2": "CLAIM\uff1aT cells\nGROUNDS: IL7R",
             },
             api_keys={"openai": "test-key"},
             consensus_threshold=0.7,
@@ -712,7 +916,7 @@ class TestConsensus:
         assert result["entropy"] == 0.0
         assert result["reached"] is True
 
-    @patch("mllmcelltype.consensus._call_llm_with_retry")
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
     def test_check_consensus_for_discussion_round_llm_failure_single_extracted_label(
         self, mock_call_llm
     ):
@@ -729,12 +933,12 @@ class TestConsensus:
         assert result["consensus_proportion"] == DEFAULT_FALLBACK_CONSENSUS_PROPORTION
         assert result["entropy"] == DEFAULT_FALLBACK_ENTROPY
 
-    @patch("mllmcelltype.consensus._call_llm_with_retry")
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
     def test_check_consensus_for_discussion_round_llm_metrics_unknown_label_uses_fallback_label(
         self, mock_call_llm
     ):
         """Test parsed CP/H with Unknown label uses structured fallback label."""
-        mock_call_llm.return_value = "1\n0.80\n0.20\nUnknown"
+        mock_call_llm.return_value = "1\n0.67\n0.92\nUnknown"
         result = check_consensus_for_discussion_round(
             round_responses={
                 "m1": "CELL TYPE: T cells\nGROUNDS: CD3D",
@@ -744,8 +948,8 @@ class TestConsensus:
             api_keys={"openai": "test-key"},
         )
         assert result["majority_prediction"] == "T cells"
-        assert result["consensus_proportion"] == 0.8
-        assert result["entropy"] == 0.2
+        assert result["consensus_proportion"] == 0.67
+        assert result["entropy"] == 0.92
 
     def test_extract_metrics_from_text_standard_format(self):
         """Test standard 4-line format extraction."""
@@ -761,6 +965,16 @@ class TestConsensus:
         cp, h, label = _extract_metrics_from_text(text)
         assert cp == 0.8
         assert h == 0.2
+        assert label is None
+
+    def test_extract_metrics_from_json_rejects_nonfinite_entropy_and_nonstring_label(self):
+        """Impossible JSON metrics and structured non-text labels are not trusted."""
+        text = '{"reached": true, "cp": 0.8, "entropy": Infinity, "label": ["T cells"]}'
+
+        cp, h, label = _extract_metrics_from_text(text)
+
+        assert cp == 0.8
+        assert h is None
         assert label is None
 
     def test_extract_metrics_from_text_flexible_format(self):
@@ -807,7 +1021,7 @@ class TestConsensus:
     def test_extract_metrics_from_text_claim_fullwidth_colon(self):
         """Test CLAIM fullwidth-colon format extracts a clean label."""
         cp, h, label = _extract_metrics_from_text(
-            "Consensus Proportion: 0.70\nEntropy: 0.20\nCLAIM\uFF1A[Myeloid cells]"
+            "Consensus Proportion: 0.70\nEntropy: 0.20\nCLAIM\uff1a[Myeloid cells]"
         )
         assert cp == 0.7
         assert h == 0.2
@@ -820,7 +1034,7 @@ class TestConsensus:
         assert h is None
         assert label is None
 
-    @patch("mllmcelltype.consensus._call_llm_with_retry")
+    @patch("mllmcelltype.consensus._call_llm_with_fallback")
     def test_extract_cell_type_via_llm_rejects_overlong_label(self, mock_call_llm):
         """Test extraction rejects implausibly long labels."""
         mock_call_llm.return_value = "A" * 120
@@ -1166,7 +1380,9 @@ class TestConsensus:
         )
 
         assert len(result["model_annotations"]) == 2
-        called_providers = {call.kwargs["provider"] for call in mock_annotate_clusters.call_args_list}
+        called_providers = {
+            call.kwargs["provider"] for call in mock_annotate_clusters.call_args_list
+        }
         assert called_providers == {"openai", "anthropic"}
         assert any(call.args[0] == "anthropic" for call in mock_load_api_key.call_args_list)
 
@@ -1263,7 +1479,9 @@ class TestConsensus:
         )
 
         assert len(result["model_annotations"]) == 2
-        called_providers = {call.kwargs["provider"] for call in mock_annotate_clusters.call_args_list}
+        called_providers = {
+            call.kwargs["provider"] for call in mock_annotate_clusters.call_args_list
+        }
         assert called_providers == {"openai", "anthropic"}
 
     @patch("mllmcelltype.consensus.annotate_clusters")
@@ -1532,7 +1750,9 @@ class TestConsensus:
             }
 
         mock_check_round_consensus.side_effect = check_round_side_effect
-        mock_load_api_key.side_effect = lambda provider: "anth-key" if provider == "anthropic" else None
+        mock_load_api_key.side_effect = (
+            lambda provider: "anth-key" if provider == "anthropic" else None
+        )
 
         results, _history, cp, entropy = process_controversial_clusters(
             marker_genes={"1": ["CD3D"]},
@@ -1610,6 +1830,7 @@ class TestConsensus:
         mock_check_round_consensus,
     ):
         """Test single valid responder path uses round-consensus extraction output."""
+
         def response_side_effect(**kwargs):
             if kwargs["provider"] == "openai":
                 return "Likely CD4+ T cells"
@@ -2037,6 +2258,67 @@ class TestConsensus:
                 use_cache=False,
             )
 
+    @pytest.mark.parametrize(
+        ("field_name", "value", "message"),
+        [
+            ("species", "   ", "species must be a non-empty string"),
+            ("species", 123, "species must be a string"),
+            ("tissue", 123, "tissue must be a string"),
+            ("additional_context", ["healthy"], "additional_context must be a string"),
+        ],
+    )
+    def test_interactive_consensus_annotation_validates_prompt_context_before_model_calls(
+        self,
+        field_name,
+        value,
+        message,
+    ):
+        """User input errors must not be downgraded to provider failures."""
+        kwargs = {
+            "marker_genes": {"1": ["CD3D"]},
+            "species": "human",
+            "models": [{"provider": "openai", "model": "gpt-5.5"}],
+            "api_keys": {"openai": "test-key"},
+            "use_cache": False,
+            field_name: value,
+        }
+
+        with (
+            patch("mllmcelltype.consensus.annotate_clusters") as mock_annotate,
+            pytest.raises(ValueError, match=message),
+        ):
+            interactive_consensus_annotation(**kwargs)
+
+        mock_annotate.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("prompt_template", "message"),
+        [
+            (123, "prompt_template must be a string or None"),
+            ("Custom {unsupported}", "Invalid prompt_template placeholder"),
+        ],
+    )
+    def test_interactive_consensus_annotation_validates_template_before_model_calls(
+        self,
+        prompt_template,
+        message,
+    ):
+        """Template configuration errors surface before provider error isolation."""
+        with (
+            patch("mllmcelltype.consensus.annotate_clusters") as mock_annotate,
+            pytest.raises(ValueError, match=message),
+        ):
+            interactive_consensus_annotation(
+                marker_genes={"1": ["CD3D"]},
+                species="human",
+                models=[{"provider": "openai", "model": "gpt-5.5"}],
+                api_keys={"openai": "test-key"},
+                prompt_template=prompt_template,
+                use_cache=False,
+            )
+
+        mock_annotate.assert_not_called()
+
     def test_interactive_consensus_annotation_invalid_provider_type_in_dict(self):
         """Test invalid provider type in model dict fails early."""
         with pytest.raises(ValueError, match="'provider' must be a string"):
@@ -2203,6 +2485,34 @@ class TestConsensus:
 
     @patch("mllmcelltype.consensus.annotate_clusters")
     @patch("mllmcelltype.consensus.check_consensus")
+    def test_interactive_consensus_annotation_clusters_to_analyze_skips_missing_ids(
+        self,
+        mock_check_consensus,
+        mock_annotate_clusters,
+    ):
+        """Missing selector values are ignored rather than converted to literal cluster IDs."""
+        mock_annotate_clusters.return_value = {"1": "T cells"}
+        mock_check_consensus.return_value = (
+            {"1": "T cells"},
+            {"1": 1.0},
+            {"1": 0.0},
+            [],
+        )
+
+        interactive_consensus_annotation(
+            marker_genes={"1": ["CD3D"], "<NA>": ["MS4A1"]},
+            species="human",
+            models=[{"provider": "openai", "model": "gpt-5.5"}],
+            api_keys={"openai": "test-key"},
+            clusters_to_analyze=[pd.NA, "1"],
+            use_cache=False,
+        )
+
+        filtered_marker_genes = mock_annotate_clusters.call_args.kwargs["marker_genes"]
+        assert filtered_marker_genes == {"1": ["CD3D"]}
+
+    @patch("mllmcelltype.consensus.annotate_clusters")
+    @patch("mllmcelltype.consensus.check_consensus")
     @patch("mllmcelltype.consensus.load_api_key")
     def test_interactive_consensus_annotation_consensus_provider_key_autoloaded(
         self,
@@ -2211,7 +2521,9 @@ class TestConsensus:
         mock_annotate_clusters,
     ):
         """Test consensus model provider key is auto-loaded when missing from api_keys."""
-        mock_load_api_key.side_effect = lambda provider: "anth-key" if provider == "anthropic" else None
+        mock_load_api_key.side_effect = (
+            lambda provider: "anth-key" if provider == "anthropic" else None
+        )
         mock_annotate_clusters.return_value = {"1": "T cells"}
         mock_check_consensus.return_value = (
             {"1": "T cells"},

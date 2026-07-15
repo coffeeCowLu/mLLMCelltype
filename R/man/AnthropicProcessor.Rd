@@ -22,6 +22,7 @@ Handles Anthropic-specific API calls, authentication, and response parsing.
 \item \href{#method-AnthropicProcessor-get_default_api_url}{\code{AnthropicProcessor$get_default_api_url()}}
 \item \href{#method-AnthropicProcessor-make_api_call}{\code{AnthropicProcessor$make_api_call()}}
 \item \href{#method-AnthropicProcessor-extract_response_content}{\code{AnthropicProcessor$extract_response_content()}}
+\item \href{#method-AnthropicProcessor-extract_usage}{\code{AnthropicProcessor$extract_usage()}}
 \item \href{#method-AnthropicProcessor-clone}{\code{AnthropicProcessor$clone()}}
 }
 }
@@ -42,6 +43,13 @@ Initialize Anthropic processor
 \if{html}{\out{<div class="r">}}\preformatted{AnthropicProcessor$new(base_url = NULL)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{base_url}}{Optional custom API endpoint}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-AnthropicProcessor-get_default_api_url"></a>}}
@@ -62,6 +70,17 @@ Make API call to Anthropic
 \if{html}{\out{<div class="r">}}\preformatted{AnthropicProcessor$make_api_call(chunk_content, model, api_key)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{chunk_content}}{Prompt text to send}
+
+\item{\code{model}}{Model identifier}
+
+\item{\code{api_key}}{Anthropic API key}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-AnthropicProcessor-extract_response_content"></a>}}
@@ -72,6 +91,32 @@ Extract response content from Anthropic API response
 \if{html}{\out{<div class="r">}}\preformatted{AnthropicProcessor$extract_response_content(response, model)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{response}}{HTTP response object}
+
+\item{\code{model}}{Model identifier}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-AnthropicProcessor-extract_usage"></a>}}
+\if{latex}{\out{\hypertarget{method-AnthropicProcessor-extract_usage}{}}}
+\subsection{Method \code{extract_usage()}}{
+Extract normalized Anthropic token usage
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{AnthropicProcessor$extract_usage(response)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{response}}{HTTP response object}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-AnthropicProcessor-clone"></a>}}

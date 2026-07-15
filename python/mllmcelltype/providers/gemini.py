@@ -6,7 +6,22 @@ import time
 from typing import Any
 
 from ..logger import write_log
-from .common import UsageSink, ensure_api_key
+from .common import (
+    NonRetryableProviderError,
+    UsageSink,
+    capture_usage,
+    ensure_api_key,
+    is_retryable_http_status,
+    is_retryable_transport_error,
+    normalize_optional_base_url,
+    normalize_response_lines,
+    normalize_usage,
+    prepare_usage_sink,
+)
+
+GEMINI_MAX_ATTEMPTS = 3
+GEMINI_RETRY_DELAY_SECONDS = 2
+GEMINI_TIMEOUT_MILLISECONDS = 30_000
 
 
 def extract_gemini_usage(response: Any) -> dict[str, Any] | None:
@@ -19,27 +34,28 @@ def extract_gemini_usage(response: Any) -> dict[str, Any] | None:
     metadata = getattr(response, "usage_metadata", None)
     if metadata is None:
         return None
-    return {
-        "prompt_tokens": getattr(metadata, "prompt_token_count", None),
-        "completion_tokens": getattr(metadata, "candidates_token_count", None),
-        "total_tokens": getattr(metadata, "total_token_count", None),
-    }
+    return normalize_usage(
+        {
+            "prompt_tokens": getattr(metadata, "prompt_token_count", None),
+            "completion_tokens": getattr(metadata, "candidates_token_count", None),
+            "total_tokens": getattr(metadata, "total_token_count", None),
+        }
+    )
 
 
 def _parse_gemini_response(response: Any) -> list[str]:
     """Parse Gemini SDK response into cleaned non-empty lines."""
     response_text = getattr(response, "text", None)
     if response_text is None:
-        raise ValueError("Gemini response missing text content")
-    if not isinstance(response_text, str):
-        write_log("Unexpected non-string response content from Gemini, coercing to string", level="warning")
-        response_text = str(response_text)
+        raise NonRetryableProviderError("Gemini response missing text content")
+    return normalize_response_lines(response_text, "Gemini")
 
-    return [
-        line.strip().rstrip(",")
-        for line in response_text.strip().split("\n")
-        if line.strip().rstrip(",")
-    ]
+
+def _is_retryable_gemini_error(error: Exception, api_error_type: type[Exception]) -> bool:
+    """Apply the shared transient-failure policy to Google SDK errors."""
+    if isinstance(error, api_error_type):
+        return is_retryable_http_status(getattr(error, "code", None))
+    return is_retryable_transport_error(error)
 
 
 def process_gemini(
@@ -55,7 +71,7 @@ def process_gemini(
         prompt: The prompt to send to the API
         model: The model name (e.g., 'gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite')
         api_key: Google API key
-        base_url: Optional custom base URL (Note: Gemini uses SDK, base_url may not be applicable)
+        base_url: Optional custom base URL passed through Google SDK HTTP options
         usage_sink: Optional dict populated in place with token usage.
 
     Returns:
@@ -69,6 +85,7 @@ def process_gemini(
     try:
         from google import genai
         from google.genai import types
+        from google.genai.errors import APIError
     except ImportError as e:
         raise ImportError(
             "Gemini provider requires 'google-genai' package. "
@@ -77,25 +94,21 @@ def process_gemini(
 
     write_log(f"Starting Gemini API request with model: {model}")
 
-    # Warn if base_url is provided (Gemini SDK doesn't support custom URLs)
-    if isinstance(base_url, str) and base_url.strip():
-        write_log(
-            "base_url parameter is ignored for Gemini (SDK doesn't support custom URLs)",
-            level="warning",
-        )
-
     api_key = ensure_api_key(api_key, "Google")
+    normalized_base_url = normalize_optional_base_url(base_url, "Gemini")
+    prepare_usage_sink(usage_sink)
 
-    # Initialize the client
-    client = genai.Client(api_key=api_key)
+    http_options_kwargs: dict[str, Any] = {"timeout": GEMINI_TIMEOUT_MILLISECONDS}
+    if normalized_base_url:
+        http_options_kwargs["base_url"] = normalized_base_url
+        write_log(f"Using custom base URL: {normalized_base_url}")
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(**http_options_kwargs),
+    )
     write_log(f"Using model: {model}")
 
-    # Set up retry parameters
-    max_retries = 3
-    retry_delay = 2
-
-    # Try to generate content with retries
-    for attempt in range(max_retries):
+    for attempt in range(GEMINI_MAX_ATTEMPTS):
         try:
             write_log("Sending API request...")
 
@@ -107,26 +120,26 @@ def process_gemini(
             )
 
             result = _parse_gemini_response(response)
-            if usage_sink is not None:
-                usage_sink.clear()
-                usage = extract_gemini_usage(response)
-                if usage is not None:
-                    usage_sink.update(usage)
+            capture_usage(response, usage_sink, extract_gemini_usage)
             write_log(f"Got response with {len(result)} lines")
             write_log(f"Raw response from Gemini:\n{result}", level="debug")
             return result
 
-        except ValueError:
-            # Response shape/content errors are deterministic; fail fast.
-            raise
-        except Exception as e:
+        except Exception as error:
+            if not _is_retryable_gemini_error(error, APIError):
+                raise
             write_log(
-                f"Error during API call (attempt {attempt + 1}/{max_retries}): {e!s}",
+                f"Error during API call (attempt {attempt + 1}/{GEMINI_MAX_ATTEMPTS}): {error!s}",
                 level="error",
             )
-            if attempt < max_retries - 1:
-                wait_time = retry_delay * (2**attempt)
-                write_log(f"Waiting {wait_time} seconds before retrying...", level="warning")
+            if attempt < GEMINI_MAX_ATTEMPTS - 1:
+                wait_time = GEMINI_RETRY_DELAY_SECONDS * (2**attempt)
+                rate_limited = isinstance(error, APIError) and getattr(error, "code", None) == 429
+                prefix = "Rate limited. " if rate_limited else ""
+                write_log(
+                    f"{prefix}Waiting {wait_time} seconds before retrying...",
+                    level="warning",
+                )
                 time.sleep(wait_time)
             else:
                 raise

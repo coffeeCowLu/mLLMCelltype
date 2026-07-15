@@ -17,11 +17,13 @@ class ProviderConfig:
         default_model: The default model to use when none is specified
         api_key_env_var: Environment variable name for the API key
         default_api_url: Default API endpoint URL
+        model_prefixes: Prefixes used to infer this provider from a model name
     """
 
     default_model: str
     api_key_env_var: str
     default_api_url: str
+    model_prefixes: tuple[str, ...] = ()
 
 
 # All provider configurations - Single Source of Truth
@@ -31,46 +33,55 @@ PROVIDER_CONFIGS: dict[str, ProviderConfig] = {
         default_model="gpt-5.5",
         api_key_env_var="OPENAI_API_KEY",
         default_api_url="https://api.openai.com/v1/chat/completions",
+        model_prefixes=("gpt-", "o1", "o3", "o4", "chatgpt-", "codex-"),
     ),
     "anthropic": ProviderConfig(
         default_model="claude-opus-4-7",
         api_key_env_var="ANTHROPIC_API_KEY",
         default_api_url="https://api.anthropic.com/v1/messages",
+        model_prefixes=("claude-",),
     ),
     "deepseek": ProviderConfig(
         default_model="deepseek-v4-flash",
         api_key_env_var="DEEPSEEK_API_KEY",
         default_api_url="https://api.deepseek.com/v1/chat/completions",
+        model_prefixes=("deepseek-",),
     ),
     "gemini": ProviderConfig(
         default_model="gemini-3.1-pro-preview",
         api_key_env_var="GEMINI_API_KEY",
         default_api_url="https://generativelanguage.googleapis.com/v1beta/models",
+        model_prefixes=("gemini-",),
     ),
     "qwen": ProviderConfig(
         default_model="qwen3.6-plus",
         api_key_env_var="QWEN_API_KEY",
         default_api_url="https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions",
+        model_prefixes=("qwen", "qwq-"),
     ),
     "stepfun": ProviderConfig(
         default_model="step-3.5-flash",
         api_key_env_var="STEPFUN_API_KEY",
         default_api_url="https://api.stepfun.com/v1/chat/completions",
+        model_prefixes=("step-",),
     ),
     "zhipu": ProviderConfig(
         default_model="glm-5.1",
         api_key_env_var="ZHIPU_API_KEY",
         default_api_url="https://api.z.ai/api/paas/v4/chat/completions",
+        model_prefixes=("glm-", "chatglm"),
     ),
     "minimax": ProviderConfig(
         default_model="MiniMax-M2.7",
         api_key_env_var="MINIMAX_API_KEY",
         default_api_url="https://api.minimax.io/v1/chat/completions",
+        model_prefixes=("minimax-",),
     ),
     "grok": ProviderConfig(
         default_model="grok-4.3",
         api_key_env_var="GROK_API_KEY",
         default_api_url="https://api.x.ai/v1/chat/completions",
+        model_prefixes=("grok-",),
     ),
     "openrouter": ProviderConfig(
         default_model="openai/gpt-5.5",
@@ -78,8 +89,6 @@ PROVIDER_CONFIGS: dict[str, ProviderConfig] = {
         default_api_url="https://openrouter.ai/api/v1/chat/completions",
     ),
 }
-
-
 
 # Default fallback values when parsing fails or result is inconclusive
 # These conservative values ensure discussion will be triggered

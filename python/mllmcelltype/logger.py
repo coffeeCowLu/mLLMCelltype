@@ -6,15 +6,9 @@ import datetime
 import logging
 import os
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-
-# Create logger
 logger = logging.getLogger("llmcelltype")
+if not any(isinstance(handler, logging.NullHandler) for handler in logger.handlers):
+    logger.addHandler(logging.NullHandler())
 
 # Default log directory
 DEFAULT_LOG_DIR = os.path.join(os.path.expanduser("~"), ".mllmcelltype", "logs")
@@ -22,6 +16,36 @@ DEFAULT_LOG_DIR = os.path.join(os.path.expanduser("~"), ".mllmcelltype", "logs")
 # Track initialization state for idempotent setup
 _logging_initialized = False
 _current_log_file: str | None = None
+LOG_LEVELS = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
+}
+LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+def _resolve_log_level(log_level: str) -> tuple[str, int]:
+    """Normalize a documented log level to its canonical name and value."""
+    if not isinstance(log_level, str):
+        raise ValueError(f"Invalid log level: {log_level!r}")
+    level_name = log_level.strip().upper()
+    level = LOG_LEVELS.get(level_name)
+    if level is None:
+        raise ValueError(
+            f"Invalid log level: {log_level!r}. Must be one of: {', '.join(LOG_LEVELS)}"
+        )
+    return level_name, level
+
+
+def _remove_file_handlers() -> None:
+    """Close and detach every file handler owned by the package logger."""
+    for handler in logger.handlers[:]:
+        if isinstance(handler, logging.FileHandler):
+            handler.close()
+            logger.removeHandler(handler)
 
 
 def setup_logging(log_dir: str | None = None, log_level: str = "INFO") -> None:
@@ -42,14 +66,7 @@ def setup_logging(log_dir: str | None = None, log_level: str = "INFO") -> None:
     if log_dir is None:
         log_dir = DEFAULT_LOG_DIR
 
-    # Set log level
-    valid_levels = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
-    level_name = log_level.upper()
-    if level_name not in valid_levels:
-        raise ValueError(
-            f"Invalid log level: {log_level!r}. Must be one of: {', '.join(valid_levels)}"
-        )
-    level = getattr(logging, level_name)
+    _, level = _resolve_log_level(log_level)
 
     # If already initialized with the same directory, just update level
     if _logging_initialized:
@@ -57,13 +74,11 @@ def setup_logging(log_dir: str | None = None, log_level: str = "INFO") -> None:
         if current_dir == log_dir:
             logger.setLevel(level)
             for handler in logger.handlers:
-                handler.setLevel(level)
+                if isinstance(handler, logging.FileHandler):
+                    handler.setLevel(level)
             return
         # Different directory requested: clean up old handler and fall through
-        for handler in logger.handlers[:]:
-            if isinstance(handler, logging.FileHandler):
-                handler.close()
-                logger.removeHandler(handler)
+        _remove_file_handlers()
 
     # Create log directory if it doesn't exist
     os.makedirs(log_dir, exist_ok=True)
@@ -73,19 +88,12 @@ def setup_logging(log_dir: str | None = None, log_level: str = "INFO") -> None:
     log_file = os.path.join(log_dir, f"llmcelltype_{timestamp}.log")
 
     # Remove any existing file handlers to prevent duplication
-    for handler in logger.handlers[:]:  # Use slice copy to safely remove during iteration
-        if isinstance(handler, logging.FileHandler):
-            handler.close()
-            logger.removeHandler(handler)
+    _remove_file_handlers()
 
     # Add file handler
     file_handler = logging.FileHandler(log_file)
     file_handler.setLevel(level)
-    file_handler.setFormatter(
-        logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s", "%Y-%m-%d %H:%M:%S"
-        )
-    )
+    file_handler.setFormatter(logging.Formatter(LOG_FORMAT, LOG_DATE_FORMAT))
 
     # Add handler to logger
     logger.addHandler(file_handler)
@@ -106,11 +114,8 @@ def write_log(message: str, level: str = "INFO") -> None:
         level: Log level (debug, info, warning, error, critical)
 
     """
-    level_name = level.lower()
-    if not hasattr(logger, level_name):
-        raise ValueError(f"Invalid log level: {level!r}")
-    level_method = getattr(logger, level_name)
-    level_method(message)
+    _, level_value = _resolve_log_level(level)
+    logger.log(level_value, message)
 
 
 def reset_logging() -> None:
@@ -123,10 +128,8 @@ def reset_logging() -> None:
     global _logging_initialized, _current_log_file
 
     # Close and remove all file handlers
-    for handler in logger.handlers[:]:
-        if isinstance(handler, logging.FileHandler):
-            handler.close()
-            logger.removeHandler(handler)
+    _remove_file_handlers()
+    logger.setLevel(logging.NOTSET)
 
     # Reset state
     _logging_initialized = False

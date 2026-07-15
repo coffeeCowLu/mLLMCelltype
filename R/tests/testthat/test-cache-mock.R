@@ -17,7 +17,7 @@ test_that("Cache saves and retrieves mock consensus results", {
   )
   
   # Generate cache key
-  key <- cache_manager$generate_key(mock_input, c("gpt-5.5", "claude-sonnet-4-6"), "cluster_1")
+  key <- cache_manager$generate_key(mock_input, c("gpt-5.5", "claude-sonnet-4-6"), "T_cells")
   
   # Test saving
   cache_manager$save_to_cache(key, mock_consensus)
@@ -29,7 +29,7 @@ test_that("Cache saves and retrieves mock consensus results", {
   expect_equal(loaded_data$confidence_score, 0.95)
 })
 
-test_that("Cache handles different input formats", {
+test_that("Cache treats equivalent marker input formats consistently", {
   cache_manager <- CacheManager$new(cache_dir = tempdir())
   
   # Test with data.frame format that matches expected structure
@@ -39,12 +39,8 @@ test_that("Cache handles different input formats", {
     avg_log2FC = c(2.1, 1.5, 0.8, 1.2)
   )
   
-  # Test with simplified data.frame
-  simple_input <- data.frame(
-    CD3D = c(2.1, 0.1),
-    CD8A = c(1.5, 0.0),
-    row.names = c("Cell1", "Cell2")
-  )
+  # Test with list format
+  simple_input <- list("0" = c("CD3D", "CD8A"))
   
   # Both should generate valid cache keys
   key1 <- cache_manager$generate_key(df_input, "gpt-5.5", "0")
@@ -52,8 +48,8 @@ test_that("Cache handles different input formats", {
   
   expect_true(nchar(key1) > 0)
   expect_true(nchar(key2) > 0)
-  # Keys should be different for different input structures
-  expect_false(key1 == key2)
+  # Equivalent prompts should share a cache key regardless of input container.
+  expect_equal(key1, key2)
 })
 
 test_that("Cache validation works", {
@@ -90,4 +86,19 @@ test_that("Cache validation works", {
   
   # Test with non-existent key
   expect_false(cache_manager$validate_cache("non_existent_key"))
+})
+
+test_that("Cache validation rejects malformed discussion payloads", {
+  cache_manager <- CacheManager$new(cache_dir = tempfile("invalid_cache_"))
+  malformed_values <- list(
+    list(annotation = c("T cell", "B cell"), discussion_log = list(rounds = list())),
+    list(annotation = "T cell", discussion_log = "not-a-log"),
+    list(annotation = "T cell", discussion_log = list(rounds = "not-a-list"))
+  )
+
+  for (index in seq_along(malformed_values)) {
+    key <- paste0("malformed_", index)
+    expect_true(cache_manager$save_to_cache(key, malformed_values[[index]]))
+    expect_false(cache_manager$validate_cache(key))
+  }
 })

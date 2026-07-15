@@ -13,8 +13,9 @@
 #' @return API key string for the specified model
 #' @export
 get_api_key <- function(model, api_keys) {
-  provider <- get_provider(model)
-  model_normalized <- trimws(model)
+  model_normalized <- .normalize_required_string(model, "model")
+  api_keys <- .normalize_api_keys(api_keys, allow_null = TRUE)
+  provider <- get_provider(model_normalized)
   is_valid_key <- function(key) {
     is.character(key) && length(key) == 1 && !is.na(key) && nzchar(trimws(key))
   }

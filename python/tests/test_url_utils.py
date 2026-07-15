@@ -75,6 +75,25 @@ class TestResolveProviderBaseUrl:
         result = resolve_provider_base_url("openai", base_urls)
         assert result == "https://openai-proxy.com/v1/chat/completions"
 
+    def test_resolve_rejects_ambiguous_normalized_provider_keys(self):
+        """Test duplicate normalized provider keys cannot depend on dict order."""
+        base_urls = {
+            "OpenAI": "https://first.example.com/v1",
+            " openai ": "https://second.example.com/v1",
+        }
+
+        with pytest.raises(ValueError, match="Ambiguous base_urls provider keys"):
+            resolve_provider_base_url("openai", base_urls)
+
+    @pytest.mark.parametrize("provider_key", [None, 1, "", "   "])
+    def test_resolve_rejects_invalid_provider_keys(self, provider_key):
+        """Test provider URL mappings never silently coerce or discard invalid keys."""
+        with pytest.raises(ValueError, match="base_urls provider keys must be"):
+            resolve_provider_base_url(
+                "openai",
+                {provider_key: "https://proxy.example.com/v1"},
+            )
+
     def test_resolve_with_empty_dict(self):
         """Test resolving with empty dict base_urls."""
         result = resolve_provider_base_url("openai", {})
@@ -203,6 +222,23 @@ class TestValidateBaseUrl:
         """Test rejecting URLs containing query parameters."""
         assert validate_base_url("https://api.example.com/v1?token=abc") is False
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://api.example.com:invalid/v1",
+            "https://api.example.com:0/v1",
+            "https://api.example.com:99999/v1",
+            "https://api.example.com:/v1",
+        ],
+    )
+    def test_validate_url_rejects_invalid_ports(self, url):
+        """Test malformed ports are rejected during validation instead of request time."""
+        assert validate_base_url(url) is False
+
+    def test_validate_url_accepts_highest_valid_port(self):
+        """Test the upper valid TCP port boundary remains accepted."""
+        assert validate_base_url("https://api.example.com:65535/v1") is True
+
 
 class TestGetWorkingQwenEndpoint:
     """Test get_working_qwen_endpoint function."""
@@ -245,15 +281,15 @@ class TestGetWorkingQwenEndpoint:
     @patch("mllmcelltype.url_utils.requests.post")
     @patch("mllmcelltype.url_utils.write_log")
     def test_both_endpoints_fail(self, mock_log, mock_post):
-        """Test when both endpoints fail."""
-        # Mock failed responses for both endpoints
+        """Test an unverified fallback does not suppress later endpoint probes."""
         mock_post.side_effect = requests.RequestException("Connection failed")
 
         result = get_working_qwen_endpoint("test-api-key")
+        repeated_result = get_working_qwen_endpoint("test-api-key")
 
-        # Should return international endpoint as fallback
         assert result == "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions"
-        assert mock_post.call_count == 3
+        assert repeated_result == result
+        assert mock_post.call_count == 6
 
     @patch("mllmcelltype.url_utils.requests.post")
     @patch("mllmcelltype.url_utils.write_log")
@@ -328,13 +364,15 @@ class TestGetWorkingMiniMaxEndpoint:
     @patch("mllmcelltype.url_utils.requests.post")
     @patch("mllmcelltype.url_utils.write_log")
     def test_both_endpoints_fail(self, mock_log, mock_post):
-        """Test fallback when both endpoints are unreachable."""
+        """Test an unreachable MiniMax fallback is not cached as verified."""
         mock_post.side_effect = requests.RequestException("Connection failed")
 
         result = get_working_minimax_endpoint("test-api-key")
+        repeated_result = get_working_minimax_endpoint("test-api-key")
 
         assert result == "https://api.minimax.io/v1/chat/completions"
-        assert mock_post.call_count == 2
+        assert repeated_result == result
+        assert mock_post.call_count == 4
 
     @patch("mllmcelltype.url_utils.requests.post")
     @patch("mllmcelltype.url_utils.write_log")

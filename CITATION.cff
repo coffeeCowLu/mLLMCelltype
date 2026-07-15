@@ -8,8 +8,8 @@ authors:
   - family-names: "Chen"
     given-names: "Jun"
 title: "mLLMCelltype: Multi-LLM consensus framework for cell type annotation"
-version: 2.0.5
-date-released: 2026-05-11
+version: 2.0.6
+date-released: 2026-07-15
 url: "https://github.com/cafferychen777/mLLMCelltype"
 repository-code: "https://github.com/cafferychen777/mLLMCelltype"
 license: MIT

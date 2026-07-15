@@ -3,14 +3,76 @@
 # This file contains all prompt template functions used in mLLMCelltype.
 # These functions create various prompts for different stages of the cell type annotation process.
 
+.normalize_top_gene_count <- function(top_gene_count) {
+  .normalize_positive_integer(top_gene_count, "top_gene_count")
+}
+
+.normalize_marker_gene_vector <- function(genes) {
+  if (is.list(genes) || is.data.frame(genes)) {
+    stop("marker genes must be an atomic vector")
+  }
+  normalized <- trimws(as.character(genes))
+  unique(normalized[!is.na(normalized) & nzchar(normalized)])
+}
+
 extract_cluster_item_genes <- function(item) {
   if (is.list(item) && "genes" %in% names(item)) {
-    return(as.character(item$genes))
+    return(.normalize_marker_gene_vector(item$genes))
   }
-  if (is.character(item)) {
-    return(item)
+  if (is.atomic(item)) {
+    return(.normalize_marker_gene_vector(item))
   }
-  stop("When input is a list, each element must be a character vector of genes or a list containing a 'genes' field")
+  stop("When input is a list, each element must be a character vector of genes (or another atomic gene vector) or a list containing a 'genes' field")
+}
+
+select_cluster_marker_genes <- function(input, cluster_id, top_gene_count) {
+  cluster_key <- trimws(as.character(cluster_id))
+  top_gene_count <- .normalize_top_gene_count(top_gene_count)
+
+  if (is.list(input) && !is.data.frame(input)) {
+    cluster_names <- names(input)
+    if (is.null(cluster_names)) {
+      cluster_names <- as.character(seq_along(input) - 1)
+    } else {
+      cluster_names <- trimws(cluster_names)
+    }
+    if (anyNA(cluster_names) || any(!nzchar(cluster_names))) {
+      stop("Cluster IDs must be non-empty strings")
+    }
+    if (anyDuplicated(cluster_names)) {
+      stop("Duplicate cluster IDs detected after normalization")
+    }
+
+    cluster_index <- match(cluster_key, cluster_names)
+    if (is.na(cluster_index)) {
+      stop(sprintf("Cluster '%s' was not found in list input", cluster_key))
+    }
+    genes <- head(extract_cluster_item_genes(input[[cluster_index]]), top_gene_count)
+  } else if (is.data.frame(input)) {
+    required_columns <- c("cluster", "gene")
+    if (!all(required_columns %in% names(input))) {
+      stop("Data frame input must contain 'cluster' and 'gene' columns")
+    }
+
+    normalized_clusters <- trimws(as.character(input$cluster))
+    cluster_rows <- input[
+      !is.na(normalized_clusters) & normalized_clusters == cluster_key,
+      ,
+      drop = FALSE
+    ]
+    if ("avg_log2FC" %in% names(cluster_rows)) {
+      rank_order <- order(cluster_rows$avg_log2FC, decreasing = TRUE, na.last = NA)
+      cluster_rows <- cluster_rows[rank_order, , drop = FALSE]
+    }
+    genes <- head(.normalize_marker_gene_vector(cluster_rows$gene), top_gene_count)
+  } else {
+    stop("Input must be either a data.frame or a list of gene lists")
+  }
+
+  if (length(genes) == 0) {
+    stop(sprintf("No genes found for cluster '%s'", cluster_key))
+  }
+  genes
 }
 
 #' Normalize list input into a canonical cluster->genes mapping
@@ -31,6 +93,9 @@ normalize_cluster_gene_list <- function(input) {
   if (!is.list(input) || is.data.frame(input)) {
     stop("normalize_cluster_gene_list expects a list input")
   }
+  if (length(input) == 0) {
+    stop("input must contain at least one cluster")
+  }
 
   names_vec <- names(input)
   gene_vectors <- lapply(input, extract_cluster_item_genes)
@@ -38,7 +103,10 @@ normalize_cluster_gene_list <- function(input) {
   if (is.null(names_vec)) {
     canonical_names <- as.character(seq_along(gene_vectors) - 1)
   } else {
-    canonical_names <- names_vec
+    canonical_names <- trimws(names_vec)
+    if (any(is.na(canonical_names)) || any(!nzchar(canonical_names))) {
+      stop("Cluster IDs must be non-empty strings")
+    }
   }
 
   if (anyDuplicated(canonical_names)) {
@@ -46,7 +114,42 @@ normalize_cluster_gene_list <- function(input) {
   }
 
   names(gene_vectors) <- canonical_names
+  empty_clusters <- canonical_names[lengths(gene_vectors) == 0]
+  if (length(empty_clusters) > 0) {
+    stop(
+      "No genes found for cluster(s): ",
+      paste(empty_clusters, collapse = ", ")
+    )
+  }
   gene_vectors
+}
+
+canonical_cluster_ids <- function(input) {
+  cluster_ids <- if (is.list(input) && !is.data.frame(input)) {
+    input_names <- names(input)
+    if (is.null(input_names)) {
+      as.character(seq_along(input) - 1)
+    } else {
+      trimws(input_names)
+    }
+  } else if (is.data.frame(input) && "cluster" %in% names(input)) {
+    normalized <- trimws(as.character(input$cluster))
+    unique(normalized[!is.na(normalized) & nzchar(normalized)])
+  } else {
+    stop("Input must provide cluster IDs through list names or a cluster column")
+  }
+
+  if (anyNA(cluster_ids) || any(!nzchar(cluster_ids))) {
+    stop("Cluster IDs must be non-empty strings")
+  }
+  if (anyDuplicated(cluster_ids)) {
+    stop("Duplicate cluster IDs detected after normalization")
+  }
+  if (length(cluster_ids) > 0 &&
+      all(!is.na(suppressWarnings(as.numeric(cluster_ids))))) {
+    cluster_ids <- cluster_ids[order(as.numeric(cluster_ids))]
+  }
+  cluster_ids
 }
 
 #' Extract marker genes for a discussion prompt
@@ -58,58 +161,10 @@ normalize_cluster_gene_list <- function(input) {
 #' @keywords internal
 #' @noRd
 extract_cluster_genes_for_discussion <- function(input, cluster_id, top_gene_count) {
-  cluster_key <- as.character(cluster_id)
-
-  if (is.list(input) && !is.data.frame(input)) {
-    cluster_names <- names(input)
-    if (is.null(cluster_names)) {
-      cluster_names <- as.character(seq_along(input) - 1)
-    }
-    if (anyDuplicated(cluster_names)) {
-      stop("Duplicate cluster IDs detected after normalization")
-    }
-    cluster_index <- match(cluster_key, cluster_names)
-    if (is.na(cluster_index)) {
-      stop(sprintf("Cluster '%s' was not found in list input", cluster_key))
-    }
-
-    genes <- extract_cluster_item_genes(input[[cluster_index]])
-    if (length(genes) == 0) {
-      stop(sprintf("No genes found for cluster '%s'", cluster_key))
-    }
-
-    return(paste(head(genes, top_gene_count), collapse = ","))
-  }
-
-  if (is.data.frame(input)) {
-    required_columns <- c("cluster", "gene")
-    if (!all(required_columns %in% names(input))) {
-      stop("Data frame input must contain 'cluster' and 'gene' columns")
-    }
-
-    cluster_mask <- as.character(input$cluster) == cluster_key
-    numeric_cluster <- suppressWarnings(as.numeric(cluster_key))
-    if (!any(cluster_mask) && !is.na(numeric_cluster)) {
-      cluster_mask <- suppressWarnings(as.numeric(input$cluster)) == numeric_cluster
-      cluster_mask[is.na(cluster_mask)] <- FALSE
-    }
-
-    cluster_data <- input[cluster_mask, , drop = FALSE]
-    if ("avg_log2FC" %in% names(cluster_data)) {
-      cluster_data <- cluster_data[!is.na(cluster_data$avg_log2FC) & cluster_data$avg_log2FC > 0, , drop = FALSE]
-      cluster_data <- cluster_data[order(cluster_data$avg_log2FC, decreasing = TRUE), , drop = FALSE]
-    }
-
-    genes <- as.character(cluster_data$gene)
-    genes <- genes[!is.na(genes) & nzchar(genes)]
-    if (length(genes) == 0) {
-      stop(sprintf("No genes found for cluster '%s'", cluster_key))
-    }
-
-    return(paste(head(genes, top_gene_count), collapse = ","))
-  }
-
-  stop("Input must be either a data.frame or a list of gene lists")
+  paste(
+    select_cluster_marker_genes(input, cluster_id, top_gene_count),
+    collapse = ","
+  )
 }
 
 #' Create prompt for cell type annotation
@@ -122,9 +177,11 @@ extract_cluster_genes_for_discussion <- function(input, cluster_id, top_gene_cou
 #'
 #' @return A list with `prompt` (formatted prompt text), `expected_count`
 #'   (number of clusters), and `gene_lists` (cluster ID to marker genes mapping).
-#' @importFrom magrittr "%>%"
 #' @export
 create_annotation_prompt <- function(input, tissue_name, top_gene_count = 10) {
+  tissue_name <- .normalize_required_string(tissue_name, "tissue_name")
+  top_gene_count <- .normalize_top_gene_count(top_gene_count)
+
   if (is.list(input) && !is.data.frame(input)) {
     normalized_input <- normalize_cluster_gene_list(input)
 
@@ -137,39 +194,55 @@ create_annotation_prompt <- function(input, tissue_name, top_gene_count = 10) {
     
     expected_count <- length(normalized_input)
   } else if (is.data.frame(input)) {
-    # Process Seurat differential gene table
-    # Cluster IDs are preserved as-is from the input data
-    markers <- input %>%
-      group_by(cluster) %>%
-      slice_max(avg_log2FC, n = top_gene_count, with_ties = FALSE) %>%
-      group_split()
-
-    gene_lists <- list()
-    for (marker_group in markers) {
-      cluster_id <- marker_group$cluster[1]
-      gene_lists[[as.character(cluster_id)]] <- paste(marker_group$gene, collapse = ',')
+    required_columns <- c("cluster", "gene", "avg_log2FC")
+    column_counts <- vapply(required_columns, function(column) {
+      sum(names(input) == column, na.rm = TRUE)
+    }, integer(1))
+    if (any(column_counts != 1)) {
+      stop(
+        "Data frame input must contain exactly one each of: ",
+        paste(required_columns, collapse = ", ")
+      )
+    }
+    if (!is.numeric(input$avg_log2FC)) {
+      stop("avg_log2FC must be numeric")
     }
 
-    expected_count <- length(unique(input$cluster))
+    normalized_clusters <- trimws(as.character(input$cluster))
+    valid_cluster_rows <- !is.na(normalized_clusters) & nzchar(normalized_clusters)
+    if (any(!valid_cluster_rows)) {
+      warning("Skipping rows with missing or empty cluster IDs", call. = FALSE)
+    }
+    input <- input[valid_cluster_rows, , drop = FALSE]
+    normalized_clusters <- normalized_clusters[valid_cluster_rows]
+    if (nrow(input) == 0) {
+      stop("input must contain at least one valid cluster")
+    }
+
+    cluster_names <- unique(normalized_clusters)
+    gene_lists <- list()
+    for (cluster_id in cluster_names) {
+      genes <- select_cluster_marker_genes(input, cluster_id, top_gene_count)
+      gene_lists[[cluster_id]] <- paste(genes, collapse = ",")
+    }
+
+    expected_count <- length(gene_lists)
   } else {
     stop("Input must be either a data.frame (from Seurat) or a list of gene lists")
   }
   
-  # Create formatted lines from gene_lists using actual names/indices
-  cluster_names <- names(gene_lists)
+  cluster_names <- canonical_cluster_ids(gene_lists)
+  gene_lists <- gene_lists[cluster_names]
+
+  # Create formatted lines from gene_lists using the canonical cluster order.
   formatted_lines <- vapply(cluster_names, function(name) {
     paste0(name, ": ", gene_lists[[name]])
   }, character(1), USE.NAMES = FALSE)
 
-  # Sort numerically if all names are numeric
-  if (all(!is.na(suppressWarnings(as.numeric(cluster_names))))) {
-    formatted_lines <- formatted_lines[order(as.numeric(cluster_names))]
-  }
-
   prompt <- paste0("You are a cell type annotation expert. Below are marker genes for different cell clusters in ", 
                   tissue_name, ".\n\n",
                   paste(formatted_lines, collapse = "\n"),
-                  "\n\nFor each cluster ID, provide only the cell type name in a new line, without any explanation.")
+                  "\n\nReturn exactly one cell type name per line, in the same order as the clusters shown above, without cluster IDs or explanation.")
   
   return(list(
     prompt = prompt,
@@ -194,12 +267,12 @@ create_consensus_check_prompt <- function(round_responses, controversy_threshold
     paste(paste("Model", seq_along(round_responses), ":", round_responses), collapse = "\n"),
     "",
     "IMPORTANT GUIDELINES:",
-    "1. Consider predictions as matching if they refer to the same cell type, ignoring differences in:",
-    "   - Formatting (e.g., 'NK cells' vs 'Natural Killer cells')",
-    "   - Capitalization",
-    "   - Additional qualifiers (e.g., 'activated', 'mature', etc.)",
-    "2. Group predictions that refer to the same cell type",
-    "3. If any prediction is 'Unknown' or 'Unclear', treat it as a separate group",
+    "1. Consider predictions as matching only when they name the same biological entity, allowing:",
+    "   - Synonymous nomenclature (e.g., 'NK cells' vs 'Natural Killer cells')",
+    "   - Formatting and capitalization differences",
+    "2. Preserve biologically meaningful subtype or state qualifiers such as activated, mature, memory, regulatory, CD4+, and CD8+; do not merge labels when doing so would lose specificity",
+    "3. Group only predictions that remain biologically equivalent at the same level of granularity",
+    "4. If any prediction is 'Unknown' or 'Unclear', treat it as a separate group",
     "",
     "CALCULATE THE FOLLOWING METRICS:",
     "1. Consensus Proportion = Number of models supporting the majority prediction / Total number of models",
@@ -223,6 +296,27 @@ create_consensus_check_prompt <- function(round_responses, controversy_threshold
   )
 }
 
+format_named_model_responses <- function(responses,
+                                         separator = ":\n",
+                                         missing = "No prediction",
+                                         validator = is_valid_model_response) {
+  response_names <- names(responses)
+  if (!is.list(responses) || is.null(response_names) ||
+      anyNA(response_names) || any(!nzchar(trimws(response_names)))) {
+    stop("responses must be a named list with non-empty model names")
+  }
+
+  vapply(seq_along(responses), function(index) {
+    response <- responses[[index]]
+    response_text <- if (isTRUE(validator(response))) {
+      paste(response, collapse = "\n")
+    } else {
+      missing
+    }
+    paste0(trimws(response_names[[index]]), separator, response_text)
+  }, character(1), USE.NAMES = FALSE)
+}
+
 #' Create prompt for additional discussion rounds
 #
 #
@@ -237,15 +331,14 @@ create_discussion_prompt <- function(cluster_id,
                                      previous_rounds,
                                      round_number) {
   # Compile previous discussion history
-  discussion_history <- sapply(previous_rounds, function(round) {
+  discussion_history <- vapply(previous_rounds, function(round) {
     responses <- round$responses
-    paste(sprintf("Round %d:\n%s\n",
-                  round$round_number,
-                  paste(sprintf("%s:\n%s\n", 
-                                names(responses),
-                                responses), 
-                        collapse = "\n")))
-  })
+    sprintf(
+      "Round %d:\n%s",
+      round$round_number,
+      paste(format_named_model_responses(responses), collapse = "\n\n")
+    )
+  }, character(1), USE.NAMES = FALSE)
   
   sprintf(
     "We are continuing the discussion for cluster %s (marker genes: %s%s).
@@ -319,37 +412,15 @@ create_initial_discussion_prompt <- function(cluster_id,
     cluster_id,
     cluster_genes,
     if (!is.null(tissue_name)) sprintf(" from %s", tissue_name) else "",
-    paste(sapply(names(initial_predictions), function(model_name) {
-      pred <- initial_predictions[[model_name]]
-      # Check if pred is a list with named elements
-      if (is.list(pred) && !is.null(names(pred))) {
-        # If it's a structured list, try to extract the prediction for this cluster
-        cell_type <- if (!is.null(pred[[as.character(cluster_id)]])) {
-          pred[[as.character(cluster_id)]]
-        } else {
-          "No prediction"
-        }
-      } else if (is.character(pred)) {
-        # If it's a character vector, try to find the line for this cluster
-        cell_type <- "No prediction"
-        
-        # Check if there are predictions with cluster ID
-        has_cluster_id_format <- FALSE
-        for (line in pred) {
-          if (trimws(line) == "") next
-          parts <- strsplit(line, ":", fixed = TRUE)[[1]]
-          if (length(parts) >= 2 && trimws(parts[1]) == as.character(cluster_id)) {
-            cell_type <- trimws(paste(parts[-1], collapse = ":"))
-            has_cluster_id_format <- TRUE
-            break
-          }
-        }
-        
-      } else {
-        cell_type <- "No prediction"
-      }
-      sprintf("%s: %s", model_name, cell_type)
-    }), collapse = "\n")
+    paste(
+      format_named_model_responses(
+        initial_predictions,
+        separator = ": ",
+        missing = "No prediction",
+        validator = is_real_cell_type_annotation
+      ),
+      collapse = "\n"
+    )
   )
 }
 

@@ -23,6 +23,7 @@ Handles Gemini-specific API calls, authentication, and response parsing.
 \item \href{#method-GeminiProcessor-get_api_url_for_model}{\code{GeminiProcessor$get_api_url_for_model()}}
 \item \href{#method-GeminiProcessor-make_api_call}{\code{GeminiProcessor$make_api_call()}}
 \item \href{#method-GeminiProcessor-extract_response_content}{\code{GeminiProcessor$extract_response_content()}}
+\item \href{#method-GeminiProcessor-extract_usage}{\code{GeminiProcessor$extract_usage()}}
 \item \href{#method-GeminiProcessor-clone}{\code{GeminiProcessor$clone()}}
 }
 }
@@ -43,6 +44,13 @@ Initialize Gemini processor
 \if{html}{\out{<div class="r">}}\preformatted{GeminiProcessor$new(base_url = NULL)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{base_url}}{Optional custom API endpoint}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-GeminiProcessor-get_default_api_url"></a>}}
@@ -63,6 +71,13 @@ Get API URL for specific model
 \if{html}{\out{<div class="r">}}\preformatted{GeminiProcessor$get_api_url_for_model(model)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{model}}{Model identifier}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-GeminiProcessor-make_api_call"></a>}}
@@ -73,6 +88,17 @@ Make API call to Gemini
 \if{html}{\out{<div class="r">}}\preformatted{GeminiProcessor$make_api_call(chunk_content, model, api_key)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{chunk_content}}{Prompt text to send}
+
+\item{\code{model}}{Model identifier}
+
+\item{\code{api_key}}{Gemini API key}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-GeminiProcessor-extract_response_content"></a>}}
@@ -83,6 +109,32 @@ Extract response content from Gemini API response
 \if{html}{\out{<div class="r">}}\preformatted{GeminiProcessor$extract_response_content(response, model)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{response}}{HTTP response object}
+
+\item{\code{model}}{Model identifier}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-GeminiProcessor-extract_usage"></a>}}
+\if{latex}{\out{\hypertarget{method-GeminiProcessor-extract_usage}{}}}
+\subsection{Method \code{extract_usage()}}{
+Extract normalized Gemini token usage
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{GeminiProcessor$extract_usage(response)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{response}}{HTTP response object}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-GeminiProcessor-clone"></a>}}

@@ -1,7 +1,10 @@
 #' @keywords internal
 "_PACKAGE"
 
-#' @importFrom dplyr group_by slice_max group_split
+#' @importFrom R6 R6Class
+#' @importFrom digest digest
+#' @importFrom jsonlite toJSON
+#' @importFrom tools R_user_dir
 #' @importFrom utils head
 
 #' @title Cell Type Annotation with Multi-LLM Framework
@@ -98,8 +101,6 @@
 #' @return When `api_key` is provided, the provider response split by newline as
 #'   a character vector. When `api_key` is `NA`, the generated prompt string.
 #'
-#' @importFrom httr POST add_headers content http_error status_code timeout
-#' @importFrom jsonlite toJSON
 #' @examples
 #' # Example 1: Using custom gene lists, returning prompt only (no API call)
 #' annotate_cell_types(
@@ -196,13 +197,20 @@ annotate_cell_types <- function(input,
                                debug = FALSE,
                                base_urls = NULL) {
 
-  if (is.null(tissue_name) || !nzchar(trimws(tissue_name))) {
-    stop("tissue_name is required. Specify the tissue type (e.g., 'human PBMC', 'mouse brain').")
-  }
+  tissue_name <- tryCatch(
+    .normalize_required_string(tissue_name, "tissue_name"),
+    error = function(e) {
+      stop("tissue_name is required. Specify the tissue type (e.g., 'human PBMC', 'mouse brain').")
+    }
+  )
   if (!is.character(model) || length(model) != 1 || is.na(model) || !nzchar(trimws(model))) {
     stop("model must be a non-empty character scalar")
   }
   model <- trimws(model)
+  top_gene_count <- .normalize_top_gene_count(top_gene_count)
+  if (!is.logical(debug) || length(debug) != 1 || is.na(debug)) {
+    stop("debug must be TRUE or FALSE")
+  }
 
   # Determine provider from model name
   provider <- get_provider(model)
@@ -245,14 +253,11 @@ annotate_cell_types <- function(input,
     return(prompt)
   }
 
-  api_key_missing <- is.null(api_key) ||
-    length(api_key) != 1 ||
-    is.na(api_key) ||
-    !nzchar(trimws(as.character(api_key)))
-  if (api_key_missing) {
+  if (!is.character(api_key) || length(api_key) != 1 || is.na(api_key) ||
+      !nzchar(trimws(api_key))) {
     stop("api_key must be a non-empty character scalar, or NA to return prompt only")
   }
-  api_key <- trimws(as.character(api_key))
+  api_key <- trimws(api_key)
 
   # Delegate to get_model_response which handles provider dispatch
   result <- get_model_response(prompt, model, api_key, base_urls)

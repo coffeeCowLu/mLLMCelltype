@@ -8,6 +8,7 @@ import pytest
 
 from mllmcelltype.prompts import (
     create_consensus_check_prompt,
+    create_discussion_consensus_prompt,
     create_discussion_prompt,
     create_initial_discussion_prompt,
     create_prompt,
@@ -48,6 +49,38 @@ class TestPrompts:
 
         # Check that the prompt contains the additional context
         assert additional_context in prompt
+        assert prompt.count(additional_context) == 1
+        assert prompt.index(additional_context) < prompt.index("Here are the marker genes")
+
+    def test_create_prompt_appends_context_missing_from_custom_template(self):
+        """Test context is preserved when a custom template omits its placeholder."""
+        additional_context = "Sample from a healthy donor."
+
+        prompt = create_prompt(
+            marker_genes=self.marker_genes,
+            species="human",
+            tissue="blood",
+            additional_context=additional_context,
+            prompt_template="Custom {species} {tissue}\n{markers}",
+        )
+
+        assert prompt.count(additional_context) == 1
+        assert prompt.index("Cluster 1:") < prompt.index(additional_context)
+
+    def test_create_prompt_honors_context_position_in_custom_template(self):
+        """Test a custom context placeholder controls context placement."""
+        additional_context = "Sample from a healthy donor."
+
+        prompt = create_prompt(
+            marker_genes=self.marker_genes,
+            species="human",
+            tissue="blood",
+            additional_context=additional_context,
+            prompt_template="Before\n{context}Markers:\n{markers}",
+        )
+
+        assert prompt.count(additional_context) == 1
+        assert prompt.index(additional_context) < prompt.index("Markers:")
 
     def test_create_prompt_with_custom_template(self):
         """Test prompt creation with custom template."""
@@ -76,6 +109,15 @@ Marker genes: {markers}"""
                 prompt_template=bad_template,
             )
 
+    def test_create_prompt_rejects_attribute_placeholder(self):
+        """Test attribute access cannot bypass the supported placeholder contract."""
+        with pytest.raises(ValueError, match="Invalid prompt_template placeholder"):
+            create_prompt(
+                marker_genes=self.marker_genes,
+                species="human",
+                prompt_template="Custom {species.upper} / {markers}",
+            )
+
     def test_create_prompt_with_malformed_template_raises_clear_error(self):
         """Test malformed custom templates fail with clear formatting guidance."""
         bad_template = "Custom {species cells: {markers}"
@@ -97,6 +139,43 @@ Marker genes: {markers}"""
                 tissue="blood",
                 prompt_template=123,  # type: ignore[arg-type]
             )
+
+    @pytest.mark.parametrize("species", [None, "", "   "])
+    def test_create_prompt_rejects_blank_species(self, species):
+        """Test species follows the documented required-text contract."""
+        with pytest.raises(ValueError, match="species must be a non-empty string"):
+            create_prompt(
+                marker_genes=self.marker_genes,
+                species=species,
+            )
+
+    @pytest.mark.parametrize(
+        ("field_name", "value"),
+        [("tissue", 123), ("additional_context", ["healthy"])],
+    )
+    def test_create_prompt_rejects_non_string_optional_text(self, field_name, value):
+        """Test optional prompt inputs reject values with ambiguous string conversion."""
+        kwargs = {field_name: value}
+
+        with pytest.raises(ValueError, match=rf"{field_name} must be a string"):
+            create_prompt(
+                marker_genes=self.marker_genes,
+                species="human",
+                **kwargs,
+            )
+
+    def test_create_prompt_normalizes_optional_text(self):
+        """Test blank tissue/context use their canonical fallback behavior."""
+        prompt = create_prompt(
+            marker_genes=self.marker_genes,
+            species=" human ",
+            tissue="   ",
+            additional_context="   ",
+        )
+
+        assert "human cells from unknown tissue" in prompt
+        assert "Additional context:" not in prompt
+        assert "IN THE ORDER SHOWN BELOW" in prompt
 
     def test_create_initial_discussion_prompt(self):
         """Test initial discussion prompt creation."""
@@ -161,13 +240,31 @@ Marker genes: {markers}"""
     def test_create_consensus_check_prompt(self):
         """Test consensus check prompt creation."""
         annotations = ["T cells", "T cells", "NK cells"]
-        prompt = create_consensus_check_prompt(annotations)
+        prompt = create_consensus_check_prompt(
+            annotations,
+            consensus_threshold=0.8,
+            entropy_threshold=0.5,
+        )
 
         # Check that the prompt contains the expected elements
         assert isinstance(prompt, str)
         assert "T cells" in prompt
         assert "NK cells" in prompt
         assert "consensus" in prompt.lower()
+        assert "at least 0.8" in prompt
+        assert "at most 0.5" in prompt
+        assert "unique largest group" in prompt
+        assert "Preserve biologically meaningful subtype or state qualifiers" in prompt
+
+    def test_discussion_consensus_prompt_preserves_biological_qualifiers(self):
+        """Consensus grouping must not erase meaningful subtype or cell-state labels."""
+        prompt = create_discussion_consensus_prompt(
+            {"m1": "Activated T cells", "m2": "Naive T cells"}
+        )
+
+        assert "Preserve biologically meaningful subtype or state qualifiers" in prompt
+        assert "do not merge labels when doing so would lose specificity" in prompt
+        assert "Additional qualifiers" not in prompt
 
 
 if __name__ == "__main__":

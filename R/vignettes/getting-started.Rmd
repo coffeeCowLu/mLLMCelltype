@@ -9,7 +9,7 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, purl=FALSE}
 knitr::opts_chunk$set(
   echo = TRUE,
   message = FALSE,
@@ -36,7 +36,7 @@ The mLLMCelltype workflow consists of these main steps:
 
 First, load the mLLMCelltype package:
 
-```{r}
+```{r, purl=FALSE}
 library(mLLMCelltype)
 ```
 
@@ -44,7 +44,7 @@ library(mLLMCelltype)
 
 Before using mLLMCelltype, you need to set up API keys for the LLM providers you plan to use:
 
-```{r}
+```{r, purl=FALSE}
 # Set API keys as environment variables
 Sys.setenv(ANTHROPIC_API_KEY = "your-anthropic-api-key")  # For Claude models
 Sys.setenv(OPENAI_API_KEY = "your-openai-api-key")        # For GPT models
@@ -60,7 +60,7 @@ You can obtain API keys from:
 
 Alternatively, you can provide API keys directly in function calls:
 
-```{r}
+```{r, purl=FALSE}
 results <- annotate_cell_types(
   input = markers,
   tissue_name = "human PBMC",
@@ -84,7 +84,7 @@ A data frame with the following columns:
 
 Example:
 
-```{r}
+```{r, purl=FALSE}
 # Example marker data frame
 markers_df <- data.frame(
   cluster = c(0, 0, 0, 1, 1, 1),
@@ -98,7 +98,7 @@ markers_df <- data.frame(
 
 You can directly use the output from Seurat's `FindAllMarkers()` function:
 
-```{r}
+```{r, purl=FALSE}
 # Assuming you have a Seurat object named 'seurat_obj'
 library(Seurat)
 all_markers <- FindAllMarkers(seurat_obj, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
@@ -108,7 +108,7 @@ all_markers <- FindAllMarkers(seurat_obj, only.pos = TRUE, min.pct = 0.25, logfc
 
 A path to a CSV file containing marker gene data:
 
-```{r}
+```{r, purl=FALSE}
 # Path to your CSV file
 markers_file <- "path/to/markers.csv"
 ```
@@ -117,7 +117,7 @@ markers_file <- "path/to/markers.csv"
 
 A list where each element contains marker genes for a cluster:
 
-```{r}
+```{r, purl=FALSE}
 # Example marker list
 markers_list <- list(
   "0" = c("CD3D", "CD3E", "CD2", "IL7R", "LTB"),
@@ -144,7 +144,7 @@ Note: If `api_key` is set to `NA`, the function will return the generated prompt
 
 Here's a simple example using a single LLM model for annotation:
 
-```{r}
+```{r, purl=FALSE}
 # Example marker data
 markers <- data.frame(
   cluster = c(0, 0, 0, 0, 0, 1, 1, 1, 1, 1),
@@ -180,7 +180,7 @@ When using a single model like Claude, the output will be a character vector wit
 
 For more reliable annotations, you can use multiple models and create a consensus:
 
-```{r}
+```{r, purl=FALSE}
 # Define models to use
 models <- c(
   "claude-sonnet-4-6",  # Anthropic
@@ -257,7 +257,7 @@ Cluster 1:
 
 To add the annotations to your Seurat object:
 
-```{r}
+```{r, purl=FALSE}
 # Assuming you have a Seurat object named 'seurat_obj' and consensus results
 library(Seurat)
 
@@ -301,7 +301,7 @@ seurat_obj$entropy <- plyr::mapvalues(
 
 Here's a simple visualization of the results using Seurat:
 
-```{r}
+```{r, purl=FALSE}
 # Plot UMAP with cell type annotations
 DimPlot(seurat_obj, group.by = "cell_type_consensus", label = TRUE, repel = TRUE) +
   ggtitle("Cell Type Annotations") +
@@ -333,7 +333,7 @@ Clusters with low consensus proportion or high entropy may require manual review
 
 If you don't have access to paid API keys, you can use OpenRouter's free models:
 
-```{r}
+```{r, purl=FALSE}
 # Set OpenRouter API key
 Sys.setenv(OPENROUTER_API_KEY = "your-openrouter-api-key")
 

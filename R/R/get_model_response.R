@@ -1,15 +1,70 @@
-#' Get response from a specific model
-#' @keywords internal
-get_model_response <- function(prompt, model, api_key, base_urls = NULL) {
-  if (!is.character(model) || length(model) != 1 || is.na(model) || !nzchar(trimws(model))) {
-    stop("model must be a non-empty character scalar")
-  }
-  if (!is.character(api_key) || length(api_key) != 1 || is.na(api_key) || !nzchar(trimws(api_key))) {
-    stop("api_key must be a non-empty character scalar")
+# Return the built-in provider dispatch table.
+get_builtin_provider_processors <- function() {
+  list(
+    openai = process_openai,
+    anthropic = process_anthropic,
+    deepseek = process_deepseek,
+    gemini = process_gemini,
+    qwen = process_qwen,
+    stepfun = process_stepfun,
+    zhipu = process_zhipu,
+    minimax = process_minimax,
+    grok = process_grok,
+    openrouter = process_openrouter
+  )
+}
+
+.MODEL_REQUEST_RETRY <- list(
+  MAX_ATTEMPTS = 3L,
+  BASE_DELAY_SECONDS = 5
+)
+
+wait_before_model_retry <- function(seconds) {
+  Sys.sleep(seconds)
+}
+
+dispatch_model_request_once <- function(prompt, model, api_key, provider,
+                                        provider_base_url) {
+  if (exists(provider, envir = custom_providers)) {
+    log_debug("Using custom provider", list(provider = provider))
+    response <- if (is.null(provider_base_url)) {
+      process_custom(prompt, model, api_key)
+    } else {
+      process_custom(prompt, model, api_key, provider_base_url)
+    }
+  } else {
+    processors <- get_builtin_provider_processors()
+    configured_providers <- c(names(.BUILTIN_PROVIDER_PATTERNS), "openrouter")
+    if (!setequal(names(processors), configured_providers)) {
+      stop("Built-in provider registry mismatch")
+    }
+    processor <- processors[[provider]]
+    if (is.null(processor)) {
+      stop("Unsupported model provider: ", provider)
+    }
+    response <- processor(prompt, model, api_key, provider_base_url)
   }
 
-  model <- trimws(model)
-  api_key <- trimws(api_key)
+  tryCatch(
+    normalize_model_response_lines(response),
+    error = function(e) {
+      stop("Invalid response format from provider '", provider, "'")
+    }
+  )
+}
+
+#' Get response from a specific model
+#'
+#' @param prompt Non-empty prompt string
+#' @param model Non-empty model name
+#' @param api_key Non-empty API key
+#' @param base_urls Optional shared or provider-specific base URL configuration
+#' @return Provider response as a character vector
+#' @keywords internal
+get_model_response <- function(prompt, model, api_key, base_urls = NULL) {
+  prompt <- .normalize_required_string(prompt, "prompt")
+  model <- .normalize_required_string(model, "model")
+  api_key <- .normalize_required_string(api_key, "api_key")
 
   # Get the provider for the model
   provider <- get_provider(model)
@@ -24,24 +79,42 @@ get_model_response <- function(prompt, model, api_key, base_urls = NULL) {
     custom_url = !is.null(provider_base_url)
   ))
 
-  # First check if it's a custom provider
-  if (exists(provider, envir = custom_providers)) {
-    log_debug("Using custom provider", list(provider = provider))
-    return(process_custom(prompt, model, api_key))
+  for (attempt in seq_len(.MODEL_REQUEST_RETRY$MAX_ATTEMPTS)) {
+    result <- tryCatch(
+      list(
+        success = TRUE,
+        response = dispatch_model_request_once(
+          prompt,
+          model,
+          api_key,
+          provider,
+          provider_base_url
+        )
+      ),
+      error = function(error) list(success = FALSE, error = error)
+    )
+
+    if (isTRUE(result$success)) {
+      return(result$response)
+    }
+
+    retryable <- inherits(result$error, "mllm_api_error") &&
+      isTRUE(result$error$retryable)
+    if (!retryable || attempt == .MODEL_REQUEST_RETRY$MAX_ATTEMPTS) {
+      stop(result$error)
+    }
+
+    wait_seconds <- .MODEL_REQUEST_RETRY$BASE_DELAY_SECONDS * 2^(attempt - 1)
+    get_logger()$warn("Retrying transient model request failure", list(
+      provider = provider,
+      model = model,
+      attempt = attempt,
+      max_attempts = .MODEL_REQUEST_RETRY$MAX_ATTEMPTS,
+      wait_seconds = wait_seconds,
+      error = result$error$message
+    ))
+    wait_before_model_retry(wait_seconds)
   }
 
-  # Delegate to provider-specific processor (timing & logging handled by BaseAPIProcessor)
-  switch(provider,
-    "openai" = process_openai(prompt, model, api_key, provider_base_url),
-    "anthropic" = process_anthropic(prompt, model, api_key, provider_base_url),
-    "deepseek" = process_deepseek(prompt, model, api_key, provider_base_url),
-    "gemini" = process_gemini(prompt, model, api_key, provider_base_url),
-    "qwen" = process_qwen(prompt, model, api_key, provider_base_url),
-    "stepfun" = process_stepfun(prompt, model, api_key, provider_base_url),
-    "zhipu" = process_zhipu(prompt, model, api_key, provider_base_url),
-    "minimax" = process_minimax(prompt, model, api_key, provider_base_url),
-    "grok" = process_grok(prompt, model, api_key, provider_base_url),
-    "openrouter" = process_openrouter(prompt, model, api_key, provider_base_url),
-    stop("Unsupported model provider: ", provider)
-  )
+  stop("Model request retry loop ended unexpectedly")
 }

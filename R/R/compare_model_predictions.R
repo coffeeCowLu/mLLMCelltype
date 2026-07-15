@@ -80,11 +80,14 @@ compare_model_predictions <- function(input,
                                       top_gene_count = 10,
                                       consensus_threshold = 0.5,
                                       base_urls = NULL) {
-  
-  # Validate inputs
-  if (!is.list(api_keys) || length(api_keys) == 0) {
-    stop("api_keys must be a non-empty list with named elements corresponding to models")
-  }
+  tissue_name <- .normalize_required_string(tissue_name, "tissue_name")
+  models <- .normalize_model_vector(models, minimum_count = 2L)
+  api_keys <- .normalize_api_keys(api_keys)
+  top_gene_count <- .normalize_top_gene_count(top_gene_count)
+  consensus_threshold <- .normalize_probability(
+    consensus_threshold,
+    "consensus_threshold"
+  )
   
   # Validate model/API-key pairs without letting one bad model block the rest
   eligible_models <- character(0)
@@ -99,8 +102,8 @@ compare_model_predictions <- function(input,
       eligible_models <- c(eligible_models, m)
     }
   }
-  if (length(eligible_models) == 0) {
-    stop("No models have both a supported provider and an API key")
+  if (length(eligible_models) < 2) {
+    stop("At least two models must have both a supported provider and an API key")
   }
   models <- eligible_models
 
@@ -126,7 +129,7 @@ compare_model_predictions <- function(input,
         top_gene_count = top_gene_count,
         base_urls = base_urls
       )
-      all_predictions[[model]] <- predictions
+      all_predictions[[model]] <- align_model_predictions(predictions, cluster_ids)
       successful_models <- c(successful_models, model)
     }, error = function(e) {
       warning(sprintf("Error with model %s: %s", model, e$message))
@@ -143,21 +146,15 @@ compare_model_predictions <- function(input,
   message("\nStandardizing cell type names...")
   standardized_predictions <- standardize_cell_type_names(all_predictions, successful_models, api_keys, base_urls = base_urls)
   
-  # Pad all prediction vectors to equal length with NA to avoid vector recycling
+  # Every model is aligned to the canonical cluster IDs before comparison.
   all_vectors <- all_predictions[successful_models]
   std_vectors <- standardized_predictions[successful_models]
-  max_len <- max(vapply(std_vectors, length, integer(1)),
-                 vapply(all_vectors, length, integer(1)))
-  pad <- function(x) { length(x) <- max_len; x }
   cluster_labels <- cluster_ids
-  length(cluster_labels) <- max_len
-  missing_labels <- is.na(cluster_labels) | !nzchar(cluster_labels)
-  cluster_labels[missing_labels] <- paste0("..prediction_", seq_len(max_len)[missing_labels])
 
-  comparison_matrix <- do.call(cbind, lapply(std_vectors, pad))
+  comparison_matrix <- do.call(cbind, std_vectors)
   colnames(comparison_matrix) <- successful_models
   rownames(comparison_matrix) <- cluster_labels
-  raw_matrix <- do.call(cbind, lapply(all_vectors, pad))
+  raw_matrix <- do.call(cbind, all_vectors)
   colnames(raw_matrix) <- successful_models
   rownames(raw_matrix) <- cluster_labels
   n_clusters <- nrow(comparison_matrix)
@@ -172,10 +169,12 @@ compare_model_predictions <- function(input,
     
     # Count occurrences of each prediction
     pred_table <- table(valid_predictions)
-    max_agreement <- max(pred_table) / length(valid_predictions)
+    max_count <- max(pred_table)
+    max_agreement <- max_count / length(valid_predictions)
+    has_unique_majority <- sum(pred_table == max_count) == 1
     
     # Get consensus if agreement meets threshold
-    consensus <- if (max_agreement >= consensus_threshold) {
+    consensus <- if (has_unique_majority && max_agreement >= consensus_threshold) {
       names(pred_table)[which.max(pred_table)]
     } else {
       NA
@@ -317,8 +316,18 @@ compare_model_predictions <- function(input,
 standardize_cell_type_names <- function(predictions,
                                        models,
                                        api_keys,
-                                       standardization_model = "claude-sonnet-4-6",
+                                       standardization_model = NULL,
                                        base_urls = NULL) {
+  models <- .normalize_model_vector(models)
+  if (is.null(standardization_model)) {
+    standardization_model <- models[[1]]
+  } else {
+    standardization_model <- .normalize_required_string(
+      standardization_model,
+      "standardization_model"
+    )
+  }
+
   # Get API key for standardization model
   api_key <- get_api_key(standardization_model, api_keys)
   
@@ -333,7 +342,12 @@ standardize_cell_type_names <- function(predictions,
   
   # Get unique cell type names from all predictions
   all_cell_types <- unique(unlist(predictions[models]))
-  all_cell_types <- all_cell_types[!is.na(all_cell_types)]
+  valid_cell_types <- vapply(
+    as.list(all_cell_types),
+    is_real_cell_type_annotation,
+    logical(1)
+  )
+  all_cell_types <- all_cell_types[valid_cell_types]
   
   if (length(all_cell_types) == 0) {
     warning("No valid cell type predictions found to standardize")

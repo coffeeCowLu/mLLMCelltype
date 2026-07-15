@@ -15,6 +15,7 @@ from .common import (
     build_chat_completions_body,
     call_openai_compatible_api,
     ensure_api_key,
+    normalize_response_lines,
     resolve_endpoint_url,
 )
 
@@ -34,13 +35,11 @@ def _parse_minimax_response(content: dict[str, Any]) -> list[str]:
         raise ValueError(f"Unexpected response format from MiniMax: {content}") from e
 
     if not isinstance(response_content, str):
-        write_log("Unexpected non-string response content from MiniMax, coercing to string", level="warning")
-        response_content = str(response_content)
+        return normalize_response_lines(response_content, "MiniMax")
 
     # Strip <think>...</think> reasoning block (MiniMax coding models)
     response_content = re.sub(r"<think>[\s\S]*?</think>\s*", "", response_content)
-    lines = response_content.strip().split("\n")
-    return [line.rstrip(",") for line in lines]
+    return normalize_response_lines(response_content, "MiniMax")
 
 
 def process_minimax(

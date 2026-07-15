@@ -13,78 +13,246 @@
   "Unknown"
 )
 
+is_real_cell_type_annotation <- function(annotation) {
+  is.character(annotation) &&
+    length(annotation) == 1 &&
+    !is.na(annotation) &&
+    nzchar(trimws(annotation)) &&
+    !tolower(trimws(annotation)) %in% tolower(.SENTINEL_VALUES)
+}
+
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
+# Generate accepted aliases for one cluster ID.
+prediction_cluster_aliases <- function(cluster_id) {
+  normalized <- trimws(as.character(cluster_id))
+  stripped <- trimws(sub("^cluster[ _]+", "", normalized, ignore.case = TRUE))
+  unique(c(
+    normalized,
+    stripped,
+    if (nzchar(stripped)) paste("Cluster", stripped) else character(0),
+    if (nzchar(stripped)) paste0("Cluster_", stripped) else character(0)
+  ))
+}
+
+resolve_prediction_cluster_id <- function(raw_cluster_id, all_clusters = NULL) {
+  normalized <- trimws(as.character(raw_cluster_id))
+  if (!nzchar(normalized)) {
+    return(NULL)
+  }
+
+  if (is.null(all_clusters)) {
+    stripped <- trimws(sub("^cluster[ _]+", "", normalized, ignore.case = TRUE))
+    return(if (nzchar(stripped)) stripped else normalized)
+  }
+
+  target_clusters <- unique(as.character(all_clusters))
+  exact_index <- match(normalized, target_clusters)
+  if (!is.na(exact_index)) {
+    return(target_clusters[[exact_index]])
+  }
+
+  normalized_lower <- tolower(normalized)
+  matches <- target_clusters[vapply(target_clusters, function(cluster_id) {
+    normalized_lower %in% tolower(prediction_cluster_aliases(cluster_id))
+  }, logical(1))]
+  if (length(matches) == 1) {
+    return(matches[[1]])
+  }
+  NULL
+}
+
+parse_prediction_line <- function(line) {
+  colon_match <- regexec(
+    "^\\s*(?:[-*]\\s*)?(.+?)\\s*[:\uFF1A]\\s*(.*?)\\s*$",
+    line,
+    perl = TRUE
+  )
+  colon_parts <- regmatches(line, colon_match)[[1]]
+  if (length(colon_parts) == 3) {
+    return(list(cluster_id = colon_parts[[2]], annotation = colon_parts[[3]]))
+  }
+
+  numbered_match <- regexec(
+    "^\\s*(\\d+)\\s*[.)-]\\s+(.+?)\\s*$",
+    line,
+    perl = TRUE
+  )
+  numbered_parts <- regmatches(line, numbered_match)[[1]]
+  if (length(numbered_parts) == 3) {
+    return(list(cluster_id = numbered_parts[[2]], annotation = numbered_parts[[3]]))
+  }
+  NULL
+}
+
 #' Parse text-format model predictions into a named list
 #'
-#' Handles multiple output formats from LLMs:
-#' - "cluster_id: cell_type" format
-#' - "1. cell_type" numeric index format
-#' - Positional fallback (line index maps to cluster index)
+#' Handles explicit cluster labels and positional fallback for fully unlabeled
+#' responses. Explicit labels are never mixed with positional reassignment.
 #'
 #' @param model_preds Character vector of prediction lines from a model
 #' @param all_clusters Optional character vector of cluster IDs for positional fallback
-#' @return Named list mapping cluster_id -> cell_type
+#' @return Named list mapping cluster IDs to cell type annotations
 #' @keywords internal
 parse_text_predictions <- function(model_preds, all_clusters = NULL) {
+  if (!is.character(model_preds)) {
+    stop("model_preds must be a character vector")
+  }
+
+  lines <- unlist(strsplit(model_preds, "\n", fixed = TRUE), use.names = FALSE)
+  lines <- trimws(lines[!is.na(lines) & nzchar(trimws(lines))])
   model_structured <- list()
+  found_explicit_label <- FALSE
 
-  for (line in model_preds) {
-    if (is.na(line) || is.null(line) || trimws(line) == "") next
-
-    # Try "cluster_id: cell_type" format
-    parts <- strsplit(line, ":", fixed = TRUE)[[1]]
-    if (length(parts) >= 2) {
-      cluster_num <- trimws(parts[1])
-      cell_type <- trimws(paste(parts[-1], collapse = ":"))
-      model_structured[[cluster_num]] <- cell_type
-    } else {
-      # Try numeric index format: "1. cell_type", "1- cell_type"
-      number_match <- regexpr("^\\s*\\d+[\\.-]?\\s+", line)
-      if (number_match > 0) {
-        number_part <- substr(line, 1, attr(number_match, "match.length"))
-        number <- as.numeric(gsub("[^0-9]", "", number_part))
-        cell_type <- trimws(substr(line, attr(number_match, "match.length") + 1, nchar(line)))
-        cluster_num <- as.character(number)
-        model_structured[[cluster_num]] <- cell_type
-      }
+  for (line in lines) {
+    parsed <- parse_prediction_line(line)
+    if (is.null(parsed)) {
+      next
+    }
+    found_explicit_label <- TRUE
+    cluster_id <- resolve_prediction_cluster_id(parsed$cluster_id, all_clusters)
+    if (!is.null(cluster_id) &&
+        is.null(model_structured[[cluster_id]]) &&
+        is_real_cell_type_annotation(parsed$annotation)) {
+      model_structured[[cluster_id]] <- trimws(parsed$annotation)
     }
   }
 
-  # Positional fallback: if specific clusters still have no prediction, try index-based mapping
-  # Use position in all_clusters (not arithmetic on cluster ID) since IDs may be non-contiguous
-  if (!is.null(all_clusters)) {
-    for (cluster_id in all_clusters) {
-      if (!is.null(model_structured[[cluster_id]])) next
-
-      index <- match(cluster_id, all_clusters)
-      if (is.na(index) || index < 1 || index > length(model_preds)) next
-
-      potential_cell_type <- trimws(model_preds[index])
-      if (is.na(potential_cell_type) || potential_cell_type == "") next
-
-      # Strip "cluster_id:" prefix if present
-      if (grepl(":", potential_cell_type, fixed = TRUE)) {
-        parts <- strsplit(potential_cell_type, ":", fixed = TRUE)[[1]]
-        if (length(parts) >= 2) {
-          model_structured[[cluster_id]] <- trimws(paste(parts[-1], collapse = ":"))
-        }
-      } else {
-        # Strip numeric index prefix if present
-        number_match <- regexpr("^\\s*\\d+[\\.-]?\\s+", potential_cell_type)
-        if (number_match > 0) {
-          model_structured[[cluster_id]] <- trimws(substr(potential_cell_type,
-            attr(number_match, "match.length") + 1, nchar(potential_cell_type)))
-        } else {
-          model_structured[[cluster_id]] <- potential_cell_type
-        }
+  # Explicit labels are authoritative. Positional fallback is safe only when
+  # the response contains no labeled lines at all.
+  if (!found_explicit_label && !is.null(all_clusters)) {
+    target_clusters <- unique(as.character(all_clusters))
+    for (index in seq_len(min(length(target_clusters), length(lines)))) {
+      if (is_real_cell_type_annotation(lines[[index]])) {
+        model_structured[[target_clusters[[index]]]] <- lines[[index]]
       }
     }
   }
 
   model_structured
+}
+
+structure_model_predictions <- function(model_preds, all_clusters) {
+  target_clusters <- unique(as.character(all_clusters))
+  prediction_names <- names(model_preds)
+  has_explicit_names <- !is.null(prediction_names) &&
+    any(!is.na(prediction_names) & nzchar(trimws(prediction_names)))
+
+  if (has_explicit_names && (is.list(model_preds) || is.character(model_preds))) {
+    structured <- list()
+    for (index in seq_along(model_preds)) {
+      raw_name <- prediction_names[[index]]
+      if (is.na(raw_name) || !nzchar(trimws(raw_name))) {
+        next
+      }
+
+      cluster_id <- resolve_prediction_cluster_id(raw_name, target_clusters)
+      annotation <- model_preds[[index]]
+      is_valid_annotation <- is_real_cell_type_annotation(annotation)
+      if (!is.null(cluster_id) &&
+          is_valid_annotation &&
+          is.null(structured[[cluster_id]])) {
+        structured[[cluster_id]] <- trimws(annotation)
+      }
+    }
+    return(structured)
+  }
+
+  if (is.character(model_preds)) {
+    return(parse_text_predictions(model_preds, target_clusters))
+  }
+
+  list()
+}
+
+structure_cluster_predictions <- function(initial_predictions, all_clusters,
+                                          cluster_id) {
+  cluster_id <- .normalize_required_string(as.character(cluster_id), "cluster_id")
+  structured_predictions <- list()
+
+  for (model_name in names(initial_predictions)) {
+    parsed <- structure_model_predictions(
+      initial_predictions[[model_name]],
+      all_clusters
+    )
+    structured_predictions[[model_name]] <- if (!is.null(parsed[[cluster_id]])) {
+      parsed[[cluster_id]]
+    } else {
+      "Prediction_Missing"
+    }
+  }
+
+  structured_predictions
+}
+
+build_discussion_cache_context <- function(input, cluster_id, models, api_keys,
+                                           initial_predictions,
+                                           max_discussion_rounds,
+                                           controversy_threshold,
+                                           entropy_threshold,
+                                           consensus_check_model,
+                                           base_urls) {
+  all_cluster_ids <- canonical_cluster_ids(input)
+  current_predictions <- structure_cluster_predictions(
+    initial_predictions,
+    all_cluster_ids,
+    cluster_id
+  )
+  request_models <- unique(c(
+    models,
+    prepare_models_list(consensus_check_model)
+  ))
+  request_context <- lapply(request_models, function(model) {
+    provider <- get_provider(model)
+    api_key <- get_api_key(model, api_keys)
+    credential_source <- if (!is.null(api_key)) {
+      "api_keys"
+    } else if (nzchar(Sys.getenv(paste0(toupper(provider), "_API_KEY")))) {
+      "environment"
+    } else {
+      "none"
+    }
+    base_url <- if (credential_source == "none") {
+      NULL
+    } else {
+      resolve_provider_base_url(provider, base_urls)
+    }
+    model_config <- NULL
+    model_name <- tolower(trimws(model))
+    if (exists(model_name, envir = custom_models, inherits = FALSE)) {
+      model_config <- get(model_name, envir = custom_models)$config
+    }
+
+    list(
+      model = model,
+      provider = provider,
+      credential_source = credential_source,
+      base_url = base_url,
+      model_config = model_config
+    )
+  })
+
+  list(
+    initial_predictions = current_predictions,
+    max_discussion_rounds = max_discussion_rounds,
+    controversy_threshold = controversy_threshold,
+    entropy_threshold = entropy_threshold,
+    consensus_check_model = consensus_check_model,
+    requests = request_context
+  )
+}
+
+align_model_predictions <- function(model_preds, all_clusters) {
+  target_clusters <- unique(as.character(all_clusters))
+  structured <- structure_model_predictions(model_preds, target_clusters)
+  aligned <- vapply(target_clusters, function(cluster_id) {
+    annotation <- structured[[cluster_id]]
+    if (!is_real_cell_type_annotation(annotation)) NA_character_ else annotation
+  }, character(1))
+  names(aligned) <- target_clusters
+  aligned
 }
 
 #' Get initial predictions from all models
@@ -165,12 +333,7 @@ get_initial_predictions <- function(input, tissue_name, models, api_keys, top_ge
 #
 #' @keywords internal
 identify_controversial_clusters <- function(input, individual_predictions, controversy_threshold, entropy_threshold, api_keys, consensus_check_model = NULL, base_urls = NULL) {
-  # For each cluster, check consensus
-  clusters <- if (inherits(input, 'list')) {
-    names(input)
-  } else {
-    unique(input$cluster)
-  }
+  clusters <- canonical_cluster_ids(input)
 
   log_info("Phase 2: Identifying controversial clusters...", list(
     clusters_count = length(clusters),
@@ -192,12 +355,10 @@ identify_controversial_clusters <- function(input, individual_predictions, contr
 
   for (model_name in names(individual_predictions)) {
     model_preds <- individual_predictions[[model_name]]
-
-    if (is.list(model_preds) && !is.null(names(model_preds))) {
-      structured_predictions[[model_name]] <- model_preds
-    } else if (is.character(model_preds)) {
-      structured_predictions[[model_name]] <- parse_text_predictions(model_preds, all_clusters)
-    }
+    structured_predictions[[model_name]] <- structure_model_predictions(
+      model_preds,
+      all_clusters
+    )
   }
 
   for (cluster_id in clusters) {
@@ -271,19 +432,20 @@ identify_controversial_clusters <- function(input, individual_predictions, contr
 #
 #' @keywords internal
 select_best_prediction <- function(consensus_result, valid_predictions) {
-  majority <- consensus_result$majority_prediction
+  majority <- clean_annotation(consensus_result$majority_prediction)
 
   # Accept the consensus check result if it is a real cell type
-  if (!is.null(majority) &&
-      !is.na(majority) &&
-      is.character(majority) &&
-      nzchar(majority) &&
-      !majority %in% .SENTINEL_VALUES) {
+  if (!identical(majority, "Unknown")) {
     return(majority)
   }
 
   # Fallback: pick the most frequent real prediction from the models
-  real_predictions <- valid_predictions[!valid_predictions %in% .SENTINEL_VALUES]
+  cleaned_predictions <- vapply(
+    as.list(valid_predictions),
+    clean_annotation,
+    character(1)
+  )
+  real_predictions <- cleaned_predictions[cleaned_predictions != "Unknown"]
   if (length(real_predictions) == 0) {
     return("Unknown")
   }
@@ -295,8 +457,8 @@ select_best_prediction <- function(consensus_result, valid_predictions) {
   if (length(most_common) == 1) {
     return(most_common)
   }
-  # Tie-break: longest (most specific) annotation wins
-  return(most_common[which.max(nchar(most_common))])
+  # Preserve caller model priority when the vote is tied.
+  real_predictions[real_predictions %in% most_common][[1]]
 }
 
 #' Process controversial clusters through discussion
@@ -352,7 +514,26 @@ process_controversial_clusters <- function(controversial_clusters, input, tissue
 
     # Generate cache key once (reused for both lookup and save)
     cache_key <- if (use_cache) {
-      cache_manager$generate_key(input, successful_models, char_cluster_id, tissue_name, top_gene_count)
+      discussion_context <- build_discussion_cache_context(
+        input = input,
+        cluster_id = char_cluster_id,
+        models = successful_models,
+        api_keys = api_keys,
+        initial_predictions = individual_predictions,
+        max_discussion_rounds = max_discussion_rounds,
+        controversy_threshold = controversy_threshold,
+        entropy_threshold = entropy_threshold,
+        consensus_check_model = consensus_check_model,
+        base_urls = base_urls
+      )
+      cache_manager$generate_key(
+        input,
+        successful_models,
+        char_cluster_id,
+        tissue_name,
+        top_gene_count,
+        discussion_context = discussion_context
+      )
     } else {
       NULL
     }
@@ -363,18 +544,19 @@ process_controversial_clusters <- function(controversial_clusters, input, tissue
       log_debug(sprintf("Cache check for cluster %s", char_cluster_id),
                 list(cluster_id = char_cluster_id, cache_key = cache_key))
 
-      has_cache <- cache_manager$has_cache(cache_key)
-      log_debug(sprintf("Cache lookup result for cluster %s: has_cache = %s", char_cluster_id, has_cache))
-
-      if (has_cache) {
+      cached_result <- cache_manager$load_from_cache(cache_key)
+      if (!is.null(cached_result) && is_valid_consensus_cache_data(cached_result)) {
         log_info(sprintf("Loading cached result for cluster %s", char_cluster_id), list(
           cluster_id = char_cluster_id,
           cache_key = cache_key
         ))
         message(sprintf("Loading cached result for cluster %s", char_cluster_id))
-
-        cached_result <- cache_manager$load_from_cache(cache_key)
-        log_debug(sprintf("Successfully loaded cached result for cluster %s", char_cluster_id))
+      } else if (!is.null(cached_result)) {
+        log_warn("Ignoring invalid cached discussion result", list(
+          cluster_id = char_cluster_id,
+          cache_key = cache_key
+        ))
+        cached_result <- NULL
       }
     } else if (force_rerun) {
       log_info(sprintf("Force rerun enabled, skipping cache for cluster %s", char_cluster_id))
@@ -427,10 +609,12 @@ process_controversial_clusters <- function(controversial_clusters, input, tissue
           discussion_log = discussion_result,
           is_controversial = TRUE
         )
-        cache_manager$save_to_cache(cache_key, cache_data)
-        log_info(sprintf("Saved result to cache for cluster %s", char_cluster_id), list(
-          cluster_id = char_cluster_id
-        ))
+        cache_saved <- cache_manager$save_to_cache(cache_key, cache_data)
+        if (isTRUE(cache_saved)) {
+          log_info(sprintf("Saved result to cache for cluster %s", char_cluster_id), list(
+            cluster_id = char_cluster_id
+          ))
+        }
       }
     }
 
@@ -460,19 +644,27 @@ process_controversial_clusters <- function(controversial_clusters, input, tissue
 #
 #' @keywords internal
 clean_annotation <- function(annotation) {
-  if (is.null(annotation) || is.na(annotation)) {
+  is_text_scalar <- is.character(annotation) &&
+    length(annotation) == 1 &&
+    !is.na(annotation)
+  if (!is_text_scalar) {
     return("Unknown")
   }
 
   # Remove numbered prefixes like "1. ", "1: ", "1- ", etc.
   annotation <- gsub("^\\d+[\\.:\\-\\s]+\\s*", "", annotation)
   # Remove "CELL TYPE:" prefix
-  annotation <- gsub("^CELL\\s*TYPE[\\s:]*", "", annotation)
+  annotation <- gsub(
+    "^CELL\\s*TYPE[\\s:]*",
+    "",
+    annotation,
+    ignore.case = TRUE
+  )
   # Final trim of whitespace
   annotation <- trimws(annotation)
 
   # Normalize sentinel values to a user-friendly fallback
-  if (annotation %in% .SENTINEL_VALUES || !nzchar(annotation)) {
+  if (tolower(annotation) %in% tolower(.SENTINEL_VALUES) || !nzchar(annotation)) {
     return("Unknown")
   }
 
@@ -488,16 +680,16 @@ clean_annotation <- function(annotation) {
 #' @keywords internal
 combine_results <- function(initial_results, controversy_results, discussion_results) {
   # Start with non-controversial cluster annotations
-  final_annotations <- controversy_results$final_annotations
+  final_annotations <- lapply(
+    controversy_results$final_annotations,
+    clean_annotation
+  )
 
   # Merge controversial cluster annotations (already cleaned by process_controversial_clusters)
   for (cluster_id in names(discussion_results$final_annotations)) {
     char_cluster_id <- as.character(cluster_id)
     annotation <- discussion_results$final_annotations[[char_cluster_id]]
-    if (is.null(annotation) || is.na(annotation) || annotation %in% .SENTINEL_VALUES) {
-      annotation <- "Unknown"
-    }
-    final_annotations[[char_cluster_id]] <- annotation
+    final_annotations[[char_cluster_id]] <- clean_annotation(annotation)
   }
 
   result <- list(
@@ -604,25 +796,47 @@ interactive_consensus_annotation <- function(input,
                                            base_urls = NULL,
                                            clusters_to_analyze = NULL,
                                            force_rerun = FALSE) {
-  if (is.null(tissue_name) || !nzchar(trimws(tissue_name))) {
-    stop("tissue_name is required. Specify the tissue type (e.g., 'human PBMC', 'mouse brain').")
-  }
-  if (!is.character(log_dir) || length(log_dir) != 1 || is.na(log_dir) || !nzchar(log_dir)) {
-    stop("log_dir must be a non-empty character scalar")
-  }
-  if (!is.list(api_keys) || is.null(names(api_keys)) || length(api_keys) == 0) {
-    stop("api_keys must be a named, non-empty list")
+  tissue_name <- .normalize_required_string(tissue_name, "tissue_name")
+  models <- .normalize_model_vector(models, minimum_count = 2L)
+  api_keys <- .normalize_api_keys(api_keys)
+  top_gene_count <- .normalize_top_gene_count(top_gene_count)
+  controversy_threshold <- .normalize_probability(
+    controversy_threshold,
+    "controversy_threshold"
+  )
+  entropy_threshold <- .normalize_nonnegative_number(
+    entropy_threshold,
+    "entropy_threshold"
+  )
+  max_discussion_rounds <- .normalize_positive_integer(
+    max_discussion_rounds,
+    "max_discussion_rounds"
+  )
+  log_dir <- .normalize_required_string(log_dir, "log_dir")
+  use_cache <- .normalize_flag(use_cache, "use_cache")
+  force_rerun <- .normalize_flag(force_rerun, "force_rerun")
+  if (!is.null(consensus_check_model)) {
+    consensus_check_model <- .normalize_required_string(
+      consensus_check_model,
+      "consensus_check_model"
+    )
   }
 
-  initialize_logger(log_dir)
+  if (!is.null(clusters_to_analyze)) {
+    selector_is_valid <- (is.character(clusters_to_analyze) ||
+      is.numeric(clusters_to_analyze)) &&
+      length(clusters_to_analyze) > 0 &&
+      !anyNA(clusters_to_analyze)
+    if (!selector_is_valid) {
+      stop("clusters_to_analyze must be a non-empty character or numeric vector")
+    }
+    clusters_to_analyze <- unique(trimws(as.character(clusters_to_analyze)))
+    if (any(!nzchar(clusters_to_analyze))) {
+      stop("clusters_to_analyze must not contain empty cluster IDs")
+    }
+  }
+
   cluster_name_map <- NULL
-
-  # Check if there are enough models for discussion (at least 2)
-  if (length(models) < 2) {
-    stop(paste0("At least 2 models are required for LLM discussion and consensus ",
-                "building. Please provide more models or use annotate_cell_types() ",
-                "function for single-model annotation."))
-  }
 
   # Normalize list input to a canonical cluster->genes mapping to keep
   # contract consistent with annotate_cell_types/create_annotation_prompt.
@@ -634,6 +848,14 @@ interactive_consensus_annotation <- function(input,
     }
     input <- lapply(normalized_input, function(genes) list(genes = genes))
   }
+
+  prompt_metadata <- create_annotation_prompt(input, tissue_name, top_gene_count)
+  available_clusters <- names(prompt_metadata$gene_lists)
+  if (is.list(input) && !is.data.frame(input)) {
+    input <- input[available_clusters]
+  }
+
+  initialize_logger(log_dir)
 
   # Initialize cache manager
   cache_manager <- CacheManager$new(cache_dir)
@@ -656,9 +878,6 @@ interactive_consensus_annotation <- function(input,
 
   # Filter clusters if clusters_to_analyze is specified
   if (!is.null(clusters_to_analyze)) {
-    # Convert to character for consistent comparison
-    clusters_to_analyze <- as.character(clusters_to_analyze)
-
     # If list input names were normalized, accept either original or normalized IDs.
     if (!is.null(cluster_name_map)) {
       mapped_ids <- ifelse(
@@ -667,13 +886,6 @@ interactive_consensus_annotation <- function(input,
         clusters_to_analyze
       )
       clusters_to_analyze <- as.character(mapped_ids)
-    }
-    
-    # Get all available clusters
-    available_clusters <- if (is.list(input) && !is.data.frame(input)) {
-      names(input)
-    } else {
-      as.character(unique(input$cluster))
     }
     
     # Check which requested clusters exist
@@ -698,7 +910,8 @@ interactive_consensus_annotation <- function(input,
       input <- input[valid_clusters]
     } else {
       # For dataframe input, filter rows
-      input <- input[input$cluster %in% valid_clusters, ]
+      normalized_input_clusters <- trimws(as.character(input$cluster))
+      input <- input[normalized_input_clusters %in% valid_clusters, , drop = FALSE]
     }
     
     # Log the filtering

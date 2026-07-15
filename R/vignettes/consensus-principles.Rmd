@@ -9,7 +9,7 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, purl=FALSE}
 knitr::opts_chunk$set(
   echo = TRUE,
   message = FALSE,
@@ -55,7 +55,7 @@ The consensus formation in mLLMCelltype follows a structured deliberation proces
 
 Each model independently annotates the cell clusters based on the marker genes:
 
-```{r}
+```{r, purl=FALSE}
 # Conceptual representation of the initial annotation process
 initial_results <- list()
 for (model in models) {
@@ -74,7 +74,7 @@ This step ensures that each model forms its own opinion without being influenced
 
 The system identifies clusters where there is significant disagreement among models:
 
-```{r}
+```{r, purl=FALSE}
 # Conceptual representation of controversial cluster identification
 controversial_clusters <- identify_controversial_clusters(
   initial_results,
@@ -88,7 +88,7 @@ A cluster is considered "controversial" if the proportion of models agreeing wit
 
 For controversial clusters, the system initiates a structured discussion process:
 
-```{r}
+```{r, purl=FALSE}
 # Conceptual representation of the discussion process
 discussion_results <- facilitate_cluster_discussion(
   controversial_clusters,
@@ -113,7 +113,7 @@ This structured approach mimics how human experts might deliberate on a difficul
 
 After discussion, the system forms a final consensus for all clusters:
 
-```{r}
+```{r, purl=FALSE}
 # Conceptual representation of consensus formation
 final_annotations <- combine_results(
   initial_results,
@@ -132,7 +132,7 @@ A key feature of mLLMCelltype is its transparent uncertainty quantification:
 
 The consensus proportion measures the level of agreement among models:
 
-```{r}
+```{r, purl=FALSE}
 # Conceptual calculation of consensus proportion
 consensus_proportion <- sapply(clusters, function(cluster) {
   annotations <- sapply(models, function(model) initial_results[[model]][cluster])
@@ -152,7 +152,7 @@ The consensus proportion helps identify which annotations are more reliable and 
 
 Shannon entropy quantifies the uncertainty in the annotations:
 
-```{r}
+```{r, purl=FALSE}
 # Conceptual calculation of Shannon entropy
 shannon_entropy <- sapply(clusters, function(cluster) {
   annotations <- sapply(models, function(model) initial_results[[model]][cluster])

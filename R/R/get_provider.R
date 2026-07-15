@@ -1,3 +1,15 @@
+.BUILTIN_PROVIDER_PATTERNS <- c(
+  "openai" = "^(gpt-|o[134]|chatgpt-|codex-)",
+  "anthropic" = "^claude-",
+  "deepseek" = "^deepseek-",
+  "gemini" = "^gemini-",
+  "qwen" = "^(qwen|qwq-)",
+  "stepfun" = "^step-",
+  "zhipu" = "^(glm-|chatglm)",
+  "minimax" = "^minimax-",
+  "grok" = "^grok-"
+)
+
 #' Determine provider from model name
 #'
 #' This function determines the appropriate provider (e.g., OpenAI, Anthropic, Google, OpenRouter) based on the model name.
@@ -22,12 +34,8 @@
 #' }
 #' @export
 get_provider <- function(model) {
-  if (!is.character(model) || length(model) != 1 || is.na(model) || !nzchar(trimws(model))) {
-    stop("model must be a non-empty character scalar")
-  }
-
   # Normalize model name to lowercase for case-insensitive matching
-  model_normalized <- trimws(model)
+  model_normalized <- .normalize_required_string(model, "model")
   model_lower <- tolower(model_normalized)
 
   # OpenRouter models always contain '/' (e.g., 'openai/gpt-5.5')
@@ -41,30 +49,17 @@ get_provider <- function(model) {
     return(model_data$provider)
   }
 
-  # Prefix-based provider detection
-  # Each regex matches the naming convention of a provider's models
-  provider_patterns <- list(
-    "openai"    = "^(gpt-|o[0-9]|chatgpt-|codex-)",
-    "anthropic" = "^claude-",
-    "deepseek"  = "^deepseek-",
-    "gemini"    = "^gemini-",
-    "qwen"      = "^(qwen|qwq-)",
-    "stepfun"   = "^step-",
-    "zhipu"     = "^(glm-|chatglm)",
-    "minimax"   = "^minimax-",
-    "grok"      = "^grok-"
-  )
-
-  for (provider in names(provider_patterns)) {
-    if (grepl(provider_patterns[[provider]], model_lower)) {
+  # Prefix-based provider detection from the shared built-in registry.
+  for (provider in names(.BUILTIN_PROVIDER_PATTERNS)) {
+    if (grepl(.BUILTIN_PROVIDER_PATTERNS[[provider]], model_lower)) {
       return(provider)
     }
   }
 
   # No match — report error with supported prefixes
   supported <- paste(
-    vapply(names(provider_patterns), function(p) {
-      sprintf("  %s: %s", p, provider_patterns[[p]])
+    vapply(names(.BUILTIN_PROVIDER_PATTERNS), function(p) {
+      sprintf("  %s: %s", p, .BUILTIN_PROVIDER_PATTERNS[[p]])
     }, character(1)),
     collapse = "\n"
   )

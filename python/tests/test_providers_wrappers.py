@@ -9,7 +9,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mllmcelltype.providers.anthropic import _parse_anthropic_response, process_anthropic
+from mllmcelltype.providers.anthropic import (
+    _parse_anthropic_response,
+    extract_anthropic_usage,
+    process_anthropic,
+)
 from mllmcelltype.providers.common import NonRetryableProviderError
 from mllmcelltype.providers.deepseek import process_deepseek
 from mllmcelltype.providers.gemini import extract_gemini_usage, process_gemini
@@ -24,26 +28,42 @@ from mllmcelltype.providers.stepfun import process_stepfun
 from mllmcelltype.providers.zhipu import process_zhipu
 
 
+class _FakeGoogleAPIError(Exception):
+    """Minimal Google SDK API error carrying an HTTP-like status code."""
+
+    def __init__(self, code: int, message: str):
+        self.code = code
+        super().__init__(message)
+
+
 def _build_fake_google_modules(
     client: object,
     config_factory: MagicMock | None = None,
+    http_options_factory: MagicMock | None = None,
 ) -> dict[str, ModuleType]:
     """Build fake google-genai modules for deterministic Gemini tests."""
     google_module = ModuleType("google")
     genai_module = ModuleType("google.genai")
+    errors_module = ModuleType("google.genai.errors")
     types_module = ModuleType("google.genai.types")
 
     if config_factory is None:
         config_factory = MagicMock(return_value={"temperature": 0.7, "max_output_tokens": 4096})
+    if http_options_factory is None:
+        http_options_factory = MagicMock(side_effect=lambda **kwargs: kwargs)
 
     genai_module.Client = MagicMock(return_value=client)  # type: ignore[attr-defined]
+    errors_module.APIError = _FakeGoogleAPIError  # type: ignore[attr-defined]
     types_module.GenerateContentConfig = config_factory  # type: ignore[attr-defined]
+    types_module.HttpOptions = http_options_factory  # type: ignore[attr-defined]
+    genai_module.errors = errors_module  # type: ignore[attr-defined]
     genai_module.types = types_module  # type: ignore[attr-defined]
     google_module.genai = genai_module  # type: ignore[attr-defined]
 
     return {
         "google": google_module,
         "google.genai": genai_module,
+        "google.genai.errors": errors_module,
         "google.genai.types": types_module,
     }
 
@@ -175,10 +195,36 @@ def test_process_anthropic_alias_resolution_and_headers(
     assert kwargs["headers"]["anthropic-version"] == "2023-06-01"
 
 
-def test_parse_anthropic_response_coerces_non_string():
-    """Test Anthropic parser coerces non-string text payload."""
+def test_parse_anthropic_response_rejects_non_string():
+    """Test Anthropic parser rejects non-string text payload."""
     payload = {"content": [{"text": 123}]}
-    assert _parse_anthropic_response(payload) == ["123"]
+    with pytest.raises(NonRetryableProviderError, match="non-string"):
+        _parse_anthropic_response(payload)
+
+
+def test_extract_anthropic_usage_normalizes_token_fields():
+    """Test Anthropic usage fields map to the shared provider schema."""
+    usage = extract_anthropic_usage({"usage": {"input_tokens": 12, "output_tokens": 5}})
+
+    assert usage == {"prompt_tokens": 12, "completion_tokens": 5, "total_tokens": 17}
+
+
+def test_extract_anthropic_usage_partial_counts_do_not_invent_total():
+    """Test incomplete Anthropic usage preserves missing values without guessing."""
+    usage = extract_anthropic_usage({"usage": {"input_tokens": 12}})
+
+    assert usage == {"prompt_tokens": 12, "completion_tokens": None, "total_tokens": None}
+
+
+def test_extract_anthropic_usage_rejects_invalid_counts():
+    """Test Anthropic usage follows the shared strict count contract."""
+    usage = extract_anthropic_usage({"usage": {"input_tokens": -1, "output_tokens": True}})
+
+    assert usage == {
+        "prompt_tokens": None,
+        "completion_tokens": None,
+        "total_tokens": None,
+    }
 
 
 @patch("mllmcelltype.providers.minimax.call_openai_compatible_api")
@@ -230,12 +276,13 @@ def test_parse_minimax_response_strips_think_block():
     assert _parse_minimax_response(payload) == ["Cluster 1: T cells"]
 
 
-def test_parse_minimax_response_coerces_non_string_content():
-    """Test MiniMax parser coerces non-string message content."""
+def test_parse_minimax_response_rejects_non_string_content():
+    """Test MiniMax parser rejects non-string message content."""
     payload = {
         "choices": [{"message": {"content": 123}}],
     }
-    assert _parse_minimax_response(payload) == ["123"]
+    with pytest.raises(NonRetryableProviderError, match="non-string"):
+        _parse_minimax_response(payload)
 
 
 def test_parse_minimax_response_invalid_shape_raises_value_error():
@@ -259,7 +306,10 @@ def test_process_gemini_retries_then_succeeds(mock_sleep):
     """Test Gemini retries transient errors and succeeds on a later attempt."""
     fake_response = SimpleNamespace(text="Cluster 1: T cells,\nCluster 2: B cells,")
     fake_client = SimpleNamespace(models=SimpleNamespace(generate_content=MagicMock()))
-    fake_client.models.generate_content.side_effect = [RuntimeError("transient"), fake_response]
+    fake_client.models.generate_content.side_effect = [
+        _FakeGoogleAPIError(429, "transient"),
+        fake_response,
+    ]
 
     fake_modules = _build_fake_google_modules(client=fake_client)
 
@@ -271,23 +321,28 @@ def test_process_gemini_retries_then_succeeds(mock_sleep):
     mock_sleep.assert_called_once_with(2)
 
 
-def test_process_gemini_non_string_text_is_coerced():
-    """Test Gemini coerces non-string response text content."""
+def test_process_gemini_non_string_text_is_rejected():
+    """Test Gemini rejects non-string response text content."""
     fake_response = SimpleNamespace(text=123)
-    fake_client = SimpleNamespace(models=SimpleNamespace(generate_content=MagicMock(return_value=fake_response)))
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=MagicMock(return_value=fake_response))
+    )
 
     fake_modules = _build_fake_google_modules(client=fake_client)
 
-    with patch.dict("sys.modules", fake_modules, clear=False):
-        result = process_gemini("genes", "gemini-3.1-pro-preview", "test-key")
-
-    assert result == ["123"]
+    with (
+        patch.dict("sys.modules", fake_modules, clear=False),
+        pytest.raises(NonRetryableProviderError, match="non-string"),
+    ):
+        process_gemini("genes", "gemini-3.1-pro-preview", "test-key")
 
 
 def test_process_gemini_trims_api_key_for_client():
     """Test Gemini passes normalized API key to the SDK client."""
     fake_response = SimpleNamespace(text="Cluster 1: T cells")
-    fake_client = SimpleNamespace(models=SimpleNamespace(generate_content=MagicMock(return_value=fake_response)))
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=MagicMock(return_value=fake_response))
+    )
 
     fake_modules = _build_fake_google_modules(client=fake_client)
 
@@ -295,13 +350,17 @@ def test_process_gemini_trims_api_key_for_client():
         result = process_gemini("genes", "gemini-3.1-pro-preview", "  test-key  ")
 
     assert result == ["Cluster 1: T cells"]
-    fake_modules["google.genai"].Client.assert_called_once_with(api_key="test-key")
+    client_kwargs = fake_modules["google.genai"].Client.call_args.kwargs
+    assert client_kwargs["api_key"] == "test-key"
+    assert client_kwargs["http_options"] == {"timeout": 30_000}
 
 
 def test_process_gemini_cleans_blank_lines_whitespace_and_commas():
     """Test Gemini response cleanup keeps only cleaned annotation lines."""
     fake_response = SimpleNamespace(text="  Cluster 1: T cells,\n\n Cluster 2: B cells,  \n   ")
-    fake_client = SimpleNamespace(models=SimpleNamespace(generate_content=MagicMock(return_value=fake_response)))
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=MagicMock(return_value=fake_response))
+    )
 
     fake_modules = _build_fake_google_modules(client=fake_client)
 
@@ -315,12 +374,15 @@ def test_process_gemini_cleans_blank_lines_whitespace_and_commas():
 def test_process_gemini_missing_text_fails_fast_without_retry(mock_sleep):
     """Test missing response text raises ValueError immediately (no useless retries)."""
     fake_response = SimpleNamespace(text=None)
-    fake_client = SimpleNamespace(models=SimpleNamespace(generate_content=MagicMock(return_value=fake_response)))
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=MagicMock(return_value=fake_response))
+    )
 
     fake_modules = _build_fake_google_modules(client=fake_client)
 
-    with patch.dict("sys.modules", fake_modules, clear=False), pytest.raises(
-        ValueError, match="missing text content"
+    with (
+        patch.dict("sys.modules", fake_modules, clear=False),
+        pytest.raises(ValueError, match="missing text content"),
     ):
         process_gemini("genes", "gemini-3.1-pro-preview", "test-key")
 
@@ -337,41 +399,61 @@ def test_process_gemini_import_error_message_is_clear():
             raise ImportError("no module named google")
         return original_import(name, globals, locals, fromlist, level)
 
-    with patch("builtins.__import__", side_effect=_fake_import), pytest.raises(
-        ImportError, match="google-genai"
+    with (
+        patch("builtins.__import__", side_effect=_fake_import),
+        pytest.raises(ImportError, match="google-genai"),
     ):
         process_gemini("genes", "gemini-3.1-pro-preview", "test-key")
 
 
 @patch("mllmcelltype.providers.gemini.write_log")
-def test_process_gemini_base_url_is_ignored_with_warning(mock_write_log):
-    """Test Gemini logs warning when base_url is provided (SDK path ignores it)."""
+def test_process_gemini_honors_custom_base_url(mock_write_log):
+    """Test Gemini routes custom endpoints through SDK HTTP options."""
     fake_response = SimpleNamespace(text="Cluster 1: T cells")
-    fake_client = SimpleNamespace(models=SimpleNamespace(generate_content=MagicMock(return_value=fake_response)))
-    fake_modules = _build_fake_google_modules(client=fake_client)
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=MagicMock(return_value=fake_response))
+    )
+    http_options_factory = MagicMock(return_value="configured-http-options")
+    fake_modules = _build_fake_google_modules(
+        client=fake_client,
+        http_options_factory=http_options_factory,
+    )
 
     with patch.dict("sys.modules", fake_modules, clear=False):
         result = process_gemini(
             "genes",
             "gemini-3.1-pro-preview",
             "test-key",
-            base_url="https://proxy.example/v1",
+            base_url="  https://proxy.example/v1/  ",
         )
 
     assert result == ["Cluster 1: T cells"]
+    http_options_factory.assert_called_once_with(
+        timeout=30_000,
+        base_url="https://proxy.example/v1",
+    )
+    fake_modules["google.genai"].Client.assert_called_once_with(
+        api_key="test-key",
+        http_options="configured-http-options",
+    )
     assert any(
-        "base_url parameter is ignored for Gemini" in call.args[0]
-        and call.kwargs.get("level") == "warning"
+        "Using custom base URL: https://proxy.example/v1" in call.args[0]
         for call in mock_write_log.call_args_list
     )
 
 
 @patch("mllmcelltype.providers.gemini.write_log")
-def test_process_gemini_whitespace_base_url_does_not_warn(mock_write_log):
-    """Test blank base_url values are ignored without noisy warnings."""
+def test_process_gemini_whitespace_base_url_uses_default_route(mock_write_log):
+    """Test blank base_url values do not create a custom SDK route."""
     fake_response = SimpleNamespace(text="Cluster 1: T cells")
-    fake_client = SimpleNamespace(models=SimpleNamespace(generate_content=MagicMock(return_value=fake_response)))
-    fake_modules = _build_fake_google_modules(client=fake_client)
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=MagicMock(return_value=fake_response))
+    )
+    http_options_factory = MagicMock(return_value="default-http-options")
+    fake_modules = _build_fake_google_modules(
+        client=fake_client,
+        http_options_factory=http_options_factory,
+    )
 
     with patch.dict("sys.modules", fake_modules, clear=False):
         result = process_gemini(
@@ -382,11 +464,29 @@ def test_process_gemini_whitespace_base_url_does_not_warn(mock_write_log):
         )
 
     assert result == ["Cluster 1: T cells"]
+    http_options_factory.assert_called_once_with(timeout=30_000)
     assert not any(
-        "base_url parameter is ignored for Gemini" in call.args[0]
-        and call.kwargs.get("level") == "warning"
-        for call in mock_write_log.call_args_list
+        "Using custom base URL" in call.args[0] for call in mock_write_log.call_args_list
     )
+
+
+def test_process_gemini_rejects_invalid_custom_base_url_before_client_creation():
+    """Test invalid Gemini routing fails before initializing the SDK client."""
+    fake_client = SimpleNamespace(models=SimpleNamespace(generate_content=MagicMock()))
+    fake_modules = _build_fake_google_modules(client=fake_client)
+
+    with (
+        patch.dict("sys.modules", fake_modules, clear=False),
+        pytest.raises(ValueError, match="Invalid base URL"),
+    ):
+        process_gemini(
+            "genes",
+            "gemini-3.1-pro-preview",
+            "test-key",
+            base_url="not-a-url",
+        )
+
+    fake_modules["google.genai"].Client.assert_not_called()
 
 
 def _ok_response(payload: dict) -> MagicMock:
@@ -414,6 +514,30 @@ def test_process_openai_surfaces_usage_through_sink(mock_resolve_endpoint, mock_
 
     assert result == ["Cluster 1: T cells"]
     assert sink == {"prompt_tokens": 30, "completion_tokens": 6, "total_tokens": 36}
+
+
+@patch("mllmcelltype.providers.anthropic.requests.post")
+@patch("mllmcelltype.providers.anthropic.resolve_endpoint_url")
+def test_process_anthropic_surfaces_usage_through_sink(mock_resolve_endpoint, mock_post):
+    """Test Anthropic follows the same optional usage contract as other providers."""
+    mock_resolve_endpoint.return_value = "https://anthropic.example/v1/messages"
+    mock_post.return_value = _ok_response(
+        {
+            "content": [{"text": "Cluster 1: T cells"}],
+            "usage": {"input_tokens": 20, "output_tokens": 4},
+        }
+    )
+    sink: dict = {}
+
+    result = process_anthropic(
+        "genes",
+        "claude-opus-4-7",
+        "test-key",
+        usage_sink=sink,
+    )
+
+    assert result == ["Cluster 1: T cells"]
+    assert sink == {"prompt_tokens": 20, "completion_tokens": 4, "total_tokens": 24}
 
 
 @patch("mllmcelltype.providers.openai.requests.post")
@@ -466,14 +590,8 @@ def _posted_body(mock_post: MagicMock) -> dict:
 
 @patch("mllmcelltype.providers.openrouter.requests.post")
 @patch("mllmcelltype.providers.openrouter.resolve_endpoint_url")
-def test_process_openrouter_opt_in_changes_request_body_only_with_sink(
-    mock_resolve_endpoint, mock_post
-):
-    """Test the ``usage: {include: true}`` opt-in appears in the body ONLY with a sink.
-
-    Pins the observable request shape (not an internal kwarg): default calls must
-    not perturb the outgoing body, while a sink opts into OpenRouter accounting.
-    """
+def test_process_openrouter_omits_deprecated_usage_opt_in(mock_resolve_endpoint, mock_post):
+    """Test requests omit the deprecated usage flag with and without a sink."""
     mock_resolve_endpoint.return_value = "https://openrouter.example/v1"
     payload = {"choices": [{"message": {"content": "Cluster 1: T cells"}}]}
 
@@ -483,7 +601,7 @@ def test_process_openrouter_opt_in_changes_request_body_only_with_sink(
 
     mock_post.return_value = _ok_response(payload)
     process_openrouter("openai/gpt-5.5", "openai/gpt-5.5", "test-key", usage_sink={})
-    assert _posted_body(mock_post)["usage"] == {"include": True}
+    assert "usage" not in _posted_body(mock_post)
 
 
 def test_process_gemini_surfaces_usage_through_sink():
@@ -537,6 +655,40 @@ def test_extract_gemini_usage_partial_metadata_reports_none_not_zero():
     assert usage == {"prompt_tokens": 9, "completion_tokens": None, "total_tokens": None}
 
 
+def test_extract_gemini_usage_rejects_invalid_counts():
+    """Test Gemini metadata cannot populate malformed token counts."""
+    metadata = SimpleNamespace(
+        prompt_token_count=-1,
+        candidates_token_count=True,
+        total_token_count="3",
+    )
+
+    assert extract_gemini_usage(SimpleNamespace(usage_metadata=metadata)) == {
+        "prompt_tokens": None,
+        "completion_tokens": None,
+        "total_tokens": None,
+    }
+
+
+def test_process_gemini_rejects_invalid_usage_sink_before_client_creation():
+    """Test Gemini validates telemetry ownership before creating an SDK client."""
+    fake_client = SimpleNamespace(models=SimpleNamespace(generate_content=MagicMock()))
+    fake_modules = _build_fake_google_modules(client=fake_client)
+
+    with (
+        patch.dict("sys.modules", fake_modules, clear=False),
+        pytest.raises(ValueError, match="usage_sink must be a mutable mapping"),
+    ):
+        process_gemini(
+            "genes",
+            "gemini-3.1-pro-preview",
+            "test-key",
+            usage_sink=[],  # type: ignore[arg-type]
+        )
+
+    fake_modules["google.genai"].Client.assert_not_called()
+
+
 def test_process_gemini_missing_usage_metadata_leaves_sink_empty():
     """End-to-end: a response without usage_metadata must not crash or touch the sink."""
     fake_response = SimpleNamespace(text="Cluster 1: T cells")  # no usage_metadata
@@ -569,17 +721,98 @@ def test_process_gemini_missing_usage_metadata_clears_stale_sink():
     assert sink == {}
 
 
+def test_process_gemini_usage_extraction_failure_is_non_fatal():
+    """Test optional Gemini telemetry cannot invalidate a valid model response."""
+
+    class ResponseWithBrokenUsage:
+        text = "Cluster 1: T cells"
+
+        @property
+        def usage_metadata(self):
+            raise RuntimeError("unsupported metadata")
+
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=MagicMock(return_value=ResponseWithBrokenUsage()))
+    )
+    fake_modules = _build_fake_google_modules(client=fake_client)
+    sink = {"total_tokens": 99}
+
+    with patch.dict("sys.modules", fake_modules, clear=False):
+        result = process_gemini(
+            "genes",
+            "gemini-3.1-pro-preview",
+            "test-key",
+            usage_sink=sink,
+        )
+
+    assert result == ["Cluster 1: T cells"]
+    assert sink == {}
+
+
 @patch("mllmcelltype.providers.gemini.time.sleep")
 def test_process_gemini_retries_exhausted_raises(mock_sleep):
     """Test Gemini raises final error after exhausting retries."""
     fake_client = SimpleNamespace(models=SimpleNamespace(generate_content=MagicMock()))
-    fake_client.models.generate_content.side_effect = RuntimeError("persistent failure")
+    fake_client.models.generate_content.side_effect = _FakeGoogleAPIError(
+        500,
+        "persistent failure",
+    )
     fake_modules = _build_fake_google_modules(client=fake_client)
 
-    with patch.dict("sys.modules", fake_modules, clear=False), pytest.raises(
-        RuntimeError, match="persistent failure"
+    with (
+        patch.dict("sys.modules", fake_modules, clear=False),
+        pytest.raises(_FakeGoogleAPIError, match="persistent failure"),
     ):
         process_gemini("genes", "gemini-3.1-pro-preview", "test-key")
 
     assert fake_client.models.generate_content.call_count == 3
     assert [call.args[0] for call in mock_sleep.call_args_list] == [2, 4]
+
+
+@patch("mllmcelltype.providers.gemini.time.sleep")
+def test_process_gemini_failed_call_clears_stale_usage(mock_sleep):
+    """Test a failed Gemini call cannot expose token usage from an earlier call."""
+    fake_client = SimpleNamespace(models=SimpleNamespace(generate_content=MagicMock()))
+    fake_client.models.generate_content.side_effect = _FakeGoogleAPIError(
+        500,
+        "persistent failure",
+    )
+    fake_modules = _build_fake_google_modules(client=fake_client)
+    sink = {"prompt_tokens": 12, "completion_tokens": 5, "total_tokens": 17}
+
+    with (
+        patch.dict("sys.modules", fake_modules, clear=False),
+        pytest.raises(_FakeGoogleAPIError, match="persistent failure"),
+    ):
+        process_gemini(
+            "genes",
+            "gemini-3.1-pro-preview",
+            "test-key",
+            usage_sink=sink,
+        )
+
+    assert sink == {}
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        RuntimeError("broken adapter"),
+        _FakeGoogleAPIError(400, "bad request"),
+    ],
+)
+@patch("mllmcelltype.providers.gemini.time.sleep")
+def test_process_gemini_non_transient_errors_fail_fast(mock_sleep, error):
+    """Test programming and client errors are not amplified by retries."""
+    fake_client = SimpleNamespace(models=SimpleNamespace(generate_content=MagicMock()))
+    fake_client.models.generate_content.side_effect = error
+    fake_modules = _build_fake_google_modules(client=fake_client)
+
+    with (
+        patch.dict("sys.modules", fake_modules, clear=False),
+        pytest.raises(type(error), match=str(error)),
+    ):
+        process_gemini("genes", "gemini-3.1-pro-preview", "test-key")
+
+    assert fake_client.models.generate_content.call_count == 1
+    mock_sleep.assert_not_called()

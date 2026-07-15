@@ -3,7 +3,6 @@
 #' Concrete implementation of BaseAPIProcessor for Gemini models.
 #' Handles Gemini-specific API calls, authentication, and response parsing.
 #'
-#' @importFrom R6 R6Class
 #' @export
 GeminiProcessor <- R6::R6Class("GeminiProcessor",
   inherit = BaseAPIProcessor,
@@ -11,7 +10,7 @@ GeminiProcessor <- R6::R6Class("GeminiProcessor",
   public = list(
     #' @description
     #' Initialize Gemini processor
-    #
+    #' @param base_url Optional custom API endpoint
     initialize = function(base_url = NULL) {
       super$initialize("gemini", base_url)
     },
@@ -25,18 +24,16 @@ GeminiProcessor <- R6::R6Class("GeminiProcessor",
 
     #' @description
     #' Get API URL for specific model
-    #
-    #
+    #' @param model Model identifier
     get_api_url_for_model = function(model) {
       return(paste0(self$get_api_url(), "/", model, ":generateContent"))
     },
     
     #' @description
     #' Make API call to Gemini
-    #
-    #
-    #
-    #
+    #' @param chunk_content Prompt text to send
+    #' @param model Model identifier
+    #' @param api_key Gemini API key
     make_api_call = function(chunk_content, model, api_key) {
       # Build API URL with model
       api_url <- self$get_api_url_for_model(model)
@@ -64,8 +61,9 @@ GeminiProcessor <- R6::R6Class("GeminiProcessor",
           "x-goog-api-key" = api_key,
           "Content-Type" = "application/json"
         ),
-        body = jsonlite::toJSON(body, auto_unbox = TRUE),
-        encode = "json"
+        body = body,
+        encode = "json",
+        httr::timeout(30)
       )
       
       private$stop_for_http_error(response, model, "Gemini")
@@ -75,9 +73,8 @@ GeminiProcessor <- R6::R6Class("GeminiProcessor",
     
     #' @description
     #' Extract response content from Gemini API response
-    #
-    #
-    #
+    #' @param response HTTP response object
+    #' @param model Model identifier
     extract_response_content = function(response, model) {
       self$logger$debug("Parsing Gemini API response",
                        list(provider = self$provider_name, model = model))
@@ -104,6 +101,20 @@ GeminiProcessor <- R6::R6Class("GeminiProcessor",
       response_content <- content$candidates[[1]]$content$parts[[1]]$text
       
       return(response_content)
+    },
+
+    #' @description
+    #' Extract normalized Gemini token usage
+    #' @param response HTTP response object
+    extract_usage = function(response) {
+      private$extract_usage_fields(
+        response,
+        usage_field = "usageMetadata",
+        prompt_field = "promptTokenCount",
+        completion_field = "candidatesTokenCount",
+        total_field = "totalTokenCount",
+        cost_field = NULL
+      )
     }
   )
 )

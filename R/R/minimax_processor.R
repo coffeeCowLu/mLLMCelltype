@@ -3,7 +3,6 @@
 #' Concrete implementation of BaseAPIProcessor for Minimax models.
 #' Handles Minimax-specific API calls, authentication, and response parsing.
 #'
-#' @importFrom R6 R6Class
 #' @export
 MinimaxProcessor <- R6::R6Class("MinimaxProcessor",
   inherit = BaseAPIProcessor,
@@ -11,7 +10,7 @@ MinimaxProcessor <- R6::R6Class("MinimaxProcessor",
   public = list(
     #' @description
     #' Initialize Minimax processor
-    #
+    #' @param base_url Optional custom API endpoint
     initialize = function(base_url = NULL) {
       super$initialize("minimax", base_url)
     },
@@ -25,19 +24,17 @@ MinimaxProcessor <- R6::R6Class("MinimaxProcessor",
     
     #' @description
     #' Make API call to Minimax
-    #
-    #
-    #
-    #
+    #' @param chunk_content Prompt text to send
+    #' @param model Model identifier
+    #' @param api_key MiniMax API key
     make_api_call = function(chunk_content, model, api_key) {
       private$post_chat_completions_request(chunk_content, model, api_key)
     },
     
     #' @description
     #' Extract response content from Minimax API response
-    #
-    #
-    #
+    #' @param response HTTP response object
+    #' @param model Model identifier
     extract_response_content = function(response, model) {
       self$logger$debug("Parsing MiniMax API response",
                        list(provider = self$provider_name, model = model))

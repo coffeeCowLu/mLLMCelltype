@@ -7,7 +7,7 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r, include = FALSE}
+```{r, include = FALSE, purl=FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
@@ -15,7 +15,7 @@ knitr::opts_chunk$set(
 )
 ```
 
-```{r setup}
+```{r setup, purl=FALSE}
 library(mLLMCelltype)
 ```
 
@@ -27,13 +27,13 @@ mLLMCelltype is an R package that leverages various large language models (LLMs)
 
 You can install the released version of mLLMCelltype from CRAN:
 
-```{r installation}
+```{r installation, purl=FALSE}
 install.packages("mLLMCelltype")
 ```
 
 Or install the development version from GitHub:
 
-```{r installation-dev}
+```{r installation-dev, purl=FALSE}
 # install.packages("devtools")
 devtools::install_github("cafferychen777/mLLMCelltype")
 ```
@@ -42,7 +42,7 @@ devtools::install_github("cafferychen777/mLLMCelltype")
 
 Before using mLLMCelltype, you need to set up API keys for the LLMs you want to use. The package supports multiple LLM providers including OpenAI, Anthropic, Google (Gemini), and X.AI (Grok).
 
-```{r api-keys}
+```{r api-keys, purl=FALSE}
 # Set API keys (recommended to use .Renviron or .env file)
 # OpenAI API key
 Sys.setenv(OPENAI_API_KEY = "your-openai-api-key")
@@ -66,7 +66,7 @@ Sys.setenv(XAI_API_KEY = "your-xai-api-key")
 
 The main function of mLLMCelltype is to annotate cell types in a Seurat object:
 
-```{r basic-usage}
+```{r basic-usage, purl=FALSE}
 # Load required packages
 library(mLLMCelltype)
 library(Seurat)
@@ -120,7 +120,7 @@ pbmc$mLLM_cell_type <- cell_types
 
 ### Visualizing Results
 
-```{r visualization}
+```{r visualization, purl=FALSE}
 # Plot UMAP with cell type annotations
 library(Seurat)
 library(ggplot2)
@@ -167,7 +167,7 @@ mLLMCelltype supports various LLM models:
 
 If you only want to use a single LLM model instead of the consensus approach:
 
-```{r single-model}
+```{r single-model, purl=FALSE}
 # Run annotation with a single model
 single_model_results <- annotate_cell_types(
   input = pbmc_markers,
@@ -184,7 +184,7 @@ cat(single_model_results)
 
 ### Customizing Consensus Parameters
 
-```{r custom-consensus}
+```{r custom-consensus, purl=FALSE}
 # Customize consensus parameters
 custom_consensus_results <- interactive_consensus_annotation(
   input = pbmc_markers,
@@ -208,7 +208,7 @@ custom_consensus_results <- interactive_consensus_annotation(
 
 You can register custom LLM providers:
 
-```{r custom-provider}
+```{r custom-provider, purl=FALSE}
 # Register a custom provider
 register_custom_provider(
   provider_name = "my_custom_provider",
@@ -236,7 +236,7 @@ results <- annotate_cell_types(
 
 mLLMCelltype includes a caching system to save API costs:
 
-```{r caching}
+```{r caching, purl=FALSE}
 # Enable caching
 Sys.setenv(MLLM_CACHE_ENABLED = "TRUE")
 

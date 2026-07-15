@@ -5,13 +5,16 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import math
 import os
 import re
+import tempfile
 import time
 from collections.abc import Iterable, Mapping
 from typing import Any
 
 import pandas as pd
+from dotenv import dotenv_values
 
 from .config import get_api_key_env_var
 from .logger import write_log
@@ -29,10 +32,37 @@ UNKNOWN_ANNOTATION_TOKENS = {
     "inconclusive",
 }
 UNKNOWN_WITH_CONTEXT_PATTERN = re.compile(r"(?i)^unknown(?:\s*[\(\[\{].*[\)\]\}])?$")
-INCONCLUSIVE_WITH_CONTEXT_PATTERN = re.compile(
-    r"(?i)^inconclusive(?:\s*[\(\[\{].*[\)\]\}])?$"
-)
+INCONCLUSIVE_WITH_CONTEXT_PATTERN = re.compile(r"(?i)^inconclusive(?:\s*[\(\[\{].*[\)\]\}])?$")
 ERROR_ANNOTATION_PATTERN = re.compile(r"(?i)^error(?:\s*:\s*.*|\s*\(.*\))?$")
+CACHE_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+CACHE_VERSION = "1.0"
+CACHE_ENVELOPE_KEYS = frozenset({"version", "timestamp", "data"})
+
+
+def validate_bool(value: Any, field_name: str) -> bool:
+    """Validate a strict boolean control without accepting truthy substitutes."""
+    if not isinstance(value, bool):
+        raise ValueError(f"{field_name} must be True or False")
+    return value
+
+
+def normalize_text(
+    value: Any,
+    field_name: str,
+    *,
+    required: bool = False,
+) -> str | None:
+    """Normalize optional text and enforce one required/optional string contract."""
+    if value is None:
+        if required:
+            raise ValueError(f"{field_name} must be a non-empty string")
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string, got {type(value).__name__}")
+    normalized = value.strip()
+    if required and not normalized:
+        raise ValueError(f"{field_name} must be a non-empty string")
+    return normalized or None
 
 
 def is_missing_value(value: Any) -> bool:
@@ -112,84 +142,145 @@ def _get_cache_dir(cache_dir: str | None = None) -> str:
     return cache_dir
 
 
-def load_api_key(provider: str) -> str | None:
-    """Load API key for a specific provider from environment variables or .env file.
+def _get_cache_file(cache_key: str, cache_dir: str | None = None) -> str:
+    """Return a cache path while keeping keys inside the cache directory."""
+    if not isinstance(cache_key, str) or not CACHE_KEY_PATTERN.fullmatch(cache_key):
+        raise ValueError(
+            "cache_key must contain 1-128 ASCII letters, digits, underscores, or hyphens"
+        )
+    return os.path.join(_get_cache_dir(cache_dir), f"{cache_key}.json")
 
-    Args:
-        provider: The provider name (e.g., 'openai', 'anthropic')
 
-    Returns:
-        str | None: The API key, or None if not found
+def _list_cache_files(cache_dir: str) -> list[str]:
+    """Return deterministic names of regular JSON cache files."""
+    return sorted(
+        name
+        for name in os.listdir(cache_dir)
+        if name.endswith(".json") and os.path.isfile(os.path.join(cache_dir, name))
+    )
 
-    """
-    # Get environment variable names from centralized config.
-    # Gemini keeps a compatibility alias for older docs/user setups.
-    provider_normalized = str(provider).strip().lower()
+
+def _validate_cache_age(older_than: int | None) -> int | None:
+    """Validate an optional non-negative cache age threshold."""
+    if older_than is None:
+        return None
+    if isinstance(older_than, bool) or not isinstance(older_than, int) or older_than < 0:
+        raise ValueError("older_than must be a non-negative integer or None")
+    return older_than
+
+
+def _get_cache_timestamp(cache_data: Any) -> float | None:
+    """Return a finite non-negative cache timestamp when metadata is valid."""
+    if not isinstance(cache_data, dict) or "timestamp" not in cache_data:
+        return None
+    timestamp = cache_data["timestamp"]
+    if isinstance(timestamp, bool) or not isinstance(timestamp, (int, float)):
+        return None
+    timestamp = float(timestamp)
+    return timestamp if math.isfinite(timestamp) and timestamp >= 0 else None
+
+
+def _is_supported_cache_payload(value: Any) -> bool:
+    """Return whether a value belongs to the public cache payload contract."""
+    return isinstance(value, (list, dict, str))
+
+
+def _classify_cache_content(cache_content: Any) -> tuple[str, float | None]:
+    """Classify loadable cache content and return its optional metadata timestamp."""
+    is_envelope = isinstance(cache_content, dict) and CACHE_ENVELOPE_KEYS.issubset(cache_content)
+    if is_envelope:
+        if set(cache_content) != CACHE_ENVELOPE_KEYS:
+            raise ValueError("cache envelope contains unexpected fields")
+        if cache_content["version"] != CACHE_VERSION:
+            raise ValueError(f"unsupported cache version: {cache_content['version']!r}")
+        timestamp = _get_cache_timestamp(cache_content)
+        if timestamp is None:
+            raise ValueError("cache envelope has an invalid timestamp")
+        if not _is_supported_cache_payload(cache_content["data"]):
+            raise ValueError("cache envelope has an unsupported data payload")
+        return CACHE_VERSION, timestamp
+
+    if not _is_supported_cache_payload(cache_content):
+        raise ValueError("legacy cache has an unsupported payload type")
+    return "legacy", None
+
+
+def _api_key_env_vars(provider: str) -> list[str]:
+    """Return API key variable names in provider-defined priority order."""
     env_vars = [get_api_key_env_var(provider)]
-    if provider_normalized == "gemini" and "GOOGLE_API_KEY" not in env_vars:
+    if str(provider).strip().lower() == "gemini":
         env_vars.append("GOOGLE_API_KEY")
+    return list(dict.fromkeys(env_vars))
 
-    # Get API key from environment variables in order of priority
-    api_key = None
-    selected_env_var = env_vars[0]
+
+def _select_api_key(
+    env_vars: list[str],
+    values: Mapping[str, Any],
+) -> tuple[str | None, str | None]:
+    """Select and normalize the highest-priority configured API key."""
     for env_var in env_vars:
-        candidate = os.getenv(env_var)
-        if isinstance(candidate, str):
-            candidate = candidate.strip() or None
-        if candidate:
-            api_key = candidate
-            selected_env_var = env_var
+        raw_value = values.get(env_var)
+        if isinstance(raw_value, str) and (api_key := raw_value.strip()):
+            return api_key, env_var
+    return None, None
+
+
+def _find_dotenv_path() -> str | None:
+    """Find the nearest project .env, then the package-level fallback."""
+    current_dir = os.path.abspath(os.getcwd())
+    for _ in range(4):
+        candidate = os.path.join(current_dir, ".env")
+        if os.path.isfile(candidate):
+            return candidate
+        parent_dir = os.path.dirname(current_dir)
+        if parent_dir == current_dir:
             break
+        current_dir = parent_dir
 
-    # If not found in environment, try to load from .env file
-    if not api_key:
+    package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    package_candidate = os.path.join(package_dir, ".env")
+    return package_candidate if os.path.isfile(package_candidate) else None
+
+
+def load_api_key(provider: str) -> str | None:
+    """Load a provider API key from the environment or nearest .env file."""
+    env_vars = _api_key_env_vars(provider)
+    api_key, selected_env_var = _select_api_key(env_vars, os.environ)
+    source = "environment"
+
+    if not api_key and (env_path := _find_dotenv_path()):
         try:
-            # Try to find .env file in project root (current directory or parent directories)
-            env_path = None
-            current_dir = os.path.abspath(os.getcwd())
+            write_log(f"Found .env file at {env_path}")
+            api_key, selected_env_var = _select_api_key(
+                env_vars,
+                dotenv_values(env_path),
+            )
+            source = ".env file"
+        except (OSError, UnicodeError) as error:
+            write_log(f"Error loading .env file: {error!s}", level="warning")
 
-            # Check current directory and up to 3 parent directories
-            for _ in range(4):
-                potential_path = os.path.join(current_dir, ".env")
-                if os.path.isfile(potential_path):
-                    env_path = potential_path
-                    break
-                parent_dir = os.path.dirname(current_dir)
-                if parent_dir == current_dir:  # Reached root directory
-                    break
-                current_dir = parent_dir
-
-            # Fall back to a .env in the package directory only if no
-            # project-level .env was found (project takes priority).
-            if env_path is None:
-                package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                package_env_path = os.path.join(package_dir, ".env")
-                if os.path.isfile(package_env_path):
-                    env_path = package_env_path
-
-            if env_path:
-                write_log(f"Found .env file at {env_path}")
-                with open(env_path) as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line or line.startswith("#") or "=" not in line:
-                            continue
-                        key, value = line.split("=", 1)
-                        if key.strip() in env_vars:
-                            # Strip surrounding quotes (common .env convention)
-                            api_key = value.strip().strip("\"'").strip() or None
-                            selected_env_var = key.strip()
-                            write_log(f"Loaded API key for {provider} from .env file")
-                            break
-        except OSError as e:
-            write_log(f"Error loading .env file: {e!s}", level="warning")
-
-    if not api_key:
-        write_log(f"API key not found for provider: {env_vars[0]}", level="debug")
+    if api_key:
+        write_log(
+            f"Using API key from {source} variable: {selected_env_var}",
+            level="debug",
+        )
     else:
-        write_log(f"Using API key from environment variable: {selected_env_var}", level="debug")
-
+        write_log(f"API key not found for provider: {env_vars[0]}", level="debug")
     return api_key
+
+
+def _normalize_marker_gene(raw_gene: Any) -> str | None:
+    """Normalize one marker gene value or return None when it is missing."""
+    if is_missing_value(raw_gene):
+        return None
+    if isinstance(raw_gene, (bytes, bytearray, memoryview)):
+        raise ValueError("individual marker gene values must be text or scalar identifiers")
+    if isinstance(raw_gene, Mapping) or (
+        isinstance(raw_gene, Iterable) and not isinstance(raw_gene, str)
+    ):
+        raise ValueError("individual marker gene values must be scalar")
+    gene = str(raw_gene).strip()
+    return gene or None
 
 
 def _coerce_marker_gene_list(genes: Any) -> list[str]:
@@ -199,6 +290,10 @@ def _coerce_marker_gene_list(genes: Any) -> list[str]:
 
     if isinstance(genes, Mapping):
         raise ValueError("marker_genes values must be gene lists, not mapping objects")
+    if isinstance(genes, (set, frozenset)):
+        raise ValueError("marker_genes values must preserve ranked gene order, not use sets")
+    if isinstance(genes, (bytes, bytearray, memoryview)):
+        raise ValueError("marker_genes values must contain text or scalar gene identifiers")
 
     if isinstance(genes, str):
         values = [genes]
@@ -208,11 +303,11 @@ def _coerce_marker_gene_list(genes: Any) -> list[str]:
         values = [genes]
 
     cleaned: list[str] = []
+    seen: set[str] = set()
     for raw_gene in values:
-        if is_missing_value(raw_gene):
-            continue
-        gene = str(raw_gene).strip()
-        if gene:
+        gene = _normalize_marker_gene(raw_gene)
+        if gene and gene not in seen:
+            seen.add(gene)
             cleaned.append(gene)
     return cleaned
 
@@ -257,9 +352,7 @@ def normalize_marker_genes_keys(
 ) -> dict[str, list[str]]:
     """Normalize marker gene dict keys to strings and merge key collisions."""
     if not isinstance(marker_genes, dict):
-        raise ValueError(
-            f"marker_genes must be a dict, got {type(marker_genes).__name__}"
-        )
+        raise ValueError(f"marker_genes must be a dict, got {type(marker_genes).__name__}")
 
     normalized: dict[str, list[str]] = {}
     for raw_cluster, genes in marker_genes.items():
@@ -276,9 +369,7 @@ def normalize_marker_genes_keys(
     return normalized
 
 
-def create_cache_key(
-    prompt: str, model: str, provider: str, base_url: str | None = None
-) -> str:
+def create_cache_key(prompt: str, model: str, provider: str, base_url: str | None = None) -> str:
     """Create a cache key for a specific request.
 
     Args:
@@ -333,20 +424,34 @@ def save_to_cache(
 
     """
     cache_dir = _get_cache_dir(cache_dir)
-    cache_file = os.path.join(cache_dir, f"{cache_key}.json")
-
-    # Create cache directory if it doesn't exist
-    os.makedirs(cache_dir, exist_ok=True)
+    cache_file = _get_cache_file(cache_key, cache_dir)
 
     # Ensure results are in a consistent format
-    cache_data = {"version": "1.0", "timestamp": time.time(), "data": results}
+    cache_data = {"version": CACHE_VERSION, "timestamp": time.time(), "data": results}
 
-    # Save results to cache
+    temp_file: str | None = None
     try:
-        with open(cache_file, "w") as f:
-            json.dump(cache_data, f, indent=2)
+        if not _is_supported_cache_payload(results):
+            raise TypeError("cache results must be a list, dictionary, or string")
+        os.makedirs(cache_dir, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=cache_dir,
+            prefix=f".{cache_key}.",
+            suffix=".tmp",
+            delete=False,
+        ) as file:
+            temp_file = file.name
+            json.dump(cache_data, file, indent=2)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temp_file, cache_file)
         write_log(f"Saved results to cache: {cache_file}")
     except (OSError, TypeError, ValueError) as e:
+        if temp_file is not None:
+            with contextlib.suppress(OSError):
+                os.remove(temp_file)
         write_log(f"Error saving cache for {cache_file}: {e}", level="error")
 
 
@@ -363,11 +468,10 @@ def load_from_cache(
         list[str] | dict[str, Any] | str | None: Cached results, or None if not found
 
     """
-    cache_dir = _get_cache_dir(cache_dir)
-    cache_file = os.path.join(cache_dir, f"{cache_key}.json")
+    cache_file = _get_cache_file(cache_key, cache_dir)
 
     # Check if cache file exists
-    if not os.path.exists(cache_file):
+    if not os.path.isfile(cache_file):
         return None
 
     # Load results from cache
@@ -375,13 +479,10 @@ def load_from_cache(
         with open(cache_file) as f:
             cache_content = json.load(f)
 
-        # Handle different cache formats
-        if isinstance(cache_content, dict) and "data" in cache_content:
-            # New format with metadata
+        cache_format, _ = _classify_cache_content(cache_content)
+        if cache_format == CACHE_VERSION:
             results = cache_content["data"]
-            write_log(
-                f"Loaded results from cache (version {cache_content.get('version', 'unknown')}): {cache_file}"
-            )
+            write_log(f"Loaded results from cache (version {CACHE_VERSION}): {cache_file}")
         else:
             # Old format (direct data)
             results = cache_content
@@ -391,6 +492,43 @@ def load_from_cache(
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
         write_log(f"Error loading cache for {cache_file}: {e}", level="warning")
         return None
+
+
+def _resolve_marker_dataframe_column(
+    marker_genes_df: pd.DataFrame,
+    required_name: str,
+) -> Any:
+    """Resolve one required column without silently accepting normalized duplicates."""
+    matches = [
+        column for column in marker_genes_df.columns if str(column).strip().lower() == required_name
+    ]
+    if not matches:
+        write_log(
+            f"'{required_name}' column not found in marker genes dataframe",
+            level="error",
+        )
+        raise ValueError(
+            f"'{required_name}' column not found in marker genes dataframe. "
+            f"Available columns: {list(marker_genes_df.columns)}"
+        )
+    if len(matches) > 1:
+        raise ValueError(
+            f"Ambiguous '{required_name}' columns after case/whitespace normalization: {matches}"
+        )
+    return matches[0]
+
+
+def _append_unique_marker_gene(
+    result: dict[str, list[str]],
+    gene_sets: dict[str, set[str]],
+    cluster_id: str,
+    raw_gene: Any,
+) -> None:
+    """Append one normalized marker gene while preserving first-seen order."""
+    gene = _normalize_marker_gene(raw_gene)
+    if gene and gene not in gene_sets[cluster_id]:
+        gene_sets[cluster_id].add(gene)
+        result[cluster_id].append(gene)
 
 
 def parse_marker_genes(marker_genes_df: pd.DataFrame) -> dict[str, list[str]]:
@@ -415,28 +553,11 @@ def parse_marker_genes(marker_genes_df: pd.DataFrame) -> dict[str, list[str]]:
         write_log("Empty marker genes dataframe", level="warning")
         return result
 
-    # Resolve column names case-insensitively
-    col_lower_map = {str(col).strip().lower(): col for col in marker_genes_df.columns}
-
-    cluster_col = col_lower_map.get("cluster")
-    if cluster_col is None:
-        write_log("'cluster' column not found in marker genes dataframe", level="error")
-        raise ValueError(
-            "'cluster' column not found in marker genes dataframe. "
-            f"Available columns: {list(marker_genes_df.columns)}"
-        )
-
-    gene_col = col_lower_map.get("gene")
-    if gene_col is None:
-        write_log("'gene' column not found in marker genes dataframe", level="error")
-        raise ValueError(
-            "'gene' column not found in marker genes dataframe. "
-            f"Available columns: {list(marker_genes_df.columns)}"
-        )
+    cluster_col = _resolve_marker_dataframe_column(marker_genes_df, "cluster")
+    gene_col = _resolve_marker_dataframe_column(marker_genes_df, "gene")
 
     # Parse row-wise to avoid hard failure when cluster values are unhashable
     # (e.g., accidental list objects from dirty upstream preprocessing).
-    source_variants: dict[str, set[str]] = {}
     gene_sets: dict[str, set[str]] = {}
     for _, row in marker_genes_df.iterrows():
         raw_cluster = row[cluster_col]
@@ -448,357 +569,301 @@ def parse_marker_genes(marker_genes_df: pd.DataFrame) -> dict[str, list[str]]:
             )
             continue
 
-        raw_cluster_variant = str(raw_cluster).strip()
-        existing_variants = source_variants.setdefault(cluster_id, set())
-        if raw_cluster_variant not in existing_variants:
-            if existing_variants:
-                write_log(
-                    f"Cluster key collision after normalization: {raw_cluster!r} -> '{cluster_id}'",
-                    level="warning",
-                )
-            existing_variants.add(raw_cluster_variant)
-
         if cluster_id not in result:
-            # Preserve explicit cluster rows even when no marker genes are present.
-            # Downstream annotation treats these as Unknown without issuing API calls.
             result[cluster_id] = []
             gene_sets[cluster_id] = set()
-
-        raw_gene = row[gene_col]
-        if is_missing_value(raw_gene):
-            continue
-        gene = str(raw_gene).strip()
-        if not gene:
-            continue
-
-        known_genes = gene_sets[cluster_id]
-        if gene not in known_genes:
-            known_genes.add(gene)
-            result[cluster_id].append(gene)
+        _append_unique_marker_gene(result, gene_sets, cluster_id, row[gene_col])
 
     return result
+
+
+LABELED_ANNOTATION_PATTERNS = (
+    r"^\s*(?:[-*]\s*)?(.+?)\s*(?::|\uFF1A)\s*(.*?)\s*$",
+    r"^\s*(?:[-*]\s*)?(.+?)\s+-\s+(.+?)\s*$",
+    r"^\s*(?:[-*]\s*)?([A-Za-z0-9_.-]+)\)\s*(.+?)\s*$",
+    r"^\s*(?:[-*]\s*)?([A-Za-z0-9_.-]+)\.\s*(.+?)\s*$",
+)
+
+
+def _parse_labeled_annotation_line(line: str) -> tuple[str, str] | None:
+    """Parse an explicitly cluster-labeled annotation line."""
+    for pattern in LABELED_ANNOTATION_PATTERNS:
+        match = re.match(pattern, line)
+        if match:
+            return match.group(1).strip(), match.group(2).strip()
+    return None
+
+
+def _build_cluster_aliases(cluster_id: str) -> set[str]:
+    """Build accepted prompt-style aliases for one cluster ID."""
+    normalized = cluster_id.strip()
+    if not normalized:
+        return set()
+
+    stripped = re.sub(r"^[Cc]luster[_\s]", "", normalized).strip()
+    aliases = {normalized, stripped}
+    if stripped:
+        aliases.update(
+            {
+                f"Cluster_{stripped}",
+                f"cluster_{stripped}",
+                f"Cluster {stripped}",
+                f"cluster {stripped}",
+            }
+        )
+    return {alias for alias in aliases if alias}
+
+
+def _record_unambiguous_alias(
+    owners: dict[str, str],
+    ambiguous: set[str],
+    alias: str,
+    cluster_id: str,
+) -> None:
+    """Record an alias only while it identifies exactly one requested cluster."""
+    if alias in ambiguous:
+        return
+    existing = owners.get(alias)
+    if existing is None:
+        owners[alias] = cluster_id
+    elif existing != cluster_id:
+        owners.pop(alias, None)
+        ambiguous.add(alias)
+
+
+def _build_requested_cluster_lookup(clusters: list[str]) -> dict[str, str]:
+    """Map exact cluster IDs and unambiguous aliases to requested IDs."""
+    exact_ids = list(dict.fromkeys(str(cluster) for cluster in clusters if str(cluster)))
+    exact_id_set = set(exact_ids)
+    lookup = {cluster_id: cluster_id for cluster_id in exact_ids}
+    sensitive_owners: dict[str, str] = {}
+    sensitive_ambiguous: set[str] = set()
+    insensitive_owners: dict[str, str] = {}
+    insensitive_ambiguous: set[str] = set()
+
+    for cluster_id in exact_ids:
+        lower_id = cluster_id.lower()
+        if lower_id not in exact_id_set:
+            _record_unambiguous_alias(
+                insensitive_owners,
+                insensitive_ambiguous,
+                lower_id,
+                cluster_id,
+            )
+
+        for alias in _build_cluster_aliases(cluster_id):
+            if alias == cluster_id or alias in exact_id_set:
+                continue
+            _record_unambiguous_alias(
+                sensitive_owners,
+                sensitive_ambiguous,
+                alias,
+                cluster_id,
+            )
+            alias_lower = alias.lower()
+            if alias_lower not in exact_id_set:
+                _record_unambiguous_alias(
+                    insensitive_owners,
+                    insensitive_ambiguous,
+                    alias_lower,
+                    cluster_id,
+                )
+
+    for alias, cluster_id in sensitive_owners.items():
+        lookup.setdefault(alias, cluster_id)
+    for alias, cluster_id in insensitive_owners.items():
+        lookup.setdefault(alias, cluster_id)
+    return lookup
+
+
+def _resolve_result_cluster(raw_cluster_id: Any, lookup: dict[str, str]) -> str | None:
+    """Resolve one result identifier against exact IDs and safe aliases."""
+    if raw_cluster_id is None:
+        return None
+    cluster_id = str(raw_cluster_id).strip()
+    if not cluster_id:
+        return None
+
+    target = lookup.get(cluster_id) or lookup.get(cluster_id.lower())
+    if target:
+        return target
+    for alias in _build_cluster_aliases(cluster_id):
+        target = lookup.get(alias) or lookup.get(alias.lower())
+        if target:
+            return target
+    return None
+
+
+def _store_preferred_annotation(
+    target: dict[str, str],
+    cluster_id: str,
+    raw_annotation: Any,
+) -> None:
+    """Store the first annotation, allowing a known label to replace Unknown."""
+    annotation = normalize_annotation(raw_annotation)
+    existing = target.get(cluster_id)
+    if existing is None or (existing == "Unknown" and annotation != "Unknown"):
+        target[cluster_id] = annotation
+
+
+def _resolve_annotation_pairs(
+    pairs: Iterable[tuple[Any, Any]],
+    cluster_lookup: dict[str, str],
+) -> dict[str, str]:
+    """Resolve raw cluster/annotation pairs using one shared conflict policy."""
+    resolved: dict[str, str] = {}
+    for raw_cluster_id, raw_annotation in pairs:
+        cluster_id = _resolve_result_cluster(raw_cluster_id, cluster_lookup)
+        if cluster_id:
+            _store_preferred_annotation(resolved, cluster_id, raw_annotation)
+    return resolved
+
+
+def _complete_cluster_annotations(
+    annotations: dict[str, str],
+    clusters: list[str],
+) -> dict[str, str]:
+    """Return all requested cluster IDs with a canonical Unknown fallback."""
+    return {str(cluster): annotations.get(str(cluster), "Unknown") for cluster in clusters}
+
+
+def _normalize_result_lines(results: Any) -> list[str]:
+    """Normalize provider output into deterministic non-empty lines."""
+    if isinstance(results, str):
+        raw_lines = results.splitlines()
+    elif isinstance(results, set):
+        raw_lines = sorted(str(line) for line in results)
+    elif isinstance(results, (list, tuple)):
+        raw_lines = [str(line) for line in results]
+    elif results is None:
+        raw_lines = []
+    else:
+        raw_lines = [str(results)]
+    return [line.strip() for line in raw_lines if line.strip()]
+
+
+def _extract_json_document(lines: list[str]) -> Any | None:
+    """Decode the first JSON document represented by response lines."""
+    full_text = "\n".join(lines)
+    code_block = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", full_text)
+    if code_block:
+        json_text = code_block.group(1)
+    else:
+        document = re.search(r"(\[[\s\S]*\]|\{[\s\S]*\})", full_text)
+        json_text = document.group(1) if document else full_text
+
+    try:
+        return json.loads(json_text)
+    except (json.JSONDecodeError, TypeError) as error:
+        write_log(f"Failed to parse JSON response: {error!s}", level="debug")
+        return None
+
+
+def _select_json_annotation(record: dict[str, Any]) -> Any:
+    """Select the first populated annotation field from a JSON record."""
+    for field in ("cell_type", "annotation", "label"):
+        value = record.get(field)
+        if not is_missing_value(value) and str(value).strip():
+            return value
+    return None
+
+
+def _json_annotation_pairs(payload: Any) -> list[tuple[Any, Any]]:
+    """Convert supported JSON response shapes into cluster/annotation pairs."""
+    if isinstance(payload, dict) and isinstance(payload.get("annotations"), list):
+        records = payload["annotations"]
+    elif isinstance(payload, list):
+        records = payload
+    elif isinstance(payload, dict):
+        return list(payload.items())
+    else:
+        return []
+
+    return [
+        (record["cluster"], _select_json_annotation(record))
+        for record in records
+        if isinstance(record, dict) and "cluster" in record
+    ]
+
+
+def _parse_labeled_annotations(
+    lines: list[str],
+    cluster_lookup: dict[str, str],
+) -> tuple[dict[str, str], bool]:
+    """Parse labeled lines and report whether any explicit labels were present."""
+    pairs: list[tuple[str, str]] = []
+    found_explicit_label = False
+    for line in lines:
+        parsed = _parse_labeled_annotation_line(line)
+        if parsed is None:
+            continue
+        found_explicit_label = True
+        pairs.append(parsed)
+    return _resolve_annotation_pairs(pairs, cluster_lookup), found_explicit_label
 
 
 def format_results(
     results: list[str] | dict[str, Any] | str,
     clusters: list[str],
 ) -> dict[str, str]:
-    """Format results into a dictionary mapping cluster names to annotations.
+    """Format provider results into a complete cluster-to-annotation mapping."""
+    cluster_lookup = _build_requested_cluster_lookup(clusters)
 
-    Args:
-        results: Annotation results (list, dict, or string)
-        clusters: List of cluster names
-
-    Returns:
-        dict[str, str]: Dictionary mapping cluster names to annotations
-
-    """
-    def _coerce_annotation(value: Any) -> str:
-        return normalize_annotation(value)
-
-    def _cluster_candidates(cluster: str) -> set[str]:
-        candidates = {cluster}
-        stripped = re.sub(r"^[Cc]luster[_\s]", "", cluster)
-        if stripped != cluster:
-            candidates.add(stripped)
-        return {candidate.strip() for candidate in candidates if candidate.strip()}
-
-    def _parse_labeled_line(line: str) -> tuple[str, str] | None:
-        patterns = [
-            # Keep the left identifier verbatim; alias normalization happens later.
-            # This avoids misparsing exact IDs like "Cluster_1" as "1".
-            r"^\s*(?:[-*]\s*)?(.+?)\s*(?:[:\-]|\uFF1A)\s*(.+?)\s*$",
-            r"^\s*(?:[-*]\s*)?([A-Za-z0-9_.-]+)\)\s*(.+?)\s*$",
-            r"^\s*(?:[-*]\s*)?([A-Za-z0-9_.-]+)\.\s*(.+?)\s*$",
-        ]
-        for pattern in patterns:
-            match = re.match(pattern, line)
-            if match:
-                return match.group(1).strip(), match.group(2).strip()
-        return None
-
-    def _build_cluster_aliases(cluster_id: str) -> set[str]:
-        aliases = _cluster_candidates(cluster_id)
-        expanded = set(aliases)
-        for alias in aliases:
-            stripped = re.sub(r"^[Cc]luster[_\s]", "", alias)
-            if stripped != alias and stripped:
-                expanded.add(stripped)
-            if stripped:
-                expanded.add(f"Cluster_{stripped}")
-                expanded.add(f"cluster_{stripped}")
-                expanded.add(f"Cluster {stripped}")
-                expanded.add(f"cluster {stripped}")
-        return {alias.strip() for alias in expanded if alias and alias.strip()}
-
-    def _build_requested_cluster_lookup(target_clusters: list[str]) -> dict[str, str]:
-        # Exact IDs are authoritative and should never be shadowed by aliases.
-        lookup: dict[str, str] = {}
-        exact_ids: list[str] = []
-        for cluster in target_clusters:
-            cluster_str = str(cluster)
-            if not cluster_str:
-                continue
-            if cluster_str not in lookup:
-                lookup[cluster_str] = cluster_str
-                exact_ids.append(cluster_str)
-
-        exact_id_set = set(exact_ids)
-
-        case_sensitive_alias_owner: dict[str, str] = {}
-        case_sensitive_alias_ambiguous: set[str] = set()
-        case_insensitive_alias_owner: dict[str, str] = {}
-        case_insensitive_alias_ambiguous: set[str] = set()
-
-        def _record_alias(
-            owner_map: dict[str, str],
-            ambiguous_set: set[str],
-            alias_key: str,
-            cluster_id: str,
-        ) -> None:
-            if alias_key in ambiguous_set:
-                return
-            existing_owner = owner_map.get(alias_key)
-            if existing_owner is None:
-                owner_map[alias_key] = cluster_id
-                return
-            if existing_owner != cluster_id:
-                owner_map.pop(alias_key, None)
-                ambiguous_set.add(alias_key)
-
-        for cluster_str in exact_ids:
-            # Case-insensitive exact-ID fallback is allowed only when it does not
-            # collide with another exact cluster ID.
-            exact_lower = cluster_str.lower()
-            if exact_lower not in exact_id_set:
-                _record_alias(
-                    case_insensitive_alias_owner,
-                    case_insensitive_alias_ambiguous,
-                    exact_lower,
-                    cluster_str,
-                )
-
-            for alias in _build_cluster_aliases(cluster_str):
-                if not alias or alias == cluster_str or alias in exact_id_set:
-                    continue
-                _record_alias(
-                    case_sensitive_alias_owner,
-                    case_sensitive_alias_ambiguous,
-                    alias,
-                    cluster_str,
-                )
-                alias_lower = alias.lower()
-                if alias_lower in exact_id_set:
-                    continue
-                _record_alias(
-                    case_insensitive_alias_owner,
-                    case_insensitive_alias_ambiguous,
-                    alias_lower,
-                    cluster_str,
-                )
-
-        for alias, cluster_id in case_sensitive_alias_owner.items():
-            lookup.setdefault(alias, cluster_id)
-        for alias_lower, cluster_id in case_insensitive_alias_owner.items():
-            lookup.setdefault(alias_lower, cluster_id)
-
-        return lookup
-
-    def _resolve_target_cluster(raw_cluster_id: Any, lookup: dict[str, str]) -> str | None:
-        if raw_cluster_id is None:
-            return None
-        raw_cluster_str = str(raw_cluster_id).strip()
-        if not raw_cluster_str:
-            return None
-
-        target = lookup.get(raw_cluster_str) or lookup.get(raw_cluster_str.lower())
-        if target:
-            return target
-
-        for alias in _build_cluster_aliases(raw_cluster_str):
-            target = lookup.get(alias) or lookup.get(alias.lower())
-            if target:
-                return target
-        return None
-
-    def _store_annotation_if_better(
-        target: dict[str, str],
-        cluster_id: str,
-        raw_annotation: Any,
-    ) -> None:
-        annotation = _coerce_annotation(raw_annotation)
-        existing = target.get(cluster_id)
-        if existing is None or (existing == "Unknown" and annotation != "Unknown"):
-            target[cluster_id] = annotation
-
-    # Build candidate->cluster mapping once so all parsing branches use identical matching rules.
-    candidate_to_cluster = _build_requested_cluster_lookup(clusters)
-
-    # Fast path: dictionary results (legacy/new cache compatibility).
     if isinstance(results, dict):
-        resolved_annotations: dict[str, str] = {}
-        for raw_cluster_id, raw_annotation in results.items():
-            normalized_cluster_id = str(raw_cluster_id).strip()
-            if not normalized_cluster_id:
-                continue
-            target_cluster = _resolve_target_cluster(raw_cluster_id, candidate_to_cluster)
-            if not target_cluster:
-                continue
-            _store_annotation_if_better(
-                resolved_annotations,
-                target_cluster,
-                _coerce_annotation(raw_annotation),
-            )
-
-        formatted = {}
-        for cluster in clusters:
-            cluster_str = str(cluster)
-            annotation = resolved_annotations.get(cluster_str)
-            formatted[cluster_str] = annotation if annotation is not None else "Unknown"
+        resolved = _resolve_annotation_pairs(results.items(), cluster_lookup)
         write_log("Parsed response from dictionary format", level="info")
-        return formatted
+        return _complete_cluster_annotations(resolved, clusters)
 
-    # Normalize response into lines.
-    if isinstance(results, str):
-        lines = results.splitlines()
-    elif isinstance(results, (list, tuple, set)):
-        lines = [str(line) for line in results]
-    elif results is None:
-        lines = []
-    else:
-        # Defensive fallback for unexpected scalar payloads from provider wrappers/cache.
-        lines = [str(results)]
+    lines = _normalize_result_lines(results)
+    labeled, has_explicit_labels = _parse_labeled_annotations(lines, cluster_lookup)
+    if len(labeled) == len(set(map(str, clusters))):
+        write_log("Successfully parsed labeled response", level="info")
+        return _complete_cluster_annotations(labeled, clusters)
 
-    # Clean up results (remove empty lines and whitespace)
-    clean_results = [line.strip() for line in lines if line and line.strip()]
-
-    # Case 1: Try to parse the format "Cluster X: Annotation" (most common format from our prompts)
-    result = {}
-    cluster_pattern = r"(?i)Cluster\s+(.+?):\s*(.*)"
-
-    # First pass: parse labeled lines in one pass (supports more real-world formats).
-    for line in clean_results:
-        parsed = _parse_labeled_line(line)
-        if not parsed:
-            continue
-        raw_cluster_id, annotation = parsed
-        target_cluster = _resolve_target_cluster(raw_cluster_id, candidate_to_cluster)
-        if not target_cluster:
-            continue
-        _store_annotation_if_better(result, target_cluster, annotation)
-
-    # If we found annotations for all clusters, return the result
-    if len(result) == len(clusters):
-        write_log(
-            "Successfully parsed response in 'Cluster X: Annotation' format",
-            level="info",
-        )
-        return result
-    labeled_partial = result.copy()
-
-    # Case 2: Try to parse JSON response
-    try:
-        # Join all lines and try to find JSON content
-        full_text = "\n".join(clean_results)
-
-        # Extract JSON content if it's wrapped in ```json and ``` markers
-        json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", full_text)
-        if json_match:
-            json_str = json_match.group(1)
+    json_payload = _extract_json_document(lines)
+    json_annotations = _resolve_annotation_pairs(
+        _json_annotation_pairs(json_payload),
+        cluster_lookup,
+    )
+    if json_annotations:
+        if len(json_annotations) == len(set(map(str, clusters))):
+            write_log("Successfully parsed JSON response", level="info")
         else:
-            # If no code blocks, try to find JSON array/object directly
-            json_match = re.search(r"(\[[\s\S]*\]|\{[\s\S]*\})", full_text)
-            # Extract JSON content or use full text
-            json_str = json_match.group(1) if json_match else full_text
+            write_log(
+                f"Parsed partial JSON response ({len(json_annotations)}/{len(clusters)} clusters), "
+                "missing clusters marked Unknown",
+                level="warning",
+            )
+        return _complete_cluster_annotations(json_annotations, clusters)
 
-        # Parse JSON
-        data = json.loads(json_str)
-
-        json_result: dict[str, str] = {}
-
-        # Case 2a: {"annotations": [{"cluster": "...", "cell_type": "..."}]}
-        if isinstance(data, dict) and "annotations" in data and isinstance(data["annotations"], list):
-            for annotation in data["annotations"]:
-                if not isinstance(annotation, dict):
-                    continue
-                if "cluster" not in annotation:
-                    continue
-                target_cluster = _resolve_target_cluster(annotation.get("cluster"), candidate_to_cluster)
-                if not target_cluster:
-                    continue
-                cell_type = (
-                    annotation.get("cell_type")
-                    or annotation.get("annotation")
-                    or annotation.get("label")
-                )
-                _store_annotation_if_better(json_result, target_cluster, cell_type)
-
-        # Case 2b: direct mapping {"1": "T cells", "2": "B cells"}
-        elif isinstance(data, dict):
-            for cluster_id, annotation in data.items():
-                target_cluster = _resolve_target_cluster(cluster_id, candidate_to_cluster)
-                if target_cluster:
-                    _store_annotation_if_better(json_result, target_cluster, annotation)
-
-        # Case 2c: list of objects [{"cluster": "...", "cell_type": "..."}]
-        elif isinstance(data, list):
-            for item in data:
-                if not isinstance(item, dict):
-                    continue
-                if "cluster" not in item:
-                    continue
-                target_cluster = _resolve_target_cluster(item.get("cluster"), candidate_to_cluster)
-                if not target_cluster:
-                    continue
-                cell_type = item.get("cell_type") or item.get("annotation") or item.get("label")
-                _store_annotation_if_better(json_result, target_cluster, cell_type)
-
-        if json_result:
-            formatted = {str(cluster): json_result.get(str(cluster), "Unknown") for cluster in clusters}
-            if len(json_result) == len(clusters):
-                write_log("Successfully parsed JSON response", level="info")
-            else:
-                write_log(
-                    f"Parsed partial JSON response ({len(json_result)}/{len(clusters)} clusters), "
-                    "missing clusters marked Unknown",
-                    level="warning",
-                )
-            return formatted
-    except (json.JSONDecodeError, ValueError, KeyError, TypeError, AttributeError) as e:
-        write_log(f"Failed to parse JSON response: {e!s}", level="debug")
-
-    # Prefer partial labeled mapping over positional mapping because it is
-    # cluster-id aware and avoids line-index misalignment.
-    if labeled_partial:
+    if has_explicit_labels:
         write_log(
-            f"Parsed partial labeled response ({len(labeled_partial)}/{len(clusters)} clusters), "
-            "missing clusters marked Unknown",
+            f"Parsed partial labeled response ({len(labeled)}/{len(clusters)} clusters), "
+            "missing or unrequested clusters marked Unknown",
             level="warning",
         )
-        return {str(cluster): labeled_partial.get(str(cluster), "Unknown") for cluster in clusters}
+        return _complete_cluster_annotations(labeled, clusters)
 
-    # Case 3: Line-by-line mapping — each line corresponds to a cluster
-    if len(clean_results) < len(clusters):
+    if len(lines) < len(clusters):
         write_log(
-            f"Fewer result lines ({len(clean_results)}) than clusters ({len(clusters)}), "
+            f"Fewer result lines ({len(lines)}) than clusters ({len(clusters)}), "
             "remaining clusters will be marked Unknown",
             level="warning",
         )
+    elif len(lines) > len(clusters):
+        write_log(
+            f"More result lines ({len(lines)}) than clusters ({len(clusters)}), "
+            "extra lines will be ignored",
+            level="warning",
+        )
 
-    result = {}
-    for i, cluster in enumerate(clusters):
-        if i < len(clean_results):
-            line = clean_results[i]
-            match = re.match(cluster_pattern, line)
-            if match:
-                result[str(cluster)] = _coerce_annotation(match.group(2))
-            else:
-                result[str(cluster)] = _coerce_annotation(line)
-        else:
-            result[str(cluster)] = "Unknown"
-
+    positional = {
+        str(cluster): normalize_annotation(lines[index])
+        for index, cluster in enumerate(clusters)
+        if index < len(lines)
+    }
     write_log("Parsed response as line-by-line format", level="info")
-    return result
+    return _complete_cluster_annotations(positional, clusters)
 
 
 def clear_cache(cache_dir: str | None = None, older_than: int | None = None) -> int:
@@ -814,14 +879,15 @@ def clear_cache(cache_dir: str | None = None, older_than: int | None = None) -> 
 
     """
     cache_dir = _get_cache_dir(cache_dir)
+    older_than = _validate_cache_age(older_than)
 
     if not os.path.exists(cache_dir):
         return 0
 
     # Get all cache files
-    cache_files = [f for f in os.listdir(cache_dir) if f.endswith(".json")]
+    cache_files = _list_cache_files(cache_dir)
 
-    if not older_than:
+    if older_than is None:
         # Remove all cache files
         count = 0
         for f in cache_files:
@@ -837,15 +903,15 @@ def clear_cache(cache_dir: str | None = None, older_than: int | None = None) -> 
     for f in cache_files:
         file_path = os.path.join(cache_dir, f)
         try:
-            # Check file age using metadata first, then fall back to mtime.
-            # Corrupted cache entries should not crash cleanup.
+            # Use envelope metadata only after applying the same schema validation
+            # as normal cache reads. Legacy and invalid entries fall back to mtime.
             try:
                 with open(file_path) as file:
                     cache_data = json.load(file)
-                if isinstance(cache_data, dict) and "timestamp" in cache_data:
-                    file_age = now - cache_data.get("timestamp", 0)
-                else:
-                    file_age = now - os.path.getmtime(file_path)
+                _, timestamp = _classify_cache_content(cache_data)
+                file_age = (
+                    now - timestamp if timestamp is not None else now - os.path.getmtime(file_path)
+                )
             except (json.JSONDecodeError, KeyError, TypeError, ValueError):
                 file_age = now - os.path.getmtime(file_path)
                 write_log(
@@ -873,6 +939,7 @@ def get_cache_stats(cache_dir: str | None = None, detailed: bool = True) -> dict
         dict[str, Any]: Cache statistics
 
     """
+    detailed = validate_bool(detailed, "detailed")
     cache_dir = _get_cache_dir(cache_dir)
 
     if not os.path.exists(cache_dir):
@@ -889,12 +956,19 @@ def get_cache_stats(cache_dir: str | None = None, detailed: bool = True) -> dict
                     "status": "No cache directory",
                     "oldest": None,
                     "newest": None,
+                    "format_counts": {
+                        "legacy": 0,
+                        CACHE_VERSION: 0,
+                        "unknown": 0,
+                    },
+                    "valid_files": 0,
+                    "invalid_files": 0,
                 }
             )
         return result
 
     # Get all cache files
-    cache_files = [f for f in os.listdir(cache_dir) if f.endswith(".json")]
+    cache_files = _list_cache_files(cache_dir)
     total_size = sum(os.path.getsize(os.path.join(cache_dir, f)) for f in cache_files)
 
     # Basic stats (fast path)
@@ -916,7 +990,7 @@ def get_cache_stats(cache_dir: str | None = None, detailed: bool = True) -> dict
                 "status": "Empty cache",
                 "oldest": None,
                 "newest": None,
-                "format_counts": {"legacy": 0, "1.0": 0, "unknown": 0},
+                "format_counts": {"legacy": 0, CACHE_VERSION: 0, "unknown": 0},
                 "valid_files": 0,
                 "invalid_files": 0,
             }
@@ -925,7 +999,7 @@ def get_cache_stats(cache_dir: str | None = None, detailed: bool = True) -> dict
 
     oldest = float("inf")
     newest = 0
-    format_counts = {"legacy": 0, "1.0": 0, "unknown": 0}
+    format_counts = {"legacy": 0, CACHE_VERSION: 0, "unknown": 0}
     valid_files = 0
     invalid_files = 0
 
@@ -936,25 +1010,12 @@ def get_cache_stats(cache_dir: str | None = None, detailed: bool = True) -> dict
             with open(file_path) as file:
                 cache_data = json.load(file)
 
+            cache_format, timestamp = _classify_cache_content(cache_data)
             valid_files += 1
-
-            # Check cache format
-            if isinstance(cache_data, dict):
-                if "version" in cache_data and "data" in cache_data:
-                    # New format with metadata
-                    version = cache_data.get("version", "unknown")
-                    format_counts[version if version in format_counts else "unknown"] += 1
-
-                    # Get timestamp
-                    timestamp = cache_data.get("timestamp", 0)
-                    oldest = min(oldest, timestamp)
-                    newest = max(newest, timestamp)
-                else:
-                    # Legacy format or other dict format
-                    format_counts["legacy"] += 1
-            else:
-                # Unknown format
-                format_counts["unknown"] += 1
+            format_counts[cache_format] += 1
+            if timestamp is not None:
+                oldest = min(oldest, timestamp)
+                newest = max(newest, timestamp)
 
         except (
             OSError,
@@ -965,6 +1026,7 @@ def get_cache_stats(cache_dir: str | None = None, detailed: bool = True) -> dict
             AttributeError,
         ) as e:
             invalid_files += 1
+            format_counts["unknown"] += 1
             write_log(f"Error processing cache file {f}: {e}", level="warning")
 
     # Convert timestamps to readable format

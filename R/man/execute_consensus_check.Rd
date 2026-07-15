@@ -2,7 +2,7 @@
 % Please edit documentation in R/check_consensus.R
 \name{execute_consensus_check}
 \alias{execute_consensus_check}
-\title{Execute consensus check with retry logic}
+\title{Execute consensus check across ordered model candidates}
 \usage{
 execute_consensus_check(
   formatted_responses,
@@ -11,7 +11,19 @@ execute_consensus_check(
   base_urls = NULL
 )
 }
+\arguments{
+\item{formatted_responses}{Prompt containing model responses}
+
+\item{api_keys}{Named API key list}
+
+\item{models_to_try}{Ordered model candidates}
+
+\item{base_urls}{Optional provider base URLs}
+}
+\value{
+A list containing success status and response text
+}
 \description{
-Execute consensus check with retry logic
+Execute consensus check across ordered model candidates
 }
 \keyword{internal}

@@ -26,6 +26,7 @@ from .prompts import (
     create_discussion_consensus_prompt,
     create_discussion_prompt,
     create_initial_discussion_prompt,
+    validate_prompt_template,
 )
 from .url_utils import resolve_provider_base_url
 from .utils import (
@@ -35,6 +36,8 @@ from .utils import (
     load_api_key,
     normalize_annotation,
     normalize_marker_genes_keys,
+    normalize_text,
+    validate_bool,
 )
 
 # Default result structure for discussion round consensus check
@@ -60,6 +63,37 @@ RECOVERABLE_LLM_EXCEPTIONS = (
 )
 
 
+def _normalize_probability(value: Any, field_name: str) -> float:
+    """Validate a finite numeric probability without accepting booleans."""
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or not 0 <= value <= 1
+    ):
+        raise ValueError(f"{field_name} must be a finite number between 0 and 1")
+    return float(value)
+
+
+def _normalize_nonnegative_number(value: Any, field_name: str) -> float:
+    """Validate a finite non-negative numeric control."""
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value < 0
+    ):
+        raise ValueError(f"{field_name} must be a finite non-negative number")
+    return float(value)
+
+
+def _normalize_nonnegative_integer(value: Any, field_name: str) -> int:
+    """Validate a non-negative integer control."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{field_name} must be a non-negative integer")
+    return value
+
+
 def _normalize_api_keys(api_keys: dict[str, str] | None) -> dict[str, str]:
     """Normalize and validate provider API keys.
 
@@ -68,8 +102,12 @@ def _normalize_api_keys(api_keys: dict[str, str] | None) -> dict[str, str]:
     - key values must be strings
     - blank keys are treated as missing and dropped
     """
-    if not api_keys:
+    if api_keys is None:
         return {}
+    if not isinstance(api_keys, dict):
+        raise ValueError(
+            f"api_keys must be a dict mapping provider names to keys, got {type(api_keys).__name__}"
+        )
 
     normalized: dict[str, str] = {}
     for raw_provider, raw_key in api_keys.items():
@@ -79,7 +117,11 @@ def _normalize_api_keys(api_keys: dict[str, str] | None) -> dict[str, str]:
             )
         provider = raw_provider.strip().lower()
         if not provider:
-            continue
+            raise ValueError("API key provider names must be non-empty strings")
+        if provider in normalized:
+            raise ValueError(
+                f"Duplicate API key provider after case/whitespace normalization: '{provider}'"
+            )
         if raw_key is None:
             continue
         if not isinstance(raw_key, str):
@@ -123,9 +165,19 @@ def _normalize_consensus_model_spec(
     if provider_normalized is not None and model_normalized is None:
         model_normalized = get_default_model(provider_normalized)
 
-    _validate_consensus_model_provider_match(provider_normalized, model_normalized)
+    _validate_provider_model_match(provider_normalized, model_normalized, "consensus_model")
 
     return {"provider": provider_normalized, "model": model_normalized}
+
+
+def _normalize_model_identity(raw_model: Any, field_name: str) -> str:
+    """Normalize one model identity while rejecting ambiguous coercion."""
+    if not isinstance(raw_model, str):
+        raise ValueError(f"{field_name} must be a non-empty string")
+    model_name = raw_model.strip()
+    if not model_name:
+        raise ValueError(f"{field_name} must be a non-empty string")
+    return model_name
 
 
 def _normalize_consensus_model_provider_field(provider: Any) -> str | None:
@@ -158,9 +210,10 @@ def _normalize_consensus_model_name_field(model: Any) -> str | None:
     return normalized
 
 
-def _validate_consensus_model_provider_match(
+def _validate_provider_model_match(
     provider: str | None,
     model: str | None,
+    field_name: str,
 ) -> None:
     """Validate provider/model consistency when both are specified."""
     if not provider or not model or provider == "openrouter":
@@ -170,7 +223,7 @@ def _validate_consensus_model_provider_match(
         inferred_provider = get_provider(model)
     if inferred_provider and inferred_provider != provider:
         raise ValueError(
-            "consensus_model provider/model mismatch: "
+            f"{field_name} provider/model mismatch: "
             f"provider='{provider}', model='{model}' "
             f"(inferred provider '{inferred_provider}')"
         )
@@ -196,17 +249,18 @@ def _normalize_single_prediction_map(model_name: str, raw_results: Any) -> dict[
         cluster_id = str(raw_cluster).strip()
         if not cluster_id:
             continue
-        annotation = str(raw_annotation).strip()
+        if not isinstance(raw_annotation, str):
+            raise ValueError(
+                f"Model '{model_name}' annotation for cluster '{cluster_id}' must be a string"
+            )
+        annotation = raw_annotation.strip()
         if annotation and not is_unknown_annotation(annotation):
-            existing = cluster_map.get(cluster_id)
-            if existing is None or existing == annotation:
-                cluster_map[cluster_id] = annotation
-            else:
-                write_log(
-                    f"Model '{model_name}' has conflicting annotations for normalized cluster "
-                    f"'{cluster_id}', keeping first value '{existing}' and ignoring '{annotation}'",
-                    level="warning",
+            if cluster_id in cluster_map:
+                raise ValueError(
+                    f"Model '{model_name}' has duplicate cluster ID after normalization: "
+                    f"'{cluster_id}'"
                 )
+            cluster_map[cluster_id] = annotation
     return cluster_map
 
 
@@ -220,19 +274,18 @@ def _normalize_predictions(
         )
 
     normalized: dict[str, dict[str, str]] = {}
+    seen_model_names: set[str] = set()
     for raw_model, raw_results in predictions.items():
-        model_name = str(raw_model).strip() or str(raw_model)
+        model_name = _normalize_model_identity(raw_model, "prediction model names")
+        if model_name in seen_model_names:
+            raise ValueError(
+                f"Duplicate prediction model name after whitespace normalization: '{model_name}'"
+            )
+        seen_model_names.add(model_name)
         cluster_map = _normalize_single_prediction_map(model_name, raw_results)
 
         if cluster_map:
-            if model_name in normalized:
-                write_log(
-                    f"Duplicate model name after normalization: '{model_name}', merging predictions",
-                    level="warning",
-                )
-                normalized[model_name].update(cluster_map)
-            else:
-                normalized[model_name] = cluster_map
+            normalized[model_name] = cluster_map
         else:
             write_log(f"Model '{model_name}' had no valid annotations, skipping", level="warning")
 
@@ -242,21 +295,27 @@ def _normalize_predictions(
 def _collect_valid_round_responses(round_responses: dict[str, Any]) -> dict[str, str]:
     """Normalize round responses and drop provider error outputs."""
     if not isinstance(round_responses, dict):
-        raise ValueError(
-            "round_responses must be a dict mapping model name to response text"
-        )
+        raise ValueError("round_responses must be a dict mapping model name to response text")
 
     valid_responses: dict[str, str] = {}
-    for model_key, response in round_responses.items():
+    seen_model_names: set[str] = set()
+    for raw_model_name, response in round_responses.items():
+        model_name = _normalize_model_identity(raw_model_name, "round response model names")
+        if model_name in seen_model_names:
+            raise ValueError(
+                f"Duplicate round response model name after whitespace normalization: '{model_name}'"
+            )
+        seen_model_names.add(model_name)
         if is_missing_value(response):
             continue
-        response_text = response if isinstance(response, str) else str(response)
-        response_text = response_text.strip()
+        if not isinstance(response, str):
+            raise ValueError(f"Round response from model '{model_name}' must be a string")
+        response_text = response.strip()
         if not response_text or response_text.casefold().startswith("error:"):
             continue
         if is_unknown_annotation(response_text):
             continue
-        valid_responses[model_key] = response_text
+        valid_responses[model_name] = response_text
     return valid_responses
 
 
@@ -295,14 +354,16 @@ def _build_interactive_result(
 ) -> dict[str, Any]:
     """Build normalized return payload for interactive consensus."""
     normalized_discussion_logs = discussion_logs or {}
-    normalized_controversial_clusters = [str(cluster_id) for cluster_id in (controversial_clusters or [])]
-    discussion_round_counts = {
-        cluster_id: 0 for cluster_id in normalized_controversial_clusters
-    }
-    discussion_round_counts.update({
-        str(cluster_id): len(rounds) if isinstance(rounds, list) else 0
-        for cluster_id, rounds in normalized_discussion_logs.items()
-    })
+    normalized_controversial_clusters = [
+        str(cluster_id) for cluster_id in (controversial_clusters or [])
+    ]
+    discussion_round_counts = {cluster_id: 0 for cluster_id in normalized_controversial_clusters}
+    discussion_round_counts.update(
+        {
+            str(cluster_id): len(rounds) if isinstance(rounds, list) else 0
+            for cluster_id, rounds in normalized_discussion_logs.items()
+        }
+    )
 
     result = {
         "consensus": consensus or {},
@@ -388,6 +449,11 @@ def _validate_model_spec_dict(
             f"unsupported provider '{provider_name}'. "
             f"Supported providers: {sorted(supported_providers)}"
         )
+    _validate_provider_model_match(
+        provider_normalized,
+        model_name.strip(),
+        f"models[{index}]",
+    )
 
 
 def _validate_model_spec_scalar(item: Any, index: int) -> None:
@@ -396,13 +462,11 @@ def _validate_model_spec_scalar(item: Any, index: int) -> None:
         if item.strip():
             return
         raise ValueError(
-            f"Invalid model specification at index {index}: "
-            "model name must be a non-empty string"
+            f"Invalid model specification at index {index}: model name must be a non-empty string"
         )
     if not item:
         raise ValueError(
-            f"Invalid model specification at index {index}: "
-            "model name must be a non-empty string"
+            f"Invalid model specification at index {index}: model name must be a non-empty string"
         )
     raise ValueError(
         f"Invalid model specification at index {index}: "
@@ -532,48 +596,33 @@ def _resolve_fallback_target(
     return fallback_provider, fallback_model
 
 
-def _call_primary_provider_with_retries(
+def _call_primary_provider_once(
     *,
     prompt: str,
     provider: str | None,
     model: str | None,
     api_key: str | None,
-    max_retries: int,
     base_urls: str | dict[str, str] | None,
 ) -> str | None:
-    """Call primary provider with retry semantics."""
+    """Call one provider once; provider adapters own transport retries."""
     if not api_key:
         write_log(f"No API key for {provider}, trying fallback", level="debug")
         return None
 
     primary_base_url = resolve_provider_base_url(provider, base_urls)
-    for attempt in range(max_retries):
-        try:
-            response = get_model_response(
-                prompt=prompt,
-                provider=provider,
-                model=model,
-                api_key=api_key,
-                base_url=primary_base_url,
-            )
-            write_log(f"Successfully got response from {provider} on attempt {attempt + 1}")
-            return response
-        except RECOVERABLE_LLM_EXCEPTIONS as e:
-            if isinstance(e, ImportError):
-                write_log(
-                    f"Provider {provider} unavailable (missing dependency): {e!s}",
-                    level="warning",
-                )
-                return None
-            if attempt < max_retries - 1:
-                write_log(
-                    f"Error on {provider} attempt {attempt + 1}/{max_retries}: {e!s}",
-                    level="warning",
-                )
-                time.sleep(5 * (2**attempt))
-                continue
-            write_log(f"All {provider} retry attempts failed: {e!s}", level="warning")
-    return None
+    try:
+        response = get_model_response(
+            prompt=prompt,
+            provider=provider,
+            model=model,
+            api_key=api_key,
+            base_url=primary_base_url,
+        )
+        write_log(f"Successfully got response from {provider}")
+        return response
+    except RECOVERABLE_LLM_EXCEPTIONS as error:
+        write_log(f"Provider {provider} request failed: {error!s}", level="warning")
+        return None
 
 
 def _call_fallback_provider_once(
@@ -608,18 +657,17 @@ def _call_fallback_provider_once(
         return None
 
 
-def _call_llm_with_retry(
+def _call_llm_with_fallback(
     prompt: str,
     provider: str | None,
     model: str | None,
     api_key: str | None,
-    max_retries: int = 3,
     fallback_provider: str | None = None,
     fallback_model: str | None = None,
     api_keys: dict[str, str] | None = None,
     base_urls: str | dict[str, str] | None = None,
 ) -> str | None:
-    """Call LLM with retry logic and fallback provider.
+    """Call a primary LLM once, then one configured fallback.
 
     API key resolution: explicit ``api_key`` arg → ``api_keys`` dict.
     This function does NOT load keys from environment variables or
@@ -631,7 +679,6 @@ def _call_llm_with_retry(
         provider: Primary provider to use
         model: Primary model to use
         api_key: API key for primary provider (falls back to api_keys dict)
-        max_retries: Maximum retry attempts
         fallback_provider: Fallback provider if primary fails
         fallback_model: Fallback model if primary fails
         api_keys: Dictionary of API keys keyed by provider name
@@ -658,12 +705,11 @@ def _call_llm_with_retry(
         supported_keys=supported_keys,
     )
 
-    primary_response = _call_primary_provider_with_retries(
+    primary_response = _call_primary_provider_once(
         prompt=prompt,
         provider=provider,
         model=model,
         api_key=api_key,
-        max_retries=max_retries,
         base_urls=base_urls,
     )
     if primary_response is not None:
@@ -694,7 +740,9 @@ def _normalize_predicted_label(label: str | None) -> str | None:
     return normalized if normalized and not is_unknown_annotation(normalized) else None
 
 
-def _parse_standard_metrics_lines(lines: list[str]) -> tuple[float | None, float | None, str | None]:
+def _parse_standard_metrics_lines(
+    lines: list[str],
+) -> tuple[float | None, float | None, str | None]:
     """Parse strict 4-line [0/1, CP, H, annotation] format."""
     if len(lines) < 4:
         return None, None, None
@@ -715,6 +763,33 @@ def _parse_standard_metrics_lines(lines: list[str]) -> tuple[float | None, float
         return cp_value, h_value, annotation
 
     return None, None, None
+
+
+def _extract_consensus_indicator(text: str) -> bool | None:
+    """Extract an explicit consensus decision from supported response formats."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) >= 4 and re.fullmatch(r"[01]", lines[-4]):
+        return lines[-4] == "1"
+
+    json_text = _extract_json_block_from_text(text)
+    if json_text:
+        with contextlib.suppress(json.JSONDecodeError, TypeError, ValueError):
+            payload = json.loads(json_text)
+            if isinstance(payload, dict):
+                for key in ("reached", "consensus", "consensus_reached", "consensusReached"):
+                    value = payload.get(key)
+                    if isinstance(value, bool):
+                        return value
+                    if value in (0, 1, "0", "1"):
+                        return str(value) == "1"
+
+    labeled_match = re.search(
+        r"(?im)^\s*consensus(?:\s+reached)?\s*[:=]\s*(0|1|true|false|yes|no)\s*$",
+        text,
+    )
+    if labeled_match:
+        return labeled_match.group(1).casefold() in {"1", "true", "yes"}
+    return None
 
 
 def _extract_json_block_from_text(text: str) -> str | None:
@@ -744,12 +819,65 @@ def _extract_first_valid_json_number(
     return None
 
 
+def _is_valid_consensus_proportion(value: float) -> bool:
+    """Return whether a parsed consensus proportion is finite and in range."""
+    return math.isfinite(value) and 0 <= value <= 1
+
+
+def _is_valid_entropy(value: float) -> bool:
+    """Return whether a parsed entropy value is finite and non-negative."""
+    return math.isfinite(value) and value >= 0
+
+
+def _metrics_are_plausible_for_vote_count(
+    consensus_proportion: float,
+    entropy: float,
+    vote_count: int,
+) -> bool:
+    """Validate that LLM metrics can arise from a finite set of model votes."""
+    if vote_count < 1:
+        return False
+    if not _is_valid_consensus_proportion(consensus_proportion) or not _is_valid_entropy(entropy):
+        return False
+
+    supporting_votes = consensus_proportion * vote_count
+    nearest_vote_count = round(supporting_votes)
+    proportion_is_discrete = (
+        1 <= nearest_vote_count <= vote_count and abs(supporting_votes - nearest_vote_count) <= 0.02
+    )
+    if not proportion_is_discrete:
+        return False
+
+    group_sizes = [nearest_vote_count]
+    remaining_votes = vote_count - nearest_vote_count
+    while remaining_votes > 0:
+        next_group_size = min(nearest_vote_count, remaining_votes)
+        group_sizes.append(next_group_size)
+        remaining_votes -= next_group_size
+
+    minimum_entropy = -sum(
+        (group_size / vote_count) * math.log2(group_size / vote_count) for group_size in group_sizes
+    )
+    majority_share = nearest_vote_count / vote_count
+    maximum_entropy = -(majority_share * math.log2(majority_share))
+    if nearest_vote_count < vote_count:
+        singleton_share = 1 / vote_count
+        maximum_entropy -= (
+            (vote_count - nearest_vote_count) * singleton_share * math.log2(singleton_share)
+        )
+
+    return minimum_entropy - 0.02 <= entropy <= maximum_entropy + 0.02
+
+
 def _extract_first_valid_json_label(payload: dict[str, Any], keys: list[str]) -> str | None:
     """Extract first non-empty label field from JSON payload."""
     for key in keys:
         if key not in payload:
             continue
-        normalized = _normalize_predicted_label(str(payload.get(key)))
+        value = payload.get(key)
+        if not isinstance(value, str):
+            continue
+        normalized = _normalize_predicted_label(value)
         if normalized:
             return normalized
     return None
@@ -780,8 +908,16 @@ def _parse_metrics_from_json_text(text: str) -> tuple[float | None, float | None
         "label",
     ]
 
-    cp_value = _extract_first_valid_json_number(payload, cp_candidates, lambda v: 0 <= v <= 1)
-    entropy_value = _extract_first_valid_json_number(payload, entropy_candidates, lambda v: v >= 0)
+    cp_value = _extract_first_valid_json_number(
+        payload,
+        cp_candidates,
+        _is_valid_consensus_proportion,
+    )
+    entropy_value = _extract_first_valid_json_number(
+        payload,
+        entropy_candidates,
+        _is_valid_entropy,
+    )
     label = _extract_first_valid_json_label(payload, label_candidates)
 
     if cp_value is not None or entropy_value is not None or label is not None:
@@ -910,7 +1046,7 @@ def _extract_metrics_from_text(
                 r"(?i)consensus\s+proportion\s*(?:\(CP\))?\s*[:=]\s*([0-9.]+)",
                 r"(?i)\bCP\s*[:=]\s*([0-9.]+)",
             ],
-            validator=lambda v: 0 <= v <= 1,
+            validator=_is_valid_consensus_proportion,
         )
 
     if entropy_value is None:
@@ -926,7 +1062,7 @@ def _extract_metrics_from_text(
                 r"(?i)(?:shannon\s+)?entropy\s*(?:\(H\))?\s*[:=]\s*([0-9.]+)",
                 r"(?i)\bH\s*[:=]\s*([0-9.]+)",
             ],
-            validator=lambda v: v >= 0,
+            validator=_is_valid_entropy,
         )
 
     if annotation is None:
@@ -966,10 +1102,25 @@ def _collect_candidate_clusters_from_raw_predictions(predictions: dict[str, Any]
     return sorted(cluster_ids, key=cluster_sort_key)
 
 
+def _annotation_comparison_key(annotation: str) -> str:
+    """Normalize conservative nomenclature variants without erasing qualifiers."""
+    normalized = annotation.strip().casefold()
+    normalized = re.sub(r"[\W_]", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = re.sub(r"cells$", "cell", normalized)
+    normalized = re.sub(r"cytes$", "cyte", normalized)
+    normalized = normalized.replace("t lymphocyte", "t cell")
+    normalized = normalized.replace("b lymphocyte", "b cell")
+    normalized = normalized.replace("natural killer", "nk")
+    return normalized
+
+
 def _resolve_simple_cluster_consensus(
     cluster_annotations: list[str],
+    consensus_threshold: float,
+    entropy_threshold: float,
 ) -> tuple[str, float, float] | None:
-    """Resolve deterministic consensus cases that do not require an LLM call."""
+    """Resolve deterministic consensus cases that already satisfy the contract."""
     if len(cluster_annotations) < 2:
         if cluster_annotations:
             return (
@@ -979,9 +1130,13 @@ def _resolve_simple_cluster_consensus(
             )
         return "Unknown", 0.0, 0.0
 
-    # Trivial case: all annotations are identical strings — no LLM needed.
-    if len(set(cluster_annotations)) == 1:
-        return cluster_annotations[0], 1.0, 0.0
+    majority, cp_value, entropy_value = _deterministic_consensus_metrics(cluster_annotations)
+    if (
+        _has_unique_majority(cluster_annotations)
+        and cp_value >= consensus_threshold
+        and entropy_value <= entropy_threshold
+    ):
+        return majority, cp_value, entropy_value
 
     return None
 
@@ -996,7 +1151,9 @@ def _resolve_llm_cluster_consensus(
     api_key: str | None,
     api_keys: dict[str, str],
     base_urls: str | dict[str, str] | None,
-) -> tuple[str, float, float]:
+    consensus_threshold: float,
+    entropy_threshold: float,
+) -> tuple[str, float, float, bool]:
     """Resolve non-trivial cluster consensus using LLM check and fallback policy."""
     if not has_any_api_key:
         majority, cp_value, entropy_value = _deterministic_consensus_metrics(cluster_annotations)
@@ -1006,22 +1163,34 @@ def _resolve_llm_cluster_consensus(
             f"majority={majority}, CP={cp_value:.2f}, H={entropy_value:.2f}",
             level="warning",
         )
-        return majority, cp_value, entropy_value
+        return majority, cp_value, entropy_value, _has_unique_majority(cluster_annotations)
 
-    prompt = create_consensus_check_prompt(cluster_annotations)
-    llm_response = _call_llm_with_retry(
+    prompt = create_consensus_check_prompt(
+        cluster_annotations,
+        consensus_threshold=consensus_threshold,
+        entropy_threshold=entropy_threshold,
+    )
+    llm_response = _call_llm_with_fallback(
         prompt=prompt,
         provider=provider,
         model=model,
         api_key=api_key,
-        max_retries=3,
         api_keys=api_keys,
         base_urls=base_urls,
     )
 
     if llm_response:
+        consensus_indicator = _extract_consensus_indicator(llm_response)
         llm_cp, llm_entropy, llm_prediction = _extract_metrics_from_text(llm_response)
-        if llm_cp is not None and llm_entropy is not None:
+        if (
+            llm_cp is not None
+            and llm_entropy is not None
+            and _metrics_are_plausible_for_vote_count(
+                llm_cp,
+                llm_entropy,
+                len(cluster_annotations),
+            )
+        ):
             resolved_prediction = _normalize_predicted_label(llm_prediction)
             if resolved_prediction is None:
                 resolved_prediction, _cp_unused, _entropy_unused = _deterministic_consensus_metrics(
@@ -1033,11 +1202,17 @@ def _resolve_llm_cluster_consensus(
                     level="warning",
                 )
             write_log(
-                f"LLM consensus check for cluster {cluster}: "
-                f"CP={llm_cp:.2f}, H={llm_entropy:.2f}",
+                f"LLM consensus check for cluster {cluster}: CP={llm_cp:.2f}, H={llm_entropy:.2f}",
                 level="info",
             )
-            return resolved_prediction, llm_cp, llm_entropy
+            reached = consensus_indicator is True and resolved_prediction is not None
+            return resolved_prediction, llm_cp, llm_entropy, reached
+        if llm_cp is not None and llm_entropy is not None:
+            write_log(
+                f"Ignoring impossible LLM metrics for cluster {cluster}: "
+                f"CP={llm_cp}, H={llm_entropy}, votes={len(cluster_annotations)}",
+                level="warning",
+            )
 
     write_log(
         f"LLM consensus check failed for cluster {cluster}, returning Unknown",
@@ -1049,28 +1224,31 @@ def _resolve_llm_cluster_consensus(
         f"majority={majority}, CP={cp_value:.2f}, H={entropy_value:.2f}",
         level="warning",
     )
-    return majority, cp_value, entropy_value
+    return majority, cp_value, entropy_value, _has_unique_majority(cluster_annotations)
 
 
 def _deterministic_consensus_metrics(labels: list[str]) -> tuple[str, float, float]:
-    """Compute majority label, consensus proportion, and Shannon entropy from raw labels."""
+    """Compute deterministic metrics from conservative biological label groups."""
     if not labels:
         return "Unknown", DEFAULT_FALLBACK_CONSENSUS_PROPORTION, DEFAULT_FALLBACK_ENTROPY
 
     counts: dict[str, int] = {}
-    ordered_labels: list[str] = []
+    representatives: dict[str, str] = {}
+    ordered_groups: list[str] = []
     for label in labels:
-        if label not in counts:
-            ordered_labels.append(label)
-            counts[label] = 0
-        counts[label] += 1
+        group = _annotation_comparison_key(label)
+        if group not in counts:
+            ordered_groups.append(group)
+            representatives[group] = label
+            counts[group] = 0
+        counts[group] += 1
 
-    majority = ordered_labels[0]
-    majority_count = counts[majority]
-    for label in ordered_labels[1:]:
-        count = counts[label]
+    majority_group = ordered_groups[0]
+    majority_count = counts[majority_group]
+    for group in ordered_groups[1:]:
+        count = counts[group]
         if count > majority_count:
-            majority = label
+            majority_group = group
             majority_count = count
 
     n = len(labels)
@@ -1081,7 +1259,19 @@ def _deterministic_consensus_metrics(labels: list[str]) -> tuple[str, float, flo
         p = count / n
         entropy_value -= p * math.log2(p)
 
-    return majority, cp_value, entropy_value
+    return representatives[majority_group], cp_value, entropy_value
+
+
+def _has_unique_majority(labels: list[str]) -> bool:
+    """Return whether at least two labels produce exactly one largest vote group."""
+    if len(labels) < 2:
+        return False
+    counts: dict[str, int] = {}
+    for label in labels:
+        group = _annotation_comparison_key(label)
+        counts[group] = counts.get(group, 0) + 1
+    max_count = max(counts.values())
+    return sum(count == max_count for count in counts.values()) == 1
 
 
 def _extract_structured_cell_type_label(response_text: str) -> str | None:
@@ -1100,74 +1290,73 @@ def _extract_structured_cell_type_label(response_text: str) -> str | None:
     return None
 
 
-def _extract_conservative_free_text_label(response_text: str) -> str | None:
-    """Extract a label from simple free-text responses using conservative heuristics."""
+FREE_TEXT_UNCERTAINTY_PREFIX = re.compile(
+    r"(?i)^(?:likely|probably|possibly|maybe|it\s+is|it's|seems\s+to\s+be|appears\s+to\s+be)\s+"
+)
+FREE_TEXT_NARRATIVE_TOKENS = {
+    "candidate",
+    "likely",
+    "probably",
+    "possibly",
+    "maybe",
+    "uncertain",
+    "insufficient",
+    "evidence",
+    "suggest",
+    "suggests",
+    "given",
+    "without",
+    "label",
+    "free",
+    "text",
+    "could",
+    "might",
+}
+KNOWN_FREE_TEXT_CELL_TYPE_ENDING = re.compile(
+    r"\b("
+    r"lymphocyte|lymphocytes|monocyte|monocytes|macrophage|macrophages|"
+    r"neutrophil|neutrophils|fibroblast|fibroblasts|astrocyte|astrocytes|"
+    r"neuron|neurons|plasmablast|plasmablasts|megakaryocyte|megakaryocytes|"
+    r"erythrocyte|erythrocytes|endothelial|epithelial|myeloid|treg|tregs|nk"
+    r")\b$"
+)
+
+
+def _prepare_single_line_label_candidate(response_text: str) -> str | None:
+    """Reduce a single-line free-text response to its possible label text."""
     lines = [line.strip() for line in response_text.splitlines() if line.strip()]
     if len(lines) != 1:
         return None
 
-    single_line = re.sub(r"^\s*(?:[-*]\s*)", "", lines[0]).strip()
-    if not single_line:
-        return None
+    candidate = re.sub(r"^\s*(?:[-*]\s*)", "", lines[0]).strip()
+    candidate = FREE_TEXT_UNCERTAINTY_PREFIX.sub("", candidate).strip()
+    return candidate or None
 
-    # Strip common uncertainty prefixes while keeping the candidate label.
-    single_line = re.sub(
-        r"(?i)^(?:likely|probably|possibly|maybe|it\s+is|it's|seems\s+to\s+be|appears\s+to\s+be)\s+",
-        "",
-        single_line,
-    ).strip()
-    if not single_line:
-        return None
 
-    # Avoid treating full narrative sentences as labels.
-    if any(punct in single_line for punct in ".!?;"):
-        return None
-    if len(single_line) > 80 or len(single_line.split()) > 10:
-        return None
+def _is_conservative_cell_type_candidate(candidate: str) -> bool:
+    """Return whether a short candidate looks like a cell-type label, not prose."""
+    if any(punctuation in candidate for punctuation in ".!?;"):
+        return False
+    if len(candidate) > 80 or len(candidate.split()) > 10:
+        return False
 
-    # Reject narrative/uncertainty phrasing that commonly appears in explanations.
-    lowered_tokens = {
-        token
-        for token in re.split(r"[^A-Za-z0-9+]+", single_line.lower())
-        if token
-    }
-    if lowered_tokens & {
-        "candidate",
-        "likely",
-        "probably",
-        "possibly",
-        "maybe",
-        "uncertain",
-        "insufficient",
-        "evidence",
-        "suggest",
-        "suggests",
-        "given",
-        "without",
-        "label",
-        "free",
-        "text",
-        "could",
-        "might",
-    }:
-        return None
+    tokens = {token for token in re.split(r"[^A-Za-z0-9+]+", candidate.lower()) if token}
+    if tokens & FREE_TEXT_NARRATIVE_TOKENS:
+        return False
 
-    # Keep this heuristic strict: only accept obvious cell-type-like labels.
-    lower_line = single_line.lower()
-    has_cell_word = re.search(r"\bcell(?:s)?\b", lower_line) is not None
-    ends_with_known_cell_type = re.search(
-        r"\b("
-        r"lymphocyte|lymphocytes|monocyte|monocytes|macrophage|macrophages|"
-        r"neutrophil|neutrophils|fibroblast|fibroblasts|astrocyte|astrocytes|"
-        r"neuron|neurons|plasmablast|plasmablasts|megakaryocyte|megakaryocytes|"
-        r"erythrocyte|erythrocytes|endothelial|epithelial|myeloid|treg|tregs|nk"
-        r")\b$",
-        lower_line,
-    ) is not None
-    if not (has_cell_word or ends_with_known_cell_type):
-        return None
+    lower_candidate = candidate.lower()
+    return bool(
+        re.search(r"\bcell(?:s)?\b", lower_candidate)
+        or KNOWN_FREE_TEXT_CELL_TYPE_ENDING.search(lower_candidate)
+    )
 
-    return _normalize_predicted_label(single_line)
+
+def _extract_conservative_free_text_label(response_text: str) -> str | None:
+    """Extract a label from simple free-text responses using conservative heuristics."""
+    candidate = _prepare_single_line_label_candidate(response_text)
+    if candidate is None or not _is_conservative_cell_type_candidate(candidate):
+        return None
+    return _normalize_predicted_label(candidate)
 
 
 def _extract_conservative_multiline_label(response_text: str) -> str | None:
@@ -1218,7 +1407,11 @@ def _fallback_discussion_consensus_from_responses(
         }
 
     majority, cp_value, entropy_value = _deterministic_consensus_metrics(extracted_labels)
-    reached = cp_value >= consensus_threshold and entropy_value <= entropy_threshold
+    reached = (
+        _has_unique_majority(extracted_labels)
+        and cp_value >= consensus_threshold
+        and entropy_value <= entropy_threshold
+    )
     return {
         "reached": reached,
         "consensus_proportion": cp_value,
@@ -1255,6 +1448,10 @@ def check_consensus(
     consensus = {}
     consensus_proportion = {}
     entropy = {}
+    consensus_reached: dict[str, bool] = {}
+
+    consensus_threshold = _normalize_probability(consensus_threshold, "consensus_threshold")
+    entropy_threshold = _normalize_nonnegative_number(entropy_threshold, "entropy_threshold")
 
     if not isinstance(predictions, dict):
         raise ValueError(
@@ -1278,9 +1475,7 @@ def check_consensus(
         consensus = {cluster: "Unknown" for cluster in candidate_clusters}
         consensus_proportion = {cluster: 0.0 for cluster in candidate_clusters}
         entropy = {cluster: 0.0 for cluster in candidate_clusters}
-        is_controversial = consensus_threshold > 0.0 or entropy_threshold < 0.0
-        controversial = candidate_clusters.copy() if is_controversial else []
-        return consensus, consensus_proportion, entropy, controversial
+        return consensus, consensus_proportion, entropy, candidate_clusters.copy()
 
     if len(valid_predictions) < len(predictions):
         failed_models = set(predictions.keys()) - set(valid_predictions.keys())
@@ -1308,15 +1503,25 @@ def check_consensus(
     for cluster in all_clusters:
         cluster_annotations = _collect_cluster_annotations(predictions, cluster)
 
-        simple_result = _resolve_simple_cluster_consensus(cluster_annotations)
+        simple_result = _resolve_simple_cluster_consensus(
+            cluster_annotations,
+            consensus_threshold,
+            entropy_threshold,
+        )
         if simple_result is not None:
             label, cp_value, entropy_value = simple_result
             consensus[cluster] = label
             consensus_proportion[cluster] = cp_value
             entropy[cluster] = entropy_value
+            consensus_reached[cluster] = (
+                len(cluster_annotations) >= 2
+                and _has_unique_majority(cluster_annotations)
+                and cp_value >= consensus_threshold
+                and entropy_value <= entropy_threshold
+            )
             continue
 
-        label, cp_value, entropy_value = _resolve_llm_cluster_consensus(
+        label, cp_value, entropy_value, semantic_consensus = _resolve_llm_cluster_consensus(
             cluster=cluster,
             cluster_annotations=cluster_annotations,
             has_any_api_key=has_any_api_key,
@@ -1325,10 +1530,17 @@ def check_consensus(
             api_key=primary_api_key,
             api_keys=api_keys,
             base_urls=base_urls,
+            consensus_threshold=consensus_threshold,
+            entropy_threshold=entropy_threshold,
         )
         consensus[cluster] = label
         consensus_proportion[cluster] = cp_value
         entropy[cluster] = entropy_value
+        consensus_reached[cluster] = (
+            semantic_consensus
+            and cp_value >= consensus_threshold
+            and entropy_value <= entropy_threshold
+        )
 
     # Find controversial clusters based on both consensus proportion and entropy
     # (sorted for deterministic output order)
@@ -1336,7 +1548,9 @@ def check_consensus(
         (
             cluster
             for cluster, score in consensus_proportion.items()
-            if score < consensus_threshold or entropy.get(cluster, 0) > entropy_threshold
+            if not consensus_reached.get(cluster, False)
+            or score < consensus_threshold
+            or entropy.get(cluster, 0) > entropy_threshold
         ),
         key=cluster_sort_key,
     )
@@ -1370,12 +1584,11 @@ def _extract_cell_type_via_llm(
         str | None: Clean cell-type label or None if extraction failed
     """
     prompt = create_cell_type_extraction_prompt(text)
-    response = _call_llm_with_retry(
+    response = _call_llm_with_fallback(
         prompt=prompt,
         provider=provider,
         model=model,
         api_key=api_key,
-        max_retries=2,
         api_keys=api_keys,
         base_urls=base_urls,
     )
@@ -1426,6 +1639,8 @@ def check_consensus_for_discussion_round(
             - entropy: float, the Shannon entropy
             - majority_prediction: str, the majority cell type prediction
     """
+    consensus_threshold = _normalize_probability(consensus_threshold, "consensus_threshold")
+    entropy_threshold = _normalize_nonnegative_number(entropy_threshold, "entropy_threshold")
     valid_round_responses = _collect_valid_round_responses(round_responses)
 
     # Empty — nothing to check, no LLM needed
@@ -1487,20 +1702,28 @@ def check_consensus_for_discussion_round(
         entropy_threshold=entropy_threshold,
     )
 
-    llm_response = _call_llm_with_retry(
+    llm_response = _call_llm_with_fallback(
         prompt=prompt,
         provider=primary_provider,
         model=primary_model,
         api_key=primary_api_key,
-        max_retries=3,
         api_keys=api_keys,
         base_urls=base_urls,
     )
 
     if llm_response:
+        consensus_indicator = _extract_consensus_indicator(llm_response)
         cp_value, entropy_value, llm_prediction = _extract_metrics_from_text(llm_response)
 
-        if cp_value is not None and entropy_value is not None:
+        if (
+            cp_value is not None
+            and entropy_value is not None
+            and _metrics_are_plausible_for_vote_count(
+                cp_value,
+                entropy_value,
+                len(valid_round_responses),
+            )
+        ):
             resolved_prediction = _normalize_predicted_label(llm_prediction)
             if resolved_prediction is None:
                 fallback_result = _fallback_discussion_consensus_from_responses(
@@ -1518,7 +1741,12 @@ def check_consensus_for_discussion_round(
                         level="warning",
                     )
 
-            reached = cp_value >= consensus_threshold and entropy_value <= entropy_threshold
+            reached = (
+                consensus_indicator is True
+                and resolved_prediction is not None
+                and cp_value >= consensus_threshold
+                and entropy_value <= entropy_threshold
+            )
 
             write_log(
                 f"LLM consensus check: CP={cp_value:.2f}, H={entropy_value:.2f}, "
@@ -1532,6 +1760,12 @@ def check_consensus_for_discussion_round(
                 "entropy": entropy_value,
                 "majority_prediction": resolved_prediction or "Unknown",
             }
+        if cp_value is not None and entropy_value is not None:
+            write_log(
+                "Ignoring impossible discussion consensus metrics: "
+                f"CP={cp_value}, H={entropy_value}, votes={len(valid_round_responses)}",
+                level="warning",
+            )
 
     # LLM call failed/returned unparseable output.
     # Fall back to structured text extraction from discussion responses.
@@ -1559,7 +1793,9 @@ def _build_discussion_model_info(
     for model_item in models:
         provider, model_name = _resolve_model_spec(model_item)
         if not provider:
-            write_log(f"Could not determine provider for model {model_name}, skipping", level="warning")
+            write_log(
+                f"Could not determine provider for model {model_name}, skipping", level="warning"
+            )
             continue
 
         api_key = api_keys.get(provider) or load_api_key(provider)
@@ -1569,7 +1805,9 @@ def _build_discussion_model_info(
 
         model_key = f"{provider}:{model_name}"
         if model_key in seen_model_keys:
-            write_log(f"Duplicate discussion model '{model_key}' detected, skipping", level="warning")
+            write_log(
+                f"Duplicate discussion model '{model_key}' detected, skipping", level="warning"
+            )
             continue
         seen_model_keys.add(model_key)
 
@@ -1839,8 +2077,17 @@ def _normalize_discussion_model_predictions(
 ) -> dict[str, dict[str, Any]]:
     """Normalize discussion model predictions to trimmed model/cluster keys."""
     normalized_predictions: dict[str, dict[str, Any]] = {}
+    seen_model_names: set[str] = set()
     for raw_model_name, raw_predictions in model_predictions.items():
-        model_name = str(raw_model_name).strip() or str(raw_model_name)
+        model_name = _normalize_model_identity(
+            raw_model_name,
+            "discussion prediction model names",
+        )
+        if model_name in seen_model_names:
+            raise ValueError(
+                f"Duplicate discussion model name after whitespace normalization: '{model_name}'"
+            )
+        seen_model_names.add(model_name)
         if not isinstance(raw_predictions, dict):
             write_log(
                 f"Model '{model_name}' discussion predictions must be a dict, "
@@ -1857,20 +2104,17 @@ def _normalize_discussion_model_predictions(
                 continue
             cluster_id = str(raw_cluster_id).strip()
             if cluster_id:
+                if not isinstance(annotation, str):
+                    raise ValueError(
+                        f"Model '{model_name}' discussion annotation for cluster "
+                        f"'{cluster_id}' must be a string"
+                    )
                 normalized_annotation = normalize_annotation(annotation)
                 if normalized_annotation == "Unknown":
                     continue
                 normalized_cluster_map[cluster_id] = normalized_annotation
 
-        if model_name in normalized_predictions:
-            write_log(
-                f"Duplicate discussion model name after normalization: '{model_name}', "
-                "merging cluster predictions",
-                level="warning",
-            )
-            normalized_predictions[model_name].update(normalized_cluster_map)
-        else:
-            normalized_predictions[model_name] = normalized_cluster_map
+        normalized_predictions[model_name] = normalized_cluster_map
 
     return normalized_predictions
 
@@ -1956,6 +2200,16 @@ def process_controversial_clusters(
             - updated_consensus_proportion: Dict mapping cluster IDs to CP scores
             - updated_entropy: Dict mapping cluster IDs to entropy scores
     """
+    max_discussion_rounds = _normalize_nonnegative_integer(
+        max_discussion_rounds, "max_discussion_rounds"
+    )
+    consensus_threshold = _normalize_probability(consensus_threshold, "consensus_threshold")
+    entropy_threshold = _normalize_nonnegative_number(entropy_threshold, "entropy_threshold")
+    use_cache = validate_bool(use_cache, "use_cache")
+    force_rerun = validate_bool(force_rerun, "force_rerun")
+    species = normalize_text(species, "species", required=True)
+    tissue = normalize_text(tissue, "tissue")
+
     if not models:
         write_log("No models provided for discussion", level="error")
         return {}, {}, {}, {}
@@ -2069,35 +2323,44 @@ def _filter_marker_genes_for_clusters(
         )
 
     raw_cluster_iterable = (
-        sorted((str(cluster_id) for cluster_id in clusters_to_analyze), key=cluster_sort_key)
+        sorted(clusters_to_analyze, key=lambda cluster_id: cluster_sort_key(str(cluster_id)))
         if isinstance(clusters_to_analyze, set)
         else clusters_to_analyze
     )
 
     requested_clusters: list[str] = []
-    skipped_empty: list[str] = []
+    skipped_invalid: list[str] = []
     for cluster_id in raw_cluster_iterable:
+        if is_missing_value(cluster_id):
+            skipped_invalid.append(str(cluster_id))
+            continue
         normalized = str(cluster_id).strip()
         if not normalized:
-            skipped_empty.append(str(cluster_id))
+            skipped_invalid.append(str(cluster_id))
             continue
         requested_clusters.append(normalized)
 
     # Deduplicate while preserving caller-specified order.
     requested_clusters = list(dict.fromkeys(requested_clusters))
 
-    if skipped_empty:
+    if skipped_invalid:
         write_log(
-            "Ignored empty cluster IDs in clusters_to_analyze",
+            "Ignored missing or empty cluster IDs in clusters_to_analyze",
             level="warning",
         )
 
     available_clusters = list(marker_genes.keys())
-    valid_clusters = [cluster_id for cluster_id in requested_clusters if cluster_id in available_clusters]
-    invalid_clusters = [cluster_id for cluster_id in requested_clusters if cluster_id not in available_clusters]
+    valid_clusters = [
+        cluster_id for cluster_id in requested_clusters if cluster_id in available_clusters
+    ]
+    invalid_clusters = [
+        cluster_id for cluster_id in requested_clusters if cluster_id not in available_clusters
+    ]
 
     if invalid_clusters:
-        warning_msg = f"The following cluster IDs were not found in the input: {', '.join(invalid_clusters)}"
+        warning_msg = (
+            f"The following cluster IDs were not found in the input: {', '.join(invalid_clusters)}"
+        )
         write_log(warning_msg, level="warning")
 
     if not valid_clusters:
@@ -2216,7 +2479,13 @@ def _prepare_interactive_annotation_context(
     entropy_threshold: float,
     max_discussion_rounds: int,
     verbose: bool,
-) -> tuple[dict[str, Any], dict[str, list[str]], list[str | dict[str, str]], dict[str, str], dict[str, str] | None]:
+) -> tuple[
+    dict[str, Any],
+    dict[str, list[str]],
+    list[str | dict[str, str]],
+    dict[str, str],
+    dict[str, str] | None,
+]:
     """Prepare normalized context for interactive consensus orchestration."""
     if not models:
         raise ValueError("models must be a non-empty list of model specifications")
@@ -2397,6 +2666,19 @@ def interactive_consensus_annotation(
         dict[str, Any]: Dictionary containing consensus results and metadata
 
     """
+    consensus_threshold = _normalize_probability(consensus_threshold, "consensus_threshold")
+    entropy_threshold = _normalize_nonnegative_number(entropy_threshold, "entropy_threshold")
+    max_discussion_rounds = _normalize_nonnegative_integer(
+        max_discussion_rounds, "max_discussion_rounds"
+    )
+    use_cache = validate_bool(use_cache, "use_cache")
+    force_rerun = validate_bool(force_rerun, "force_rerun")
+    verbose = validate_bool(verbose, "verbose")
+    species = normalize_text(species, "species", required=True)
+    tissue = normalize_text(tissue, "tissue")
+    additional_context = normalize_text(additional_context, "additional_context")
+    prompt_template = validate_prompt_template(prompt_template)
+
     metadata, marker_genes, models, api_keys, consensus_model_dict = (
         _prepare_interactive_annotation_context(
             marker_genes=marker_genes,
@@ -2534,6 +2816,66 @@ def _display_metadata_value(value: Any) -> Any:
     return value
 
 
+_MISSING_REPORT_VALUE = object()
+
+
+def _as_report_dict(value: Any) -> dict[Any, Any]:
+    """Return mapping-shaped report data or an empty fallback."""
+    return value if isinstance(value, dict) else {}
+
+
+def _normalize_report_cluster_list(value: Any) -> list[str]:
+    """Normalize report cluster collections with deterministic deduplication."""
+    if value is None:
+        return []
+    if isinstance(value, (str, bytes)):
+        items = [value]
+    else:
+        try:
+            items = list(value)
+        except TypeError:
+            items = [value]
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if is_missing_value(item):
+            continue
+        cluster_id = str(item).strip()
+        if cluster_id and cluster_id not in seen:
+            seen.add(cluster_id)
+            normalized.append(cluster_id)
+
+    if isinstance(value, set):
+        normalized.sort(key=cluster_sort_key)
+    return normalized
+
+
+def _get_report_cluster_value(
+    values: dict[Any, Any],
+    cluster_id: Any,
+    default: Any = _MISSING_REPORT_VALUE,
+) -> Any:
+    """Read a cluster field using exact keys, then one unambiguous normalized key."""
+    if cluster_id in values:
+        return values[cluster_id]
+
+    normalized_cluster_id = str(cluster_id).strip()
+    matches = [
+        value
+        for raw_cluster_id, value in values.items()
+        if str(raw_cluster_id).strip() == normalized_cluster_id
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        write_log(
+            f"Ambiguous report values for normalized cluster ID '{normalized_cluster_id}'",
+            level="warning",
+        )
+    return default
+
+
 def _resolve_clusters_to_report(
     *,
     consensus: dict[str, Any],
@@ -2565,10 +2907,11 @@ def _append_report_header(
     lines.append(f"Species: {_display_metadata_value(metadata.get('species'))}")
     lines.append(f"Tissue: {_display_metadata_value(metadata.get('tissue'))}")
     model_names = _format_metadata_model_names(metadata.get("models", []))
-    lines.append(f"Models: {', '.join(model_names)}")
+    lines.append(f"Models: {', '.join(model_names) if model_names else 'N/A'}")
     lines.append(
         f"Consensus Threshold: {_display_metadata_value(metadata.get('consensus_threshold'))}"
     )
+    lines.append(f"Entropy Threshold: {_display_metadata_value(metadata.get('entropy_threshold'))}")
     lines.append(
         f"Max Discussion Rounds: {_display_metadata_value(metadata.get('max_discussion_rounds'))}"
     )
@@ -2591,10 +2934,11 @@ def _append_initial_predictions_section(
         model_name = str(raw_model_name)
         if not isinstance(predictions, dict):
             continue
-        if cluster_id not in predictions:
+        prediction = _get_report_cluster_value(predictions, cluster_id)
+        if prediction is _MISSING_REPORT_VALUE:
             continue
         lines.append(f"\n[{model_name}]")
-        lines.append(f"  {predictions[cluster_id]}")
+        lines.append(f"  {prediction}")
 
 
 def _append_discussion_section(
@@ -2604,7 +2948,7 @@ def _append_discussion_section(
     cluster_id: Any,
 ) -> None:
     """Append discussion rounds section for one cluster."""
-    rounds_raw = discussion_logs.get(cluster_id)
+    rounds_raw = _get_report_cluster_value(discussion_logs, cluster_id, None)
     rounds: list[Any] = []
     if isinstance(rounds_raw, list):
         rounds = rounds_raw
@@ -2619,9 +2963,12 @@ def _append_discussion_section(
         lines.append("  Consensus reached with initial predictions.")
         return
 
-    for round_idx, round_responses in enumerate(rounds, start=1):
-        if not isinstance(round_responses, dict):
-            round_responses = {"raw_response": round_responses}
+    for round_idx, raw_round_responses in enumerate(rounds, start=1):
+        round_responses = (
+            raw_round_responses
+            if isinstance(raw_round_responses, dict)
+            else {"raw_response": raw_round_responses}
+        )
 
         lines.append("")
         lines.append("-" * 40)
@@ -2653,9 +3000,12 @@ def _append_final_result_section(
     lines.append("-" * 40)
     lines.append("FINAL RESULT")
     lines.append("-" * 40)
-    lines.append(f"  Final Annotation: {consensus.get(cluster_id, 'N/A')}")
-    lines.append(f"  Consensus Proportion: {consensus_proportion.get(cluster_id, 'N/A')}")
-    lines.append(f"  Entropy: {entropy.get(cluster_id, 'N/A')}")
+    lines.append(f"  Final Annotation: {_get_report_cluster_value(consensus, cluster_id, 'N/A')}")
+    lines.append(
+        "  Consensus Proportion: "
+        f"{_get_report_cluster_value(consensus_proportion, cluster_id, 'N/A')}"
+    )
+    lines.append(f"  Entropy: {_get_report_cluster_value(entropy, cluster_id, 'N/A')}")
     lines.append(
         f"  Was Controversial: {'Yes' if normalized_cluster_id in controversial_cluster_set else 'No'}"
     )
@@ -2696,50 +3046,15 @@ def format_discussion_report(
     lines: list[str] = []
     sep = "=" * 80
 
-    def _as_dict(value: Any) -> dict[str, Any]:
-        if isinstance(value, dict):
-            return value
-        return {}
-
-    def _as_cluster_list(value: Any) -> list[str]:
-        if value is None:
-            return []
-        if isinstance(value, (str, bytes)):
-            normalized = str(value).strip()
-            return [normalized] if normalized else []
-        is_unordered = isinstance(value, set)
-        if isinstance(value, (list, tuple, set)):
-            items: list[Any] = list(value)
-        else:
-            try:
-                items = list(value)
-            except TypeError:
-                normalized = str(value).strip()
-                return [normalized] if normalized else []
-
-        normalized_clusters: list[str] = []
-        seen: set[str] = set()
-        for item in items:
-            if is_missing_value(item):
-                continue
-            cluster = str(item).strip()
-            if not cluster or cluster in seen:
-                continue
-            seen.add(cluster)
-            normalized_clusters.append(cluster)
-
-        if is_unordered:
-            normalized_clusters = sorted(normalized_clusters, key=cluster_sort_key)
-
-        return normalized_clusters
-
-    model_annotations = _as_dict(results.get("model_annotations", {}))
-    discussion_logs = _as_dict(results.get("discussion_logs", {}))
-    consensus = _as_dict(results.get("consensus", {}))
-    consensus_proportion = _as_dict(results.get("consensus_proportion", {}))
-    entropy = _as_dict(results.get("entropy", {}))
-    controversial_clusters = _as_cluster_list(results.get("controversial_clusters", []))
-    metadata = _as_dict(results.get("metadata", {}))
+    model_annotations = _as_report_dict(results.get("model_annotations", {}))
+    discussion_logs = _as_report_dict(results.get("discussion_logs", {}))
+    consensus = _as_report_dict(results.get("consensus", {}))
+    consensus_proportion = _as_report_dict(results.get("consensus_proportion", {}))
+    entropy = _as_report_dict(results.get("entropy", {}))
+    controversial_clusters = _normalize_report_cluster_list(
+        results.get("controversial_clusters", [])
+    )
+    metadata = _as_report_dict(results.get("metadata", {}))
 
     _append_report_header(lines=lines, separator=sep, metadata=metadata)
 

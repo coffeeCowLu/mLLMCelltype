@@ -3,7 +3,6 @@
 #' Concrete implementation of BaseAPIProcessor for Zhipu models.
 #' Handles Zhipu-specific API calls, authentication, and response parsing.
 #'
-#' @importFrom R6 R6Class
 #' @export
 ZhipuProcessor <- R6::R6Class("ZhipuProcessor",
   inherit = BaseAPIProcessor,
@@ -11,7 +10,7 @@ ZhipuProcessor <- R6::R6Class("ZhipuProcessor",
   public = list(
     #' @description
     #' Initialize Zhipu processor
-    #
+    #' @param base_url Optional custom API endpoint
     initialize = function(base_url = NULL) {
       super$initialize("zhipu", base_url)
     },
@@ -25,10 +24,9 @@ ZhipuProcessor <- R6::R6Class("ZhipuProcessor",
     
     #' @description
     #' Make API call to Zhipu
-    #
-    #
-    #
-    #
+    #' @param chunk_content Prompt text to send
+    #' @param model Model identifier
+    #' @param api_key Zhipu API key
     make_api_call = function(chunk_content, model, api_key) {
       private$post_chat_completions_request(
         chunk_content,
@@ -43,9 +41,8 @@ ZhipuProcessor <- R6::R6Class("ZhipuProcessor",
     
     #' @description
     #' Extract response content from Zhipu API response
-    #
-    #
-    #
+    #' @param response HTTP response object
+    #' @param model Model identifier
     extract_response_content = function(response, model) {
       private$extract_chat_completions_content(response, model)
     }

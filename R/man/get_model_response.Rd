@@ -6,6 +6,18 @@
 \usage{
 get_model_response(prompt, model, api_key, base_urls = NULL)
 }
+\arguments{
+\item{prompt}{Non-empty prompt string}
+
+\item{model}{Non-empty model name}
+
+\item{api_key}{Non-empty API key}
+
+\item{base_urls}{Optional shared or provider-specific base URL configuration}
+}
+\value{
+Provider response as a character vector
+}
 \description{
 Get response from a specific model
 }

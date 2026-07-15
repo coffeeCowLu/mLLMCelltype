@@ -2,7 +2,7 @@
 
 All notable changes to the Python implementation of mLLMCelltype will be documented in this file.
 
-## [Unreleased]
+## [2.0.6] - 2026-07-15
 
 ### Added
 - `interactive_consensus_annotation` now accepts an optional `prompt_template`
@@ -11,20 +11,26 @@ All notable changes to the Python implementation of mLLMCelltype will be documen
   the consensus entry point, enabling custom task framing / output contracts
   (e.g. functional-state annotation) without monkeypatching
   `DEFAULT_PROMPT_TEMPLATE`. Defaults to `None`, preserving current behavior.
-- Optional token-usage capture at the provider layer. The OpenAI-compatible
-  providers and Gemini (and the shared `call_openai_compatible_api` /
-  `call_http_api_with_retry` core) accept an opt-in `usage_sink` dict that is
-  populated in place with `{prompt_tokens, completion_tokens, total_tokens}` —
-  plus a native `cost` (USD) for OpenRouter, which opts in to
-  `usage: {include: true}` only when a sink is supplied. High-level aggregation
-  (`annotate_clusters` / `get_model_response` / `interactive_consensus_annotation`)
-  is out of scope and left as a follow-up; Anthropic is also deferred.
-- Public usage extractors `extract_chat_completions_usage` and `extract_gemini_usage`
-  (exported from `mllmcelltype.providers`) for callers that parse responses directly.
+- Optional normalized token-usage capture for Anthropic, Gemini, and
+  OpenAI-compatible providers. A mutable `usage_sink` receives non-negative
+  `prompt_tokens`, `completion_tokens`, and `total_tokens` values, plus native
+  `cost` data when a provider returns it.
+- Public usage extractors for callers that parse provider responses directly.
 
-### Notes
-- Default behavior is unchanged: omitting `usage_sink` leaves request shape and return
-  values byte-identical to prior releases.
+### Changed
+- Centralized provider retry ownership and restricted retries to transient HTTP
+  status codes and transport failures.
+- Normalized prompt, model, API-key, base-URL, cluster-ID, and provider-response
+  contracts across the public annotation and consensus entry points.
+- Hardened cache envelopes, deterministic cache keys, and file-only cache
+  maintenance operations.
+
+### Fixed
+- Honored custom Gemini base URLs and applied an explicit request timeout.
+- Rejected malformed or internally inconsistent consensus metrics instead of
+  accepting numerically plausible fragments.
+- Prevented ambiguous cluster labels and model identities from being silently
+  reassigned during consensus processing.
 
 ### Documentation
 - Updated paper citation metadata to the Communications Biology publication DOI.

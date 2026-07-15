@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import string
+
 from .logger import write_log
-from .utils import cluster_sort_key
+from .utils import cluster_sort_key, normalize_text
 
 
 def _format_marker_genes_for_prompt(
@@ -11,8 +13,8 @@ def _format_marker_genes_for_prompt(
 ) -> str:
     """Format marker genes consistently for prompts.
 
-    Clusters are sorted in natural numerical order to match the
-    "IN NUMERICAL ORDER" instruction in the prompt template.
+    Clusters are sorted in natural order to match the order shown in the
+    rendered prompt.
 
     Args:
         marker_genes: Dictionary mapping cluster names to marker gene lists
@@ -37,16 +39,51 @@ Please assign the most likely cell type to each cluster based on the marker gene
 IMPORTANT: Provide your answers in the EXACT format below, with one cluster per line:
 Cluster 0: [cell type]
 Cluster 1: [cell type]
-...and so on, IN NUMERICAL ORDER.
+...and so on, IN THE ORDER SHOWN BELOW.
 
 Only provide the cell type name for each cluster. Be concise but specific.
 Some clusters can be a mixture of multiple cell types.
 
+{context}
 Here are the marker genes for each cluster:
 {markers}
 """
 
-SUPPORTED_PROMPT_PLACEHOLDERS = ("species", "tissue", "markers")
+SUPPORTED_PROMPT_PLACEHOLDERS = ("species", "tissue", "markers", "context")
+
+
+def _get_prompt_template_fields(prompt_template: str) -> set[str]:
+    """Parse and validate exact named fields used by a prompt template."""
+    try:
+        fields = {
+            field_name
+            for _, field_name, _, _ in string.Formatter().parse(prompt_template)
+            if field_name is not None
+        }
+    except ValueError as error:
+        raise ValueError(f"Invalid prompt_template format: {error!s}") from error
+
+    unsupported = sorted(fields - set(SUPPORTED_PROMPT_PLACEHOLDERS))
+    if unsupported:
+        raise ValueError(
+            "Invalid prompt_template placeholder "
+            f"'{unsupported[0]}'. Supported placeholders: "
+            f"{', '.join(SUPPORTED_PROMPT_PLACEHOLDERS)}"
+        )
+    return fields
+
+
+def validate_prompt_template(prompt_template: str | None) -> str | None:
+    """Normalize and validate an optional annotation prompt template."""
+    if prompt_template is not None and not isinstance(prompt_template, str):
+        raise ValueError(
+            f"prompt_template must be a string or None, got {type(prompt_template).__name__}"
+        )
+    normalized_template = normalize_text(prompt_template, "prompt_template")
+    if normalized_template is None:
+        return None
+    _get_prompt_template_fields(normalized_template)
+    return normalized_template
 
 
 def _render_prompt_template(
@@ -55,48 +92,58 @@ def _render_prompt_template(
     species: str,
     tissue_text: str,
     marker_text: str,
+    context_text: str,
 ) -> str:
-    """Render prompt template with clear errors for invalid placeholders/format."""
+    """Render a validated prompt template with clear formatting errors."""
     try:
-        return prompt_template.format(species=species, tissue=tissue_text, markers=marker_text)
-    except KeyError as e:
-        placeholder = e.args[0] if e.args else "unknown"
-        raise ValueError(
-            "Invalid prompt_template placeholder "
-            f"'{placeholder}'. Supported placeholders: {', '.join(SUPPORTED_PROMPT_PLACEHOLDERS)}"
-        ) from e
-    except ValueError as e:
-        raise ValueError(f"Invalid prompt_template format: {e!s}") from e
+        return prompt_template.format(
+            species=species,
+            tissue=tissue_text,
+            markers=marker_text,
+            context=context_text,
+        )
+    except (AttributeError, IndexError, KeyError, ValueError) as error:
+        raise ValueError(f"Invalid prompt_template format: {error!s}") from error
 
 
-def create_consensus_check_prompt(annotations: list[str]) -> str:
+def create_consensus_check_prompt(
+    annotations: list[str],
+    consensus_threshold: float = 0.7,
+    entropy_threshold: float = 1.0,
+) -> str:
     """Create a prompt for checking consensus among different annotations.
 
     Args:
         annotations: List of cell type annotations from different models
+        consensus_threshold: Minimum majority proportion required for consensus
+        entropy_threshold: Maximum Shannon entropy allowed for consensus
 
     Returns:
         str: Formatted prompt for LLM to check consensus
 
     """
-    prompt = """You are an expert in single-cell RNA-seq analysis and cell type annotation.
+    prompt = f"""You are an expert in single-cell RNA-seq analysis and cell type annotation.
 
 I need you to analyze the following cell type annotations from different models for the same cluster and determine if there is a consensus.
 
 The annotations are:
-{annotations}
+{{annotations}}
 
-Please analyze these annotations and determine:
-1. If there is a consensus (1 for yes, 0 for no)
-2. The consensus proportion (between 0 and 1)
-3. An entropy value measuring the diversity of opinions (higher means more diverse)
-4. The best consensus annotation
+Group annotations only when they name the same biological entity at the same level of granularity:
+1. Treat synonymous nomenclature, capitalization, and formatting differences as equivalent.
+2. Preserve biologically meaningful subtype or state qualifiers such as activated, mature, memory, regulatory, CD4+, and CD8+; do not merge labels when doing so would lose specificity.
+3. Treat Unknown or Unclear as separate groups.
+
+Calculate:
+1. Consensus proportion = size of the unique largest group / total annotations.
+2. Shannon entropy = -sum(p_i * log2(p_i)) over the annotation groups.
+3. Consensus is reached only when there is a unique largest group, the consensus proportion is at least {consensus_threshold:g}, and entropy is at most {entropy_threshold:g}.
 
 Respond with exactly 4 lines:
 Line 1: 0 or 1 (consensus reached?)
-Line 2: Consensus proportion (e.g., 0.75)
-Line 3: Entropy value (e.g., 0.85)
-Line 4: The consensus cell type (or most likely if no clear consensus)
+Line 2: Consensus proportion as a decimal between 0 and 1
+Line 3: Shannon entropy as a non-negative decimal
+Line 4: The majority cell type, or Unknown when there is no unique majority
 
 Only output these 4 lines, nothing else."""
 
@@ -129,40 +176,31 @@ def create_prompt(
     """
     write_log(f"Creating prompt for {len(marker_genes)} clusters")
 
-    # Validate custom template type and use default template when empty.
-    if prompt_template is not None and not isinstance(prompt_template, str):
-        raise ValueError(
-            f"prompt_template must be a string or None, got {type(prompt_template).__name__}"
-        )
+    species_text = normalize_text(species, "species", required=True)
+    tissue_text = normalize_text(tissue, "tissue") or "unknown tissue"
+    additional_context_text = normalize_text(additional_context, "additional_context")
 
-    # Use default template if not provided
-    if not prompt_template or not prompt_template.strip():
-        prompt_template = DEFAULT_PROMPT_TEMPLATE
-
-    # Default tissue if none provided
-    tissue_text = tissue if tissue else "unknown tissue"
+    prompt_template = validate_prompt_template(prompt_template) or DEFAULT_PROMPT_TEMPLATE
 
     # Format marker genes text using helper function
     marker_text = _format_marker_genes_for_prompt(marker_genes)
 
-    # Add additional context if provided
-    context_text = f"\nAdditional context: {additional_context}\n" if additional_context else ""
+    context_text = (
+        f"Additional context: {additional_context_text}\n" if additional_context_text else ""
+    )
+    template_fields = _get_prompt_template_fields(prompt_template)
 
     # Fill in the template with clear validation errors.
     prompt = _render_prompt_template(
         prompt_template=prompt_template,
-        species=species,
+        species=species_text,
         tissue_text=tissue_text,
         marker_text=marker_text,
+        context_text=context_text,
     )
 
-    # Add context
-    if context_text:
-        sections = prompt.split("Here are the marker genes for each cluster:")
-        if len(sections) == 2:
-            prompt = f"{sections[0]}{context_text}Here are the marker genes for each cluster:{sections[1]}"
-        else:
-            prompt = f"{prompt}{context_text}"
+    if context_text and "context" not in template_fields:
+        prompt = f"{prompt.rstrip()}\n\n{context_text}"
 
     write_log(f"Generated prompt with {len(prompt)} characters")
     return prompt
@@ -353,8 +391,7 @@ def create_discussion_consensus_prompt(
     """
     # Use anonymous model IDs (Model 1, 2, ...) to prevent provider-name bias
     responses_text = "\n\n".join(
-        f"Model {i + 1}:\n{response}"
-        for i, (_, response) in enumerate(round_responses.items())
+        f"Model {i + 1}:\n{response}" for i, (_, response) in enumerate(round_responses.items())
     )
 
     return (
@@ -369,12 +406,15 @@ def create_discussion_consensus_prompt(
         '(e.g., "CD4+ T cells", not full sentences)\n'
         "2. Responses may contain structured predictions (with "
         '"CELL TYPE:" prefix) or free-text predictions\n'
-        "3. Consider predictions as matching if they refer to the same "
-        "cell type, ignoring:\n"
-        '   - Formatting (e.g., "NK cells" vs "Natural Killer cells")\n'
-        "   - Capitalization\n"
-        '   - Additional qualifiers (e.g., "activated", "mature")\n'
-        '4. If any prediction is "Unknown" or "Unclear", treat it as '
+        "3. Consider predictions as matching only when they refer to the same "
+        "biological entity, allowing synonymous nomenclature, formatting, "
+        "and capitalization differences\n"
+        "4. Preserve biologically meaningful subtype or state qualifiers such as "
+        "activated, mature, memory, regulatory, CD4+, and CD8+; do not merge "
+        "labels when doing so would lose specificity\n"
+        "5. Group only predictions that remain biologically equivalent at the "
+        "same level of granularity\n"
+        '6. If any prediction is "Unknown" or "Unclear", treat it as '
         "a separate group\n\n"
         "CALCULATE:\n"
         "1. Consensus Proportion = Number of models supporting the majority "

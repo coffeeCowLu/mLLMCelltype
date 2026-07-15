@@ -33,6 +33,7 @@ This eliminates code duplication across all provider-specific processors.
 \item \href{#method-BaseAPIProcessor-get_default_api_url}{\code{BaseAPIProcessor$get_default_api_url()}}
 \item \href{#method-BaseAPIProcessor-make_api_call}{\code{BaseAPIProcessor$make_api_call()}}
 \item \href{#method-BaseAPIProcessor-extract_response_content}{\code{BaseAPIProcessor$extract_response_content()}}
+\item \href{#method-BaseAPIProcessor-extract_usage}{\code{BaseAPIProcessor$extract_usage()}}
 \item \href{#method-BaseAPIProcessor-clone}{\code{BaseAPIProcessor$clone()}}
 }
 }
@@ -45,6 +46,15 @@ Initialize the base API processor
 \if{html}{\out{<div class="r">}}\preformatted{BaseAPIProcessor$new(provider_name, base_url = NULL)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{provider_name}}{Provider identifier used for logging and dispatch}
+
+\item{\code{base_url}}{Optional custom API endpoint}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-BaseAPIProcessor-process_request"></a>}}
@@ -55,6 +65,17 @@ Main entry point for processing API requests
 \if{html}{\out{<div class="r">}}\preformatted{BaseAPIProcessor$process_request(prompt, model, api_key)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{prompt}}{Prompt text to send}
+
+\item{\code{model}}{Model identifier}
+
+\item{\code{api_key}}{Provider API key}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-BaseAPIProcessor-get_api_url"></a>}}
@@ -85,17 +106,54 @@ Abstract method to be implemented by subclasses for making the actual API call
 \if{html}{\out{<div class="r">}}\preformatted{BaseAPIProcessor$make_api_call(chunk_content, model, api_key)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{chunk_content}}{Prompt text to send}
+
+\item{\code{model}}{Model identifier}
+
+\item{\code{api_key}}{Provider API key}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-BaseAPIProcessor-extract_response_content"></a>}}
 \if{latex}{\out{\hypertarget{method-BaseAPIProcessor-extract_response_content}{}}}
 \subsection{Method \code{extract_response_content()}}{
 Abstract method to be implemented by subclasses for extracting content from response
-Make API call and extract response content
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{BaseAPIProcessor$extract_response_content(response, model)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{response}}{HTTP response object}
+
+\item{\code{model}}{Model identifier}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-BaseAPIProcessor-extract_usage"></a>}}
+\if{latex}{\out{\hypertarget{method-BaseAPIProcessor-extract_usage}{}}}
+\subsection{Method \code{extract_usage()}}{
+Extract normalized token usage from a provider response
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{BaseAPIProcessor$extract_usage(response)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{response}}{HTTP response object
+Make API call and extract response content}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-BaseAPIProcessor-clone"></a>}}

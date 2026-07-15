@@ -6,7 +6,6 @@
 #' Concrete implementation of BaseAPIProcessor for Qwen models.
 #' Handles Qwen-specific API calls, authentication, and response parsing.
 #'
-#' @importFrom R6 R6Class
 #' @export
 QwenProcessor <- R6::R6Class("QwenProcessor",
   inherit = BaseAPIProcessor,
@@ -37,7 +36,7 @@ QwenProcessor <- R6::R6Class("QwenProcessor",
             "Authorization" = paste("Bearer", api_key),
             "Content-Type" = "application/json"
           ),
-          body = jsonlite::toJSON(test_payload, auto_unbox = TRUE),
+          body = test_payload,
           encode = "json",
           httr::timeout(10)  # 10 second timeout for quick test
         )
@@ -55,7 +54,7 @@ QwenProcessor <- R6::R6Class("QwenProcessor",
   public = list(
     #' @description
     #' Initialize Qwen processor
-    #
+    #' @param base_url Optional custom API endpoint
     initialize = function(base_url = NULL) {
       super$initialize("qwen", base_url)
     },
@@ -74,8 +73,7 @@ QwenProcessor <- R6::R6Class("QwenProcessor",
 
     #' @description
     #' Get working Qwen API URL with automatic endpoint detection
-    #
-    #
+    #' @param api_key Qwen API key used for regional endpoint probing
     get_working_api_url = function(api_key) {
       cache_key <- digest::digest(api_key, algo = "xxhash64")
       if (exists(cache_key, envir = .qwen_endpoint_cache, inherits = FALSE)) {
@@ -107,16 +105,14 @@ QwenProcessor <- R6::R6Class("QwenProcessor",
       self$logger$warn(
         "All Qwen endpoints failed during testing, using international as default"
       )
-      assign(cache_key, endpoints$international, envir = .qwen_endpoint_cache)
       return(endpoints$international)
     },
     
     #' @description
     #' Make API call to Qwen
-    #
-    #
-    #
-    #
+    #' @param chunk_content Prompt text to send
+    #' @param model Model identifier
+    #' @param api_key Qwen API key
     make_api_call = function(chunk_content, model, api_key) {
       # Get API URL: custom base_url takes priority, otherwise auto-detect endpoint
       api_url <- if (!is.null(self$base_url)) {
@@ -139,9 +135,8 @@ QwenProcessor <- R6::R6Class("QwenProcessor",
     
     #' @description
     #' Extract response content from Qwen API response
-    #
-    #
-    #
+    #' @param response HTTP response object
+    #' @param model Model identifier
     extract_response_content = function(response, model) {
       self$logger$debug("Parsing Qwen API response",
                        list(provider = self$provider_name, model = model))

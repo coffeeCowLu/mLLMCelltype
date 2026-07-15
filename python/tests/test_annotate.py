@@ -232,7 +232,9 @@ class TestAnnotation:
         """Test provider-side runtime errors are surfaced to caller for observability."""
         from mllmcelltype.annotate import PROVIDER_FUNCTIONS
 
-        PROVIDER_FUNCTIONS["mock_provider"] = MagicMock(side_effect=RuntimeError("upstream timeout"))
+        PROVIDER_FUNCTIONS["mock_provider"] = MagicMock(
+            side_effect=RuntimeError("upstream timeout")
+        )
 
         with pytest.raises(RuntimeError, match="upstream timeout"):
             annotate_clusters(
@@ -243,6 +245,44 @@ class TestAnnotation:
                 api_key="test-key",
                 use_cache=False,
             )
+
+    @pytest.mark.parametrize("invalid_response", [123, "", ["Error: failed"]])
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
+    def test_annotate_clusters_rejects_invalid_provider_response(self, invalid_response):
+        """Invalid provider payloads are rejected before cache or annotation parsing."""
+        from mllmcelltype.annotate import PROVIDER_FUNCTIONS
+
+        PROVIDER_FUNCTIONS["mock_provider"] = MagicMock(return_value=invalid_response)
+        with pytest.raises(ValueError):
+            annotate_clusters(
+                marker_genes={"1": ["CD3D"]},
+                species="human",
+                provider="mock_provider",
+                model="mock-model",
+                api_key="test-key",
+                use_cache=False,
+            )
+
+    @patch("mllmcelltype.annotate.load_from_cache", return_value=123)
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
+    def test_annotate_clusters_invalid_cache_payload_is_recomputed(self, mock_load):
+        """An invalid cache value is a miss, not an annotation source."""
+        from mllmcelltype.annotate import PROVIDER_FUNCTIONS
+
+        provider = MagicMock(return_value=["Cluster 1: T cells"])
+        PROVIDER_FUNCTIONS["mock_provider"] = provider
+        result = annotate_clusters(
+            marker_genes={"1": ["CD3D"]},
+            species="human",
+            provider="mock_provider",
+            model="mock-model",
+            api_key="test-key",
+            use_cache=True,
+        )
+
+        assert result == {"1": "T cells"}
+        assert mock_load.called
+        provider.assert_called_once()
 
     @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
     def test_annotate_clusters_empty_input_returns_empty_result_without_provider_call(self):
@@ -492,6 +532,39 @@ class TestAnnotation:
             )
             assert second == {"1": "T cells"}
 
+    @patch("mllmcelltype.annotate.load_api_key", return_value=None)
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
+    def test_annotate_clusters_cache_hit_does_not_require_api_key(self, mock_load_api_key):
+        """Test cached annotations remain usable without current provider credentials."""
+        from mllmcelltype.annotate import PROVIDER_FUNCTIONS
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider_mock = MagicMock(return_value=["Cluster 1: T cells"])
+            PROVIDER_FUNCTIONS["mock_provider"] = provider_mock
+
+            first = annotate_clusters(
+                marker_genes={"1": ["CD3D"]},
+                species="human",
+                provider="mock_provider",
+                model="mock_model",
+                api_key="test-key",
+                use_cache=True,
+                cache_dir=temp_dir,
+            )
+            second = annotate_clusters(
+                marker_genes={"1": ["CD3D"]},
+                species="human",
+                provider="mock_provider",
+                model="mock_model",
+                api_key=None,
+                use_cache=True,
+                cache_dir=temp_dir,
+            )
+
+        assert first == second == {"1": "T cells"}
+        assert provider_mock.call_count == 1
+        mock_load_api_key.assert_not_called()
+
     @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS")
     def test_get_model_response_cache_hit_skips_second_provider_call(self, mock_provider_functions):
         """Test get_model_response serves cached value without second provider call."""
@@ -520,6 +593,108 @@ class TestAnnotation:
                 cache_dir=temp_dir,
             )
             assert second == first
+
+    @patch("mllmcelltype.annotate.load_api_key", return_value=None)
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS")
+    def test_get_model_response_cache_hit_does_not_require_api_key(
+        self,
+        mock_provider_functions,
+        mock_load_api_key,
+    ):
+        """Test a cached raw response can be read after credentials are removed."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider_mock = MagicMock(return_value=["line one", "line two"])
+            mock_provider_functions.get.return_value = provider_mock
+
+            first = get_model_response(
+                prompt="test prompt",
+                provider="openai",
+                model="gpt-5.5",
+                api_key="test-key",
+                use_cache=True,
+                cache_dir=temp_dir,
+            )
+            second = get_model_response(
+                prompt="test prompt",
+                provider="openai",
+                model="gpt-5.5",
+                api_key=None,
+                use_cache=True,
+                cache_dir=temp_dir,
+            )
+
+        assert second == first
+        assert provider_mock.call_count == 1
+        mock_load_api_key.assert_not_called()
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS")
+    def test_get_model_response_normalizes_request_and_base_url(self, mock_provider_functions):
+        """Test cache identity and provider calls use the same normalized inputs."""
+        provider_mock = MagicMock(return_value=["response"])
+        mock_provider_functions.get.return_value = provider_mock
+
+        response = get_model_response(
+            prompt="  test prompt  ",
+            provider="openai",
+            model="gpt-5.5",
+            api_key="test-key",
+            base_url="  https://proxy.example.com/v1/  ",
+            use_cache=False,
+        )
+
+        assert response == "response"
+        provider_mock.assert_called_once_with(
+            "test prompt",
+            "gpt-5.5",
+            "test-key",
+            "https://proxy.example.com/v1",
+        )
+
+    @pytest.mark.parametrize("prompt", [None, "", "   ", 123])
+    def test_get_model_response_rejects_invalid_prompt(self, prompt):
+        """Test raw model requests require unambiguous non-empty prompt text."""
+        with pytest.raises(ValueError, match="prompt must be"):
+            get_model_response(
+                prompt=prompt,
+                provider="openai",
+                model="gpt-5.5",
+                api_key="test-key",
+                use_cache=False,
+            )
+
+    @pytest.mark.parametrize("use_cache", [None, 0, 1, "yes"])
+    def test_get_model_response_rejects_non_boolean_cache_flag(self, use_cache):
+        """Test cache behavior cannot depend on arbitrary truthiness."""
+        with pytest.raises(ValueError, match="use_cache must be True or False"):
+            get_model_response(
+                prompt="test prompt",
+                provider="openai",
+                model="gpt-5.5",
+                api_key="test-key",
+                use_cache=use_cache,
+            )
+
+    @pytest.mark.parametrize("use_cache", [None, 0, 1, "yes"])
+    def test_annotate_clusters_rejects_non_boolean_cache_flag(self, use_cache):
+        """Test annotation cache behavior requires an actual boolean."""
+        with pytest.raises(ValueError, match="use_cache must be True or False"):
+            annotate_clusters(
+                marker_genes={},
+                species="human",
+                provider="openai",
+                use_cache=use_cache,
+            )
+
+    @pytest.mark.parametrize("species", [None, "", "   ", 123])
+    def test_annotate_clusters_validates_species_even_without_clusters(self, species):
+        """Test required request context has one contract for empty and non-empty inputs."""
+        with pytest.raises(ValueError, match="species must be"):
+            annotate_clusters(
+                marker_genes={},
+                species=species,
+                provider="openai",
+                use_cache=False,
+            )
 
     @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
     def test_annotate_clusters_rejects_mapping_marker_values(self):

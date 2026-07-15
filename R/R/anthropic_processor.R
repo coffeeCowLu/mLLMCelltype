@@ -3,7 +3,6 @@
 #' Concrete implementation of BaseAPIProcessor for Anthropic models.
 #' Handles Anthropic-specific API calls, authentication, and response parsing.
 #'
-#' @importFrom R6 R6Class
 #' @export
 AnthropicProcessor <- R6::R6Class("AnthropicProcessor",
   inherit = BaseAPIProcessor,
@@ -11,7 +10,7 @@ AnthropicProcessor <- R6::R6Class("AnthropicProcessor",
   public = list(
     #' @description
     #' Initialize Anthropic processor
-    #
+    #' @param base_url Optional custom API endpoint
     initialize = function(base_url = NULL) {
       super$initialize("anthropic", base_url)
     },
@@ -25,10 +24,9 @@ AnthropicProcessor <- R6::R6Class("AnthropicProcessor",
     
     #' @description
     #' Make API call to Anthropic
-    #
-    #
-    #
-    #
+    #' @param chunk_content Prompt text to send
+    #' @param model Model identifier
+    #' @param api_key Anthropic API key
     make_api_call = function(chunk_content, model, api_key) {
       # Prepare request body
       body <- list(
@@ -53,8 +51,9 @@ AnthropicProcessor <- R6::R6Class("AnthropicProcessor",
           "anthropic-version" = "2023-06-01",
           "content-type" = "application/json"
         ),
-        body = jsonlite::toJSON(body, auto_unbox = TRUE),
-        encode = "json"
+        body = body,
+        encode = "json",
+        httr::timeout(30)
       )
       
       private$stop_for_http_error(response, model, "Anthropic")
@@ -64,9 +63,8 @@ AnthropicProcessor <- R6::R6Class("AnthropicProcessor",
     
     #' @description
     #' Extract response content from Anthropic API response
-    #
-    #
-    #
+    #' @param response HTTP response object
+    #' @param model Model identifier
     extract_response_content = function(response, model) {
       self$logger$debug("Parsing Anthropic API response",
                        list(provider = self$provider_name, model = model))
@@ -92,6 +90,20 @@ AnthropicProcessor <- R6::R6Class("AnthropicProcessor",
       response_content <- content$content[[1]]$text
       
       return(response_content)
+    },
+
+    #' @description
+    #' Extract normalized Anthropic token usage
+    #' @param response HTTP response object
+    extract_usage = function(response) {
+      private$extract_usage_fields(
+        response,
+        prompt_field = "input_tokens",
+        completion_field = "output_tokens",
+        total_field = NULL,
+        cost_field = NULL,
+        derive_total = TRUE
+      )
     }
   )
 )

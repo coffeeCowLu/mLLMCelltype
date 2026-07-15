@@ -1,8 +1,20 @@
 # mLLMCelltype Changelog
 
-## Unreleased
+## 2.0.6 (2026-07-15)
 
-### Documentation
+### Reliability
+* Unified validation for prompts, model identities, provider responses, cluster
+  identifiers, consensus metrics, base URLs, and cache payloads.
+* Centralized retries at the provider boundary and limited them to transient HTTP
+  and transport failures, avoiding duplicated retry loops.
+* Made consensus parsing, marker selection, cache keys, and cache file operations
+  deterministic and strict across supported input forms.
+* Added normalized token-usage and cost extraction to provider processors while
+  preserving their public response contract.
+
+### Maintenance
+* Removed unused R dependencies and generated documentation from the current
+  source annotations.
 * Updated paper citation metadata to the Communications Biology publication DOI.
 
 ## 2.0.5 (2026-05-11)

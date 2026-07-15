@@ -1,13 +1,16 @@
 """Tests for provider/model resolution helpers in functions.py and config.py."""
 
+import inspect
+
 import pytest
 
 from mllmcelltype.config import (
+    PROVIDER_CONFIGS,
     get_api_key_env_var,
     get_default_api_url,
     get_default_model,
 )
-from mllmcelltype.functions import get_provider
+from mllmcelltype.functions import PROVIDER_FUNCTIONS, PROVIDER_MODEL_PREFIXES, get_provider
 
 
 def test_get_provider_trims_whitespace():
@@ -47,3 +50,28 @@ def test_config_unknown_provider_fallback_is_robust():
     assert get_default_model("unknown_provider") == "unknown"
     assert get_default_api_url(None) == ""  # type: ignore[arg-type]
     assert get_api_key_env_var(None) == "UNKNOWN_API_KEY"  # type: ignore[arg-type]
+
+
+def test_provider_runtime_registry_covers_every_configured_provider():
+    """Test configuration and callable provider registries cannot silently drift."""
+    assert set(PROVIDER_FUNCTIONS) == set(PROVIDER_CONFIGS)
+
+
+def test_provider_model_prefixes_are_derived_from_config():
+    """Test model detection uses the same provider metadata as defaults and URLs."""
+    expected = {
+        provider: config.model_prefixes
+        for provider, config in PROVIDER_CONFIGS.items()
+        if config.model_prefixes
+    }
+
+    assert expected == PROVIDER_MODEL_PREFIXES
+
+
+def test_provider_callables_share_one_runtime_signature():
+    """Test every provider supports the same orchestration arguments."""
+    expected_parameters = ["prompt", "model", "api_key", "base_url", "usage_sink"]
+
+    for provider, provider_func in PROVIDER_FUNCTIONS.items():
+        parameters = list(inspect.signature(provider_func).parameters)
+        assert parameters == expected_parameters, provider

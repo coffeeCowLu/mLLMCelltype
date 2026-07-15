@@ -43,6 +43,21 @@ validate_base_url <- function(url) {
     return(FALSE)
   }
 
+  authority <- sub("^[A-Za-z][A-Za-z0-9+.-]*://", "", normalized)
+  authority <- sub("[/?#].*$", "", authority)
+  if (endsWith(authority, ":")) {
+    return(FALSE)
+  }
+  if (!is.null(parsed$port)) {
+    if (length(parsed$port) != 1 || !grepl("^[0-9]+$", parsed$port)) {
+      return(FALSE)
+    }
+    port <- suppressWarnings(as.numeric(parsed$port))
+    if (is.na(port) || port < 1 || port > 65535) {
+      return(FALSE)
+    }
+  }
+
   TRUE
 }
 
@@ -94,10 +109,19 @@ resolve_provider_base_url <- function(provider, base_urls) {
   if (is.list(base_urls)) {
     base_url_names <- names(base_urls)
     if (is.null(base_url_names)) {
-      return(NULL)
+      stop("base_urls must be a named list")
     }
 
     normalized_names <- tolower(trimws(base_url_names))
+    if (any(is.na(base_url_names)) || any(!nzchar(normalized_names))) {
+      stop("base_urls provider names must be non-empty strings")
+    }
+    duplicate_index <- anyDuplicated(normalized_names)
+    if (duplicate_index > 0) {
+      duplicate_name <- normalized_names[[duplicate_index]]
+      stop("Ambiguous base_urls provider names after case/whitespace normalization: ",
+           duplicate_name)
+    }
     match_idx <- match(provider_normalized, normalized_names)
     if (is.na(match_idx)) {
       return(NULL)

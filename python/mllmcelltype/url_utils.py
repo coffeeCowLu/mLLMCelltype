@@ -32,6 +32,40 @@ def _endpoint_cache_key(provider: str, api_key: str) -> str:
     return f"{provider}:{key_hash}"
 
 
+def _normalize_base_url_value(value: object, source: str) -> str | None:
+    """Normalize and validate one optional base URL value."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"base_urls{source} must be a string URL, got {type(value).__name__}")
+    normalized = value.strip().rstrip("/")
+    if normalized and not validate_base_url(normalized):
+        raise ValueError(f"Invalid base URL in base_urls{source}: {value}")
+    return normalized or None
+
+
+def _normalize_base_url_mapping(base_urls: dict) -> tuple[dict[str, object], dict[str, object]]:
+    """Normalize provider keys while rejecting ambiguous duplicates."""
+    normalized: dict[str, object] = {}
+    original_keys: dict[str, object] = {}
+    for raw_provider, value in base_urls.items():
+        if not isinstance(raw_provider, str):
+            raise ValueError(
+                f"base_urls provider keys must be strings, got {type(raw_provider).__name__}"
+            )
+        provider = raw_provider.strip().lower()
+        if not provider:
+            raise ValueError("base_urls provider keys must be non-empty strings")
+        if provider in normalized:
+            raise ValueError(
+                "Ambiguous base_urls provider keys after case/whitespace normalization: "
+                f"{original_keys[provider]!r} and {raw_provider!r}"
+            )
+        normalized[provider] = value
+        original_keys[provider] = raw_provider
+    return normalized, original_keys
+
+
 def resolve_provider_base_url(provider: str, base_urls: str | dict | None) -> str | None:
     """Resolve provider-specific base URL.
 
@@ -42,16 +76,6 @@ def resolve_provider_base_url(provider: str, base_urls: str | dict | None) -> st
     Returns:
         Resolved base URL or None
     """
-    def normalize_value(value: object, source: str) -> str | None:
-        if value is None:
-            return None
-        if not isinstance(value, str):
-            raise ValueError(f"base_urls{source} must be a string URL, got {type(value).__name__}")
-        normalized = value.strip().rstrip("/")
-        if normalized and not validate_base_url(normalized):
-            raise ValueError(f"Invalid base URL in base_urls{source}: {value}")
-        return normalized or None
-
     if base_urls is None or provider is None:
         return None
 
@@ -60,20 +84,17 @@ def resolve_provider_base_url(provider: str, base_urls: str | dict | None) -> st
         return None
 
     if isinstance(base_urls, str):
-        return normalize_value(base_urls, "")
+        return _normalize_base_url_value(base_urls, "")
 
     if isinstance(base_urls, dict):
-        # Case-insensitive lookup
-        if provider in base_urls:
-            return normalize_value(base_urls[provider], f"[{provider!r}]")
-        if provider_normalized in base_urls:
-            return normalize_value(base_urls[provider_normalized], f"[{provider_normalized!r}]")
-        normalized_base_urls = {str(k).strip().lower(): v for k, v in base_urls.items()}
-        return normalize_value(normalized_base_urls.get(provider_normalized), f"[{provider_normalized!r}]")
+        normalized_base_urls, original_keys = _normalize_base_url_mapping(base_urls)
+        raw_key = original_keys.get(provider_normalized, provider_normalized)
+        return _normalize_base_url_value(
+            normalized_base_urls.get(provider_normalized),
+            f"[{raw_key!r}]",
+        )
 
-    raise ValueError(
-        f"base_urls must be a string, dict, or None, got {type(base_urls).__name__}"
-    )
+    raise ValueError(f"base_urls must be a string, dict, or None, got {type(base_urls).__name__}")
 
 
 def validate_base_url(url: str | None) -> bool:
@@ -85,31 +106,30 @@ def validate_base_url(url: str | None) -> bool:
     Returns:
         True if valid, False otherwise
     """
-    if not isinstance(url, str) or not url:
+    if not isinstance(url, str):
         return False
 
     normalized = url.strip()
-    if not normalized:
-        return False
-
-    # Disallow whitespace and URL fragments in endpoint strings.
-    if any(ch.isspace() for ch in normalized):
+    if not normalized or any(character.isspace() for character in normalized):
         return False
 
     try:
         parsed = urlsplit(normalized)
+        port = parsed.port
+        hostname = parsed.hostname
     except ValueError:
         return False
 
-    if parsed.scheme not in {"http", "https"}:
-        return False
-    if not parsed.netloc or not parsed.hostname:
-        return False
-    if parsed.username or parsed.password:
-        return False
-    if parsed.query:
-        return False
-    return not parsed.fragment
+    return (
+        parsed.scheme in {"http", "https"}
+        and bool(parsed.netloc and hostname)
+        and not parsed.netloc.endswith(":")
+        and not parsed.username
+        and not parsed.password
+        and not parsed.query
+        and not parsed.fragment
+        and (port is None or 1 <= port <= 65535)
+    )
 
 
 def get_working_minimax_endpoint(api_key: str) -> str:
@@ -133,7 +153,7 @@ def get_working_minimax_endpoint(api_key: str) -> str:
         return cached
 
     endpoints = [
-        "https://api.minimax.io/v1/chat/completions",   # International
+        "https://api.minimax.io/v1/chat/completions",  # International
         "https://api.minimaxi.com/v1/chat/completions",  # China mainland
     ]
 
@@ -178,7 +198,6 @@ def get_working_minimax_endpoint(api_key: str) -> str:
 
     # Fallback to international endpoint
     write_log("No MiniMax endpoint accepted the key, using international endpoint as fallback")
-    _SMART_ENDPOINT_CACHE[cache_key] = endpoints[0]
     return endpoints[0]
 
 
@@ -251,11 +270,8 @@ def get_working_qwen_endpoint(api_key: str) -> str:
             write_log(f"{endpoint_type} endpoint is accessible", level="debug")
             _SMART_ENDPOINT_CACHE[cache_key] = endpoint
             return endpoint
-        else:
-            write_log(f"{endpoint_type} endpoint is not accessible", level="warning")
+        write_log(f"{endpoint_type} endpoint is not accessible", level="warning")
 
     # If none are reachable, return international endpoint as fallback
     write_log("No endpoints accessible, using international endpoint as fallback")
-    fallback_endpoint = endpoints[0][1]
-    _SMART_ENDPOINT_CACHE[cache_key] = fallback_endpoint
-    return fallback_endpoint
+    return endpoints[0][1]

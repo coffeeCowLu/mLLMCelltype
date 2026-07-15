@@ -4,7 +4,7 @@
 \alias{process_custom}
 \title{Process request using custom provider}
 \usage{
-process_custom(prompt, model, api_key)
+process_custom(prompt, model, api_key, base_url = NULL)
 }
 \description{
 Process request using custom provider

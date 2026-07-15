@@ -15,16 +15,43 @@ from mllmcelltype.providers.common import (
     call_openai_compatible_api,
     ensure_api_key,
     extract_chat_completions_usage,
+    is_retryable_http_status,
+    normalize_optional_base_url,
+    normalize_usage,
     parse_chat_completions_response,
     resolve_endpoint_url,
 )
 
 
+@pytest.mark.parametrize("status_code", [408, 425, 429, 500, 503])
+def test_retryable_http_status_accepts_only_transient_codes(status_code):
+    """Test the shared retry policy covers timeouts, rate limits, and servers."""
+    assert is_retryable_http_status(status_code)
+
+
+@pytest.mark.parametrize("status_code", [None, True, 200, 302, 400, 401, 404])
+def test_retryable_http_status_rejects_non_transient_values(status_code):
+    """Test successful, client, and malformed statuses fail fast."""
+    assert not is_retryable_http_status(status_code)
+
+
+def test_normalize_optional_base_url_strips_and_validates_once():
+    """Test provider wrappers share one endpoint override normalization policy."""
+    assert (
+        normalize_optional_base_url(
+            "  https://proxy.example.com/v1/  ",
+            "Gemini",
+        )
+        == "https://proxy.example.com/v1"
+    )
+    assert normalize_optional_base_url("   ", "Gemini") is None
+
+
 def test_parse_chat_completions_response_non_string_content():
-    """Test parser coerces non-string content and still returns line list."""
+    """Test parser rejects non-string content instead of inventing annotation text."""
     payload = {"choices": [{"message": {"content": 123}}]}
-    result = parse_chat_completions_response(payload, "OpenAI")
-    assert result == ["123"]
+    with pytest.raises(NonRetryableProviderError, match="non-string"):
+        parse_chat_completions_response(payload, "OpenAI")
 
 
 def test_build_chat_completions_body_minimal_shape():
@@ -129,6 +156,142 @@ def test_call_http_api_with_retry_client_error_does_not_retry():
     assert post_func.call_count == 1
 
 
+def test_call_http_api_with_retry_redirect_does_not_parse_as_success():
+    """Test non-error redirect statuses are still rejected by the API contract."""
+    response_302 = MagicMock()
+    response_302.status_code = 302
+    response_302.json.return_value = {"choices": []}
+    post_func = MagicMock(return_value=response_302)
+
+    with pytest.raises(requests.HTTPError, match="Unexpected HTTP status 302"):
+        call_http_api_with_retry(
+            provider_name="OpenAI",
+            url="https://example.com",
+            body={"messages": []},
+            headers={"Authorization": "Bearer test"},
+            post_func=post_func,
+            response_parser=lambda _payload: ["unused"],
+            max_retries=3,
+        )
+
+    assert post_func.call_count == 1
+
+
+@patch("mllmcelltype.providers.common.time.sleep")
+def test_call_http_api_with_retry_retries_request_timeout(mock_sleep):
+    """Test HTTP 408 follows the same transient-status policy as rate limits."""
+    response_408 = MagicMock()
+    response_408.status_code = 408
+    response_408.json.return_value = {"error": {"message": "request timeout"}}
+    response_408.raise_for_status.side_effect = requests.HTTPError(
+        "408 Request Timeout", response=response_408
+    )
+
+    response_200 = MagicMock()
+    response_200.status_code = 200
+    response_200.json.return_value = {"ok": True}
+    post_func = MagicMock(side_effect=[response_408, response_200])
+
+    result = call_http_api_with_retry(
+        provider_name="OpenAI",
+        url="https://example.com",
+        body={"messages": []},
+        headers={"Authorization": "Bearer test"},
+        post_func=post_func,
+        response_parser=lambda _payload: ["ok"],
+        max_retries=2,
+        retry_delay=1,
+    )
+
+    assert result == ["ok"]
+    assert post_func.call_count == 2
+    mock_sleep.assert_called_once_with(1)
+
+
+@patch("mllmcelltype.providers.common.time.sleep")
+def test_call_http_api_with_retry_retries_connection_failure(mock_sleep):
+    """Test transport failures retry because a later connection can succeed."""
+    response_200 = MagicMock()
+    response_200.status_code = 200
+    response_200.json.return_value = {"ok": True}
+    post_func = MagicMock(side_effect=[requests.ConnectionError("offline"), response_200])
+
+    result = call_http_api_with_retry(
+        provider_name="OpenAI",
+        url="https://example.com",
+        body={"messages": []},
+        headers={"Authorization": "Bearer test"},
+        post_func=post_func,
+        response_parser=lambda _payload: ["ok"],
+        max_retries=2,
+        retry_delay=1,
+    )
+
+    assert result == ["ok"]
+    assert post_func.call_count == 2
+    mock_sleep.assert_called_once_with(1)
+
+
+def test_call_http_api_with_retry_programming_error_fails_fast():
+    """Test local programming errors are not amplified into repeated requests."""
+    post_func = MagicMock(side_effect=RuntimeError("broken adapter"))
+
+    with pytest.raises(RuntimeError, match="broken adapter"):
+        call_http_api_with_retry(
+            provider_name="OpenAI",
+            url="https://example.com",
+            body={"messages": []},
+            headers={"Authorization": "Bearer test"},
+            post_func=post_func,
+            response_parser=lambda _payload: ["unused"],
+            max_retries=3,
+        )
+
+    assert post_func.call_count == 1
+
+
+def test_call_http_api_with_retry_invalid_json_fails_fast():
+    """Test a successful HTTP response with invalid JSON is not blindly replayed."""
+    response_200 = MagicMock()
+    response_200.status_code = 200
+    response_200.json.side_effect = ValueError("bad json")
+    post_func = MagicMock(return_value=response_200)
+
+    with pytest.raises(NonRetryableProviderError, match="Failed to decode"):
+        call_http_api_with_retry(
+            provider_name="OpenAI",
+            url="https://example.com",
+            body={"messages": []},
+            headers={"Authorization": "Bearer test"},
+            post_func=post_func,
+            response_parser=lambda _payload: ["unused"],
+            max_retries=3,
+        )
+
+    assert post_func.call_count == 1
+
+
+def test_call_http_api_with_retry_non_object_json_fails_fast():
+    """Test provider payloads must honor the shared top-level object contract."""
+    response_200 = MagicMock()
+    response_200.status_code = 200
+    response_200.json.return_value = ["unexpected"]
+    post_func = MagicMock(return_value=response_200)
+
+    with pytest.raises(NonRetryableProviderError, match="expected object"):
+        call_http_api_with_retry(
+            provider_name="OpenAI",
+            url="https://example.com",
+            body={"messages": []},
+            headers={"Authorization": "Bearer test"},
+            post_func=post_func,
+            response_parser=lambda _payload: ["unused"],
+            max_retries=3,
+        )
+
+    assert post_func.call_count == 1
+
+
 def test_call_http_api_with_retry_non_retry_exception_fails_fast():
     """Test configured non-retry exception exits immediately."""
     response_200 = MagicMock()
@@ -206,24 +369,25 @@ def test_ensure_api_key_trims_and_returns_value():
     assert ensure_api_key("  real-key  ", "OpenAI") == "real-key"
 
 
-def test_call_http_api_with_retry_normalizes_parser_output_to_strings():
-    """Test parser list output is normalized to string list for downstream consistency."""
+def test_call_http_api_with_retry_rejects_non_string_parser_items():
+    """Test parser items must already satisfy the shared text response contract."""
     response_200 = MagicMock()
     response_200.status_code = 200
     response_200.json.return_value = {"ok": True}
     post_func = MagicMock(return_value=response_200)
 
-    result = call_http_api_with_retry(
-        provider_name="OpenAI",
-        url="https://example.com",
-        body={"messages": []},
-        headers={"Authorization": "Bearer test"},
-        post_func=post_func,
-        response_parser=lambda _payload: [1, 2],  # type: ignore[list-item]
-        max_retries=1,
-    )
+    with pytest.raises(NonRetryableProviderError, match="non-string"):
+        call_http_api_with_retry(
+            provider_name="OpenAI",
+            url="https://example.com",
+            body={"messages": []},
+            headers={"Authorization": "Bearer test"},
+            post_func=post_func,
+            response_parser=lambda _payload: [1, 2],  # type: ignore[list-item]
+            max_retries=1,
+        )
 
-    assert result == ["1", "2"]
+    assert post_func.call_count == 1
 
 
 def test_call_http_api_with_retry_request_json_mode_uses_json_kwarg():
@@ -279,9 +443,7 @@ def test_call_openai_compatible_api_sets_auth_header_and_parses():
     """Test OpenAI-compatible wrapper applies headers and default parser."""
     response_200 = MagicMock()
     response_200.status_code = 200
-    response_200.json.return_value = {
-        "choices": [{"message": {"content": "Cluster 1: T cells"}}]
-    }
+    response_200.json.return_value = {"choices": [{"message": {"content": "Cluster 1: T cells"}}]}
     post_func = MagicMock(return_value=response_200)
 
     result = call_openai_compatible_api(
@@ -302,9 +464,7 @@ def test_call_openai_compatible_api_merges_extra_headers():
     """Test OpenAI-compatible wrapper merges caller-provided extra headers."""
     response_200 = MagicMock()
     response_200.status_code = 200
-    response_200.json.return_value = {
-        "choices": [{"message": {"content": "Cluster 1: T cells"}}]
-    }
+    response_200.json.return_value = {"choices": [{"message": {"content": "Cluster 1: T cells"}}]}
     post_func = MagicMock(return_value=response_200)
 
     call_openai_compatible_api(
@@ -410,6 +570,44 @@ def test_extract_chat_completions_usage_malformed_block_returns_none():
     """A non-dict `usage` (e.g. provider sends a string/null) yields None, not a crash."""
     assert extract_chat_completions_usage({"usage": "unexpected"}) is None
     assert extract_chat_completions_usage({"usage": None}) is None
+
+
+def test_normalize_usage_rejects_invalid_token_and_cost_values():
+    """Test provider telemetry cannot inject negative, boolean, or non-finite values."""
+    usage = normalize_usage(
+        {
+            "prompt_tokens": -1,
+            "completion_tokens": True,
+            "total_tokens": "3",
+            "cost": float("nan"),
+            "unknown": 99,
+        }
+    )
+
+    assert usage == {
+        "prompt_tokens": None,
+        "completion_tokens": None,
+        "total_tokens": None,
+    }
+
+
+def test_normalize_usage_canonicalizes_supported_numeric_values():
+    """Test valid counts remain integers and valid cost becomes a finite float."""
+    usage = normalize_usage(
+        {
+            "prompt_tokens": 0,
+            "completion_tokens": 2,
+            "total_tokens": 2,
+            "cost": 1,
+        }
+    )
+
+    assert usage == {
+        "prompt_tokens": 0,
+        "completion_tokens": 2,
+        "total_tokens": 2,
+        "cost": 1.0,
+    }
 
 
 def test_call_http_api_with_retry_populates_usage_sink_when_provided():
@@ -528,6 +726,102 @@ def test_call_http_api_with_retry_clears_stale_sink_when_usage_absent():
     )
 
     assert sink == {}
+
+
+def test_call_http_api_with_retry_clears_stale_sink_when_request_fails():
+    """Test a failed current call cannot expose usage from an earlier call."""
+    sink = {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
+    post_func = MagicMock(side_effect=requests.ConnectionError("offline"))
+
+    with pytest.raises(requests.ConnectionError, match="offline"):
+        call_http_api_with_retry(
+            provider_name="OpenAI",
+            url="https://example.com",
+            body={"messages": []},
+            headers={"Authorization": "Bearer test"},
+            post_func=post_func,
+            response_parser=lambda _payload: ["unused"],
+            max_retries=1,
+            usage_sink=sink,
+        )
+
+    assert sink == {}
+
+
+def test_call_http_api_with_retry_usage_parser_failure_is_non_fatal():
+    """Test optional usage telemetry cannot invalidate a successful model response."""
+    response_200 = MagicMock()
+    response_200.status_code = 200
+    response_200.json.return_value = {"ok": True}
+    post_func = MagicMock(return_value=response_200)
+    usage_parser = MagicMock(side_effect=ValueError("unsupported usage shape"))
+    sink = {"total_tokens": 99}
+
+    result = call_http_api_with_retry(
+        provider_name="OpenAI",
+        url="https://example.com",
+        body={"messages": []},
+        headers={"Authorization": "Bearer test"},
+        post_func=post_func,
+        response_parser=lambda _payload: ["ok"],
+        max_retries=3,
+        usage_sink=sink,
+        usage_parser=usage_parser,
+    )
+
+    assert result == ["ok"]
+    assert sink == {}
+    assert post_func.call_count == 1
+
+
+@pytest.mark.parametrize("usage_sink", [[], set(), "usage", 1])
+def test_call_http_api_with_retry_rejects_invalid_usage_sink_before_request(usage_sink):
+    """Test malformed telemetry destinations cannot fail after an API side effect."""
+    post_func = MagicMock()
+
+    with pytest.raises(ValueError, match="usage_sink must be a mutable mapping"):
+        call_http_api_with_retry(
+            provider_name="OpenAI",
+            url="https://example.com",
+            body={"messages": []},
+            headers={"Authorization": "Bearer test"},
+            post_func=post_func,
+            response_parser=lambda _payload: ["unused"],
+            usage_sink=usage_sink,  # type: ignore[arg-type]
+        )
+
+    post_func.assert_not_called()
+
+
+def test_call_http_api_with_retry_usage_sink_update_failure_is_non_fatal():
+    """Test a mutable sink implementation cannot invalidate a valid response."""
+
+    class RejectingSink(dict):
+        def update(self, *args, **kwargs):
+            raise RuntimeError("read-only sink")
+
+    response_200 = MagicMock()
+    response_200.status_code = 200
+    response_200.json.return_value = {
+        "ok": True,
+        "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
+    }
+    sink = RejectingSink()
+
+    with patch("mllmcelltype.providers.common.write_log") as mock_log:
+        result = call_http_api_with_retry(
+            provider_name="OpenAI",
+            url="https://example.com",
+            body={"messages": []},
+            headers={"Authorization": "Bearer test"},
+            post_func=MagicMock(return_value=response_200),
+            response_parser=lambda _payload: ["ok"],
+            usage_sink=sink,
+        )
+
+    assert result == ["ok"]
+    assert sink == {}
+    assert any("Failed to store token usage" in call.args[0] for call in mock_log.call_args_list)
 
 
 def test_call_openai_compatible_api_surfaces_usage_to_sink():

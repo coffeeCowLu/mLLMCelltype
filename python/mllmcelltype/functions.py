@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .config import PROVIDER_CONFIGS, get_supported_providers
 from .providers import (
     process_anthropic,
     process_deepseek,
@@ -27,20 +28,27 @@ PROVIDER_FUNCTIONS = {
     "openrouter": process_openrouter,
 }
 
-# Model prefix patterns for provider detection
-# Each provider maps to a list of model name prefixes
-# Order matters: more specific prefixes should come first
 PROVIDER_MODEL_PREFIXES = {
-    "openai": ["gpt-", "o1", "o3", "o4", "chatgpt-", "codex-"],
-    "anthropic": ["claude-"],
-    "deepseek": ["deepseek-"],
-    "gemini": ["gemini-"],
-    "qwen": ["qwen", "qwq-"],
-    "stepfun": ["step-"],
-    "zhipu": ["glm-", "chatglm"],
-    "minimax": ["minimax-"],
-    "grok": ["grok-"],
+    provider: config.model_prefixes
+    for provider, config in PROVIDER_CONFIGS.items()
+    if config.model_prefixes
 }
+
+
+def _validate_provider_function_registry() -> None:
+    """Fail fast when configured providers and runtime implementations drift."""
+    configured = set(get_supported_providers())
+    implemented = set(PROVIDER_FUNCTIONS)
+    if configured != implemented:
+        missing = sorted(configured - implemented)
+        unexpected = sorted(implemented - configured)
+        raise RuntimeError(
+            "Provider registry mismatch: "
+            f"missing implementations={missing}, unexpected implementations={unexpected}"
+        )
+
+
+_validate_provider_function_registry()
 
 
 def get_provider(model: str) -> str:

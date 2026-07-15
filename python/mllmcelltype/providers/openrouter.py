@@ -28,9 +28,8 @@ def process_openrouter(
         model: The model name (e.g., 'openai/gpt-5.5', 'anthropic/claude-sonnet-4.6', 'anthropic/claude-opus-4.7')
         api_key: OpenRouter API key
         base_url: Optional custom base URL
-        usage_sink: Optional dict populated in place with token usage. When
-            provided, the request opts in to OpenRouter's ``usage: {include: true}``
-            so the response carries an accounted ``cost`` (USD) field.
+        usage_sink: Optional dict populated in place with token usage and native
+            cost data automatically returned by OpenRouter.
 
     Returns:
         List[str]: Processed responses, one per cluster
@@ -52,10 +51,6 @@ def process_openrouter(
         )
 
     body = build_chat_completions_body(model=model, prompt=prompt)
-    if usage_sink is not None:
-        # Opt in to OpenRouter accounting only when the caller wants usage back,
-        # so the default request shape is unchanged.
-        body["usage"] = {"include": True}
 
     return call_openai_compatible_api(
         provider_name="OpenRouter",

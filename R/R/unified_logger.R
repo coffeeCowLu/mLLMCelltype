@@ -3,9 +3,6 @@
 #' This logger provides centralized, multi-level logging with structured output,
 #' log rotation, and performance monitoring capabilities.
 #'
-#' @importFrom R6 R6Class
-#' @importFrom jsonlite toJSON
-#' @importFrom stats runif
 #' @export
 UnifiedLogger <- R6::R6Class("UnifiedLogger",
   public = list(
@@ -35,25 +32,28 @@ UnifiedLogger <- R6::R6Class("UnifiedLogger",
     
     #' @description
     #' Initialize the unified logger
-    #
-    #
-    #
-    #
-    #
-    #
+    #' @param base_dir Directory for log files
+    #' @param level Minimum log level
+    #' @param max_size Maximum main log size in megabytes
+    #' @param max_files Maximum number of retained main logs
+    #' @param console_output Whether to mirror logs to the console
+    #' @param json_format Whether main logs use JSON format
     initialize = function(base_dir = "logs", level = "INFO", max_size = 10,
                          max_files = 5, console_output = FALSE, json_format = TRUE) {
-      self$log_dir <- base_dir
-      self$log_level <- toupper(level)
-      self$max_log_size <- max_size
-      self$max_log_files <- max_files
-      self$enable_console <- console_output
-      self$enable_json <- json_format
+      self$log_dir <- .normalize_required_string(base_dir, "base_dir")
+      self$log_level <- .normalize_log_level(level)
+      self$max_log_size <- .normalize_positive_number(max_size, "max_size")
+      self$max_log_files <- .normalize_positive_integer(max_files, "max_files")
+      self$enable_console <- .normalize_flag(console_output, "console_output")
+      self$enable_json <- .normalize_flag(json_format, "json_format")
       
       # Only create log directory if we're not in R CMD check environment
       # This prevents the logs directory from being created during package checks
       if (!nzchar(Sys.getenv("_R_CHECK_PACKAGE_NAME_", "")) && !dir.exists(self$log_dir)) {
-        dir.create(self$log_dir, recursive = TRUE)
+        created <- dir.create(self$log_dir, recursive = TRUE, showWarnings = FALSE)
+        if (!created && !dir.exists(self$log_dir)) {
+          stop("Failed to create log directory: ", self$log_dir)
+        }
       }
       
       # Generate session ID with sub-second + random suffix to avoid collisions
@@ -79,45 +79,61 @@ UnifiedLogger <- R6::R6Class("UnifiedLogger",
     
     #' @description
     #' Log a debug message
-    #
-    #
+    #' @param message Log message
+    #' @param context Optional structured context
     debug = function(message, context = NULL) {
-      private$log_message("DEBUG", message, context)
+      tryCatch(
+        private$log_message("DEBUG", message, context),
+        warning = function(w) invisible(NULL),
+        error = function(e) invisible(NULL)
+      )
     },
     
     #' @description
     #' Log an info message
-    #
-    #
+    #' @param message Log message
+    #' @param context Optional structured context
     info = function(message, context = NULL) {
-      private$log_message("INFO", message, context)
+      tryCatch(
+        private$log_message("INFO", message, context),
+        warning = function(w) invisible(NULL),
+        error = function(e) invisible(NULL)
+      )
     },
     
     #' @description
     #' Log a warning message
-    #
-    #
+    #' @param message Log message
+    #' @param context Optional structured context
     warn = function(message, context = NULL) {
       self$performance_stats$warnings <- self$performance_stats$warnings + 1
-      private$log_message("WARN", message, context)
+      tryCatch(
+        private$log_message("WARN", message, context),
+        warning = function(w) invisible(NULL),
+        error = function(e) invisible(NULL)
+      )
     },
     
     #' @description
     #' Log an error message
-    #
-    #
+    #' @param message Log message
+    #' @param context Optional structured context
     error = function(message, context = NULL) {
       self$performance_stats$errors <- self$performance_stats$errors + 1
-      private$log_message("ERROR", message, context)
+      tryCatch(
+        private$log_message("ERROR", message, context),
+        warning = function(w) invisible(NULL),
+        error = function(e) invisible(NULL)
+      )
     },
     
     #' @description
     #' Log API call performance
-    #
-    #
-    #
-    #
-    #
+    #' @param provider Provider identifier
+    #' @param model Model identifier
+    #' @param duration Request duration in seconds
+    #' @param success Whether the request succeeded
+    #' @param tokens Optional token usage metadata
     log_api_call = function(provider, model, duration, success = TRUE, tokens = NULL) {
       self$performance_stats$api_calls <- self$performance_stats$api_calls + 1
       
@@ -139,18 +155,20 @@ UnifiedLogger <- R6::R6Class("UnifiedLogger",
     
     #' @description
     #' Log complete API request and response for debugging and audit
-    #
-    #
-    #
-    #
-    #
-    #
+    #' @param provider Provider identifier
+    #' @param model Model identifier
+    #' @param prompt_content Request prompt
+    #' @param response_content Provider response or error text
+    #' @param request_metadata Optional request metadata
+    #' @param response_metadata Optional response metadata
     log_api_request_response = function(provider, model, prompt_content, response_content, 
                                       request_metadata = NULL, response_metadata = NULL) {
       # Skip during R CMD check
       if (nzchar(Sys.getenv("_R_CHECK_PACKAGE_NAME_", ""))) {
         return(invisible(NULL))
       }
+
+      tryCatch({
       
       # Create API log directory if it doesn't exist
       api_log_dir <- file.path(self$log_dir, self$session_id, "api_logs")
@@ -161,7 +179,15 @@ UnifiedLogger <- R6::R6Class("UnifiedLogger",
       # Generate unique log file name for this API call
       timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
       call_seq <- self$performance_stats$api_calls + 1
-      api_call_id <- sprintf("%s_%s_%s_%03d", provider, gsub("[^A-Za-z0-9_-]", "_", model), timestamp, call_seq)
+      provider_safe <- private$safe_filename_component(provider, "provider")
+      model_safe <- private$safe_filename_component(model, "model")
+      api_call_id <- sprintf(
+        "%s_%s_%s_%03d",
+        provider_safe,
+        model_safe,
+        timestamp,
+        call_seq
+      )
       
       # Create complete API log entry
       api_log_entry <- list(
@@ -215,14 +241,17 @@ UnifiedLogger <- R6::R6Class("UnifiedLogger",
         )
       ))
       
-      return(api_call_id)
+        api_call_id
+      },
+      warning = function(w) invisible(NULL),
+      error = function(e) invisible(NULL))
     },
     
     #' @description
     #' Log cache operations
-    #
-    #
-    #
+    #' @param operation Cache operation name
+    #' @param key Cache key
+    #' @param size Optional cache object size in bytes
     log_cache_operation = function(operation, key, size = NULL) {
       if (operation == "hit") {
         self$performance_stats$cache_hits <- self$performance_stats$cache_hits + 1
@@ -243,9 +272,9 @@ UnifiedLogger <- R6::R6Class("UnifiedLogger",
     
     #' @description
     #' Log cluster annotation progress
-    #
-    #
-    #
+    #' @param cluster_id Cluster identifier
+    #' @param stage Processing stage
+    #' @param progress Optional progress value
     log_cluster_progress = function(cluster_id, stage, progress = NULL) {
       context <- list(
         cluster_id = cluster_id,
@@ -259,9 +288,9 @@ UnifiedLogger <- R6::R6Class("UnifiedLogger",
     
     #' @description
     #' Log detailed cluster discussion with complete model conversations
-    #
-    #
-    #
+    #' @param cluster_id Cluster identifier
+    #' @param event_type Discussion event type
+    #' @param data Optional event payload
     log_discussion = function(cluster_id, event_type, data = NULL) {
       # Skip during R CMD check
       if (nzchar(Sys.getenv("_R_CHECK_PACKAGE_NAME_", ""))) {
@@ -274,6 +303,8 @@ UnifiedLogger <- R6::R6Class("UnifiedLogger",
         self$info(sprintf("Discussion %s for cluster %s", event_type, cluster_id), context)
         return(invisible(NULL))
       }
+
+      tryCatch({
       
       # Create session directory if needed
       session_dir <- file.path(self$log_dir, self$session_id)
@@ -291,9 +322,16 @@ UnifiedLogger <- R6::R6Class("UnifiedLogger",
       self$info(sprintf("Discussion %s for cluster %s", event_type, cluster_id), context)
       
       # Also create detailed cluster log file for easy access
-      cluster_log_file <- file.path(session_dir, sprintf("cluster_%s_discussion.md", cluster_id))
+      cluster_safe <- private$safe_filename_component(cluster_id, "cluster")
+      cluster_log_file <- file.path(
+        session_dir,
+        sprintf("cluster_%s_discussion.md", cluster_safe)
+      )
       # Pure dialogue log: model outputs only (no timestamps/session metadata)
-      dialogue_log_file <- file.path(session_dir, sprintf("cluster_%s_dialogue.txt", cluster_id))
+      dialogue_log_file <- file.path(
+        session_dir,
+        sprintf("cluster_%s_dialogue.txt", cluster_safe)
+      )
       
       if (event_type == "start") {
         # Create markdown log for better readability
@@ -341,13 +379,18 @@ UnifiedLogger <- R6::R6Class("UnifiedLogger",
                           format(Sys.time(), "%Y-%m-%d %H:%M:%S"))
         cat(content, file = cluster_log_file, append = TRUE)
       }
+      },
+      warning = function(w) invisible(NULL),
+      error = function(e) invisible(NULL))
     },
 
     #' @description
     #' Log model response with concise summary in main log and full text in file
-    #
-    #
-    #
+    #' @param provider Provider identifier
+    #' @param model Model identifier
+    #' @param response Model response
+    #' @param stage Processing stage
+    #' @param cluster_id Optional cluster identifier
     log_model_response = function(provider, model, response, stage = "annotation", cluster_id = NULL) {
       # Skip file writes during R CMD check
       if (nzchar(Sys.getenv("_R_CHECK_PACKAGE_NAME_", ""))) {
@@ -361,6 +404,8 @@ UnifiedLogger <- R6::R6Class("UnifiedLogger",
         ))
         return(invisible(NULL))
       }
+
+      tryCatch({
 
       session_dir <- file.path(self$log_dir, self$session_id)
       if (!dir.exists(session_dir)) {
@@ -405,7 +450,10 @@ UnifiedLogger <- R6::R6Class("UnifiedLogger",
       }
 
       self$info("Model response received", context)
-      invisible(response_file)
+        invisible(response_file)
+      },
+      warning = function(w) invisible(NULL),
+      error = function(e) invisible(NULL))
     },
     
     #' @description
@@ -433,7 +481,7 @@ UnifiedLogger <- R6::R6Class("UnifiedLogger",
     
     #' @description
     #' Clean up old log files
-    #
+    #' @param force Whether to remove every main log file
     cleanup_logs = function(force = FALSE) {
       log_files <- list.files(self$log_dir, pattern = "^mllm_.*\\.log$", full.names = TRUE)
       
@@ -445,16 +493,20 @@ UnifiedLogger <- R6::R6Class("UnifiedLogger",
       
       files_to_remove <- c()
       
-      if (force || length(log_files) > self$max_log_files) {
-        # Remove excess files
+      if (force) {
+        files_to_remove <- log_files
+      } else if (length(log_files) > self$max_log_files) {
         files_to_remove <- c(files_to_remove, log_files[(self$max_log_files + 1):length(log_files)])
       }
       
       # Check file sizes
-      for (file in log_files[1:min(length(log_files), self$max_log_files)]) {
-        size_mb <- file.info(file)$size / (1024 * 1024)
-        if (size_mb > self$max_log_size) {
-          files_to_remove <- c(files_to_remove, file)
+      if (!force) {
+        retained_files <- head(log_files, self$max_log_files)
+        for (file in retained_files) {
+          size_mb <- file.info(file)$size / (1024 * 1024)
+          if (!is.na(size_mb) && size_mb > self$max_log_size) {
+            files_to_remove <- c(files_to_remove, file)
+          }
         }
       }
       
@@ -465,21 +517,34 @@ UnifiedLogger <- R6::R6Class("UnifiedLogger",
             file.remove(file)
           }
         }
-        self$info(sprintf("Cleaned up %d log files", length(files_to_remove)))
+        if (!force) {
+          self$info(sprintf("Cleaned up %d log files", length(files_to_remove)))
+        }
       }
     },
     
     #' @description
     #' Set logging level
-    #
+    #' @param level Minimum log level
     set_level = function(level) {
+      normalized_level <- .normalize_log_level(level)
       old_level <- self$log_level
-      self$log_level <- toupper(level)
+      self$log_level <- normalized_level
       self$info(sprintf("Log level changed from %s to %s", old_level, self$log_level))
     }
   ),
   
   private = list(
+    safe_filename_component = function(value, fallback) {
+      scalar <- if (is.null(value) || length(value) == 0 || is.na(value[[1]])) {
+        fallback
+      } else {
+        as.character(value[[1]])
+      }
+      safe <- gsub("[^A-Za-z0-9_-]", "_", scalar)
+      if (!nzchar(safe)) fallback else safe
+    },
+
     create_session_id = function() {
       ts <- format(Sys.time(), "%Y%m%d_%H%M%S")
       subsec <- sprintf("%03d", as.integer((as.numeric(Sys.time()) %% 1) * 1000))
@@ -588,6 +653,7 @@ get_logger <- function() {
 #' @return Invisible logger object
 #' @keywords internal
 initialize_logger <- function(log_dir = "logs") {
+  log_dir <- .normalize_required_string(log_dir, "log_dir")
   current_logger <- if (!is.null(.mllm_pkg_env$.mllm_logger)) .mllm_pkg_env$.mllm_logger else NULL
 
   level <- "INFO"
@@ -634,6 +700,9 @@ initialize_logger <- function(log_dir = "logs") {
 #' @return Invisible logger object
 #' @export
 configure_logger <- function(level = "INFO", console_output = FALSE, json_format = TRUE) {
+  level <- .normalize_log_level(level)
+  console_output <- .normalize_flag(console_output, "console_output")
+  json_format <- .normalize_flag(json_format, "json_format")
   logger <- get_logger()
   logger$set_level(level)
   logger$enable_console <- console_output

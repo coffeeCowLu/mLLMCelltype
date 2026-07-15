@@ -51,6 +51,13 @@ Initialize cache manager
 \if{html}{\out{<div class="r">}}\preformatted{CacheManager$new(cache_dir = NULL)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{cache_dir}}{Cache directory selector or custom path}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-CacheManager-get_cache_dir"></a>}}
@@ -73,10 +80,28 @@ Generate cache key from input parameters (improved version)
   models,
   cluster_id,
   tissue_name = "",
-  top_gene_count = 10
+  top_gene_count = 10,
+  discussion_context = NULL
 )}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{input}}{Marker gene input}
+
+\item{\code{models}}{Model identifiers contributing to the result}
+
+\item{\code{cluster_id}}{Cluster identifier}
+
+\item{\code{tissue_name}}{Tissue context included in the cache key}
+
+\item{\code{top_gene_count}}{Number of marker genes used}
+
+\item{\code{discussion_context}}{Optional normalized inputs that affect a discussion}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-CacheManager-save_to_cache"></a>}}
@@ -87,6 +112,15 @@ Save results to cache
 \if{html}{\out{<div class="r">}}\preformatted{CacheManager$save_to_cache(key, data)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{key}}{Valid cache key}
+
+\item{\code{data}}{Result object to persist}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-CacheManager-load_from_cache"></a>}}
@@ -97,6 +131,13 @@ Load results from cache
 \if{html}{\out{<div class="r">}}\preformatted{CacheManager$load_from_cache(key)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{key}}{Valid cache key}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-CacheManager-has_cache"></a>}}
@@ -107,6 +148,13 @@ Check if results exist in cache
 \if{html}{\out{<div class="r">}}\preformatted{CacheManager$has_cache(key)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{key}}{Valid cache key}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-CacheManager-get_cache_stats"></a>}}
@@ -127,21 +175,39 @@ Clear all cache
 \if{html}{\out{<div class="r">}}\preformatted{CacheManager$clear_cache(confirm = FALSE)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{confirm}}{Whether deletion is explicitly confirmed}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-CacheManager-validate_cache"></a>}}
 \if{latex}{\out{\hypertarget{method-CacheManager-validate_cache}{}}}
 \subsection{Method \code{validate_cache()}}{
 Validate cache content
-Extract genes from input in a standardized way
-Create stable hash from genes list
-Create stable hash from models list
-Create stable hash from tissue_name and top_gene_count
-Create stable hash from cluster ID
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{CacheManager$validate_cache(key)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{key}}{Valid cache key
+Return deterministic paths for regular RDS cache files
+Resolve a validated cache key to a path inside the cache directory
+Write one R object to a path; separated for deterministic failure testing
+Persist cache data through a same-directory temporary file
+Extract genes from input in a standardized way
+Create stable hash from genes list
+Create stable hash from models list
+Create stable hash from tissue_name and top_gene_count
+Create stable hash from cluster ID}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-CacheManager-clone"></a>}}

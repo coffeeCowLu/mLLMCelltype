@@ -4,7 +4,7 @@ filter_valid_responses <- function(responses, cluster_id, round = NULL) {
   valid <- list()
   for (model_name in names(responses)) {
     response <- responses[[model_name]]
-    if (!is.null(response) && !is_error_response(response)) {
+    if (is_valid_model_response(response)) {
       valid[[model_name]] <- response
     } else {
       round_info <- if (!is.null(round)) sprintf(" in round %d", round) else ""
@@ -44,29 +44,16 @@ facilitate_cluster_discussion <- function(cluster_id,
   })
 
   # Extract predictions for this cluster from each model
-  # Uses the shared parse_text_predictions() helper for text-format responses
-  structured_predictions <- list()
-
-  for (model_name in names(initial_predictions)) {
-    model_preds <- initial_predictions[[model_name]]
-
-    if (is.list(model_preds) && !is.null(names(model_preds))) {
-      # Already structured by cluster_id, extract directly
-      structured_predictions[[model_name]] <- if (!is.null(model_preds[[char_cluster_id]])) {
-        model_preds[[char_cluster_id]]
-      } else {
-        "Prediction_Missing"
-      }
-    } else if (is.character(model_preds)) {
-      # Parse text lines using shared helper (pass cluster ID for positional fallback)
-      parsed <- parse_text_predictions(model_preds, c(char_cluster_id))
-      structured_predictions[[model_name]] <- if (!is.null(parsed[[char_cluster_id]])) {
-        parsed[[char_cluster_id]]
-      } else {
-        "Prediction_Missing"
-      }
-    }
-  }
+  # Parse against the full cluster sequence before selecting this cluster.
+  all_cluster_ids <- tryCatch(
+    canonical_cluster_ids(input),
+    error = function(e) char_cluster_id
+  )
+  structured_predictions <- structure_cluster_predictions(
+    initial_predictions,
+    all_cluster_ids,
+    char_cluster_id
+  )
 
   # Create the discussion log with extracted predictions
   discussion_log <- list(
@@ -86,7 +73,7 @@ facilitate_cluster_discussion <- function(cluster_id,
     cluster_id = char_cluster_id,
     cluster_genes = cluster_genes,
     tissue_name = tissue_name,
-    initial_predictions = initial_predictions
+    initial_predictions = structured_predictions
   )
 
   # First round responses

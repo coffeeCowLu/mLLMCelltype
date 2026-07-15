@@ -8,8 +8,11 @@ import requests
 
 from ..logger import write_log
 from .common import (
+    UsageSink,
     call_http_api_with_retry,
     ensure_api_key,
+    normalize_response_lines,
+    normalize_usage,
     resolve_endpoint_url,
 )
 
@@ -56,16 +59,34 @@ def _parse_anthropic_response(content: dict[str, Any]) -> list[str]:
     except (KeyError, IndexError, TypeError) as e:
         raise ValueError(f"Unexpected response format from Anthropic: {content}") from e
 
-    if not isinstance(text, str):
-        write_log("Unexpected non-string response content from Anthropic, coercing to string", level="warning")
-        text = str(text)
+    return normalize_response_lines(text, "Anthropic")
 
-    lines = text.strip().split("\n")
-    return [line.rstrip(",") for line in lines]
+
+def extract_anthropic_usage(content: dict[str, Any]) -> dict[str, Any] | None:
+    """Normalize Anthropic input/output token counts to the shared usage schema."""
+    usage = content.get("usage")
+    if not isinstance(usage, dict):
+        return None
+
+    normalized = normalize_usage(
+        {
+            "prompt_tokens": usage.get("input_tokens"),
+            "completion_tokens": usage.get("output_tokens"),
+        }
+    )
+    prompt_tokens = normalized["prompt_tokens"]
+    completion_tokens = normalized["completion_tokens"]
+    if prompt_tokens is not None and completion_tokens is not None:
+        normalized["total_tokens"] = prompt_tokens + completion_tokens
+    return normalized
 
 
 def process_anthropic(
-    prompt: str, model: str, api_key: str, base_url: str | None = None
+    prompt: str,
+    model: str,
+    api_key: str,
+    base_url: str | None = None,
+    usage_sink: UsageSink | None = None,
 ) -> list[str]:
     """Process request using Anthropic Claude models.
 
@@ -74,6 +95,7 @@ def process_anthropic(
         model: The model name (e.g., 'claude-opus-4-7', 'claude-sonnet-4-6')
         api_key: Anthropic API key
         base_url: Optional custom base URL
+        usage_sink: Optional dict populated in place with token usage.
 
     Returns:
         List[str]: Processed responses, one per cluster
@@ -111,4 +133,6 @@ def process_anthropic(
         retry_delay=2,
         timeout=30,
         request_json=False,
+        usage_sink=usage_sink,
+        usage_parser=extract_anthropic_usage,
     )
