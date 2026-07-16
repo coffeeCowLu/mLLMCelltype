@@ -4,13 +4,19 @@ import inspect
 
 import pytest
 
+import mllmcelltype.providers as provider_runtime
 from mllmcelltype.config import (
     PROVIDER_CONFIGS,
     get_api_key_env_var,
     get_default_api_url,
     get_default_model,
 )
-from mllmcelltype.functions import PROVIDER_FUNCTIONS, PROVIDER_MODEL_PREFIXES, get_provider
+from mllmcelltype.functions import (
+    PROVIDER_FUNCTIONS,
+    PROVIDER_MODEL_PREFIXES,
+    _build_provider_function_registry,
+    get_provider,
+)
 
 
 def test_get_provider_trims_whitespace():
@@ -21,13 +27,13 @@ def test_get_provider_trims_whitespace():
 
 def test_get_provider_invalid_type():
     """Test get_provider validates input type with clear error."""
-    with pytest.raises(ValueError, match="Model name must be a string"):
+    with pytest.raises(ValueError, match="model must be a string"):
         get_provider(123)  # type: ignore[arg-type]
 
 
 def test_get_provider_empty_string():
     """Test get_provider rejects whitespace-only model names."""
-    with pytest.raises(ValueError, match="cannot be empty"):
+    with pytest.raises(ValueError, match="model must be a non-empty string"):
         get_provider("   ")
 
 
@@ -75,3 +81,24 @@ def test_provider_callables_share_one_runtime_signature():
     for provider, provider_func in PROVIDER_FUNCTIONS.items():
         parameters = list(inspect.signature(provider_func).parameters)
         assert parameters == expected_parameters, provider
+
+
+def test_provider_registry_builder_rejects_missing_and_unexpected_implementations(monkeypatch):
+    """Test import-time registry construction rejects either direction of drift."""
+    with monkeypatch.context() as patcher:
+        patcher.delattr(provider_runtime, "process_openai")
+        with pytest.raises(RuntimeError, match="missing implementations=\\['openai'\\]"):
+            _build_provider_function_registry()
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(provider_runtime, "process_extra", lambda: [], raising=False)
+        with pytest.raises(RuntimeError, match="unexpected implementations=\\['extra'\\]"):
+            _build_provider_function_registry()
+
+
+def test_provider_registry_builder_rejects_signature_drift(monkeypatch):
+    """Test runtime dispatch contract is enforced before any provider call."""
+    monkeypatch.setattr(provider_runtime, "process_openai", lambda prompt: [prompt])
+
+    with pytest.raises(RuntimeError, match="Provider signature mismatch for openai"):
+        _build_provider_function_registry()

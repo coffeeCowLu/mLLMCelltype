@@ -10,6 +10,7 @@ import requests
 
 from .config import get_default_api_url
 from .logger import write_log
+from .validation import normalize_text
 
 # Re-export get_default_api_url for backward compatibility
 # The actual implementation is in config.py (Single Source of Truth)
@@ -76,12 +77,10 @@ def resolve_provider_base_url(provider: str, base_urls: str | dict | None) -> st
     Returns:
         Resolved base URL or None
     """
-    if base_urls is None or provider is None:
+    if base_urls is None:
         return None
 
-    provider_normalized = str(provider).strip().lower()
-    if not provider_normalized:
-        return None
+    provider_normalized = normalize_text(provider, "provider", required=True).lower()
 
     if isinstance(base_urls, str):
         return _normalize_base_url_value(base_urls, "")

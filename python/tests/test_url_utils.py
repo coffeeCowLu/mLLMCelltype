@@ -69,6 +69,15 @@ class TestResolveProviderBaseUrl:
         result = resolve_provider_base_url("  OPENAI  ", base_urls)
         assert result == "https://openai-proxy.com/v1/chat/completions"
 
+    @pytest.mark.parametrize("provider", [None, 123, "   "])
+    def test_resolve_rejects_invalid_provider_when_override_is_present(self, provider):
+        """Test endpoint overrides require an unambiguous provider identity."""
+        with pytest.raises(ValueError, match="provider"):
+            resolve_provider_base_url(
+                provider,  # type: ignore[arg-type]
+                "https://proxy.example.com/v1",
+            )
+
     def test_resolve_with_whitespace_provider_key(self):
         """Test provider key with whitespace in dict is normalized."""
         base_urls = {"  openai  ": "https://openai-proxy.com/v1/chat/completions/"}

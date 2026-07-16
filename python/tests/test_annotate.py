@@ -183,7 +183,7 @@ class TestAnnotation:
 
     def test_get_model_response_invalid_provider_type(self):
         """Test get_model_response with non-string provider."""
-        with pytest.raises(ValueError, match="Provider name must be a string"):
+        with pytest.raises(ValueError, match="provider must be a string"):
             get_model_response(
                 prompt="Test prompt",
                 provider=123,  # type: ignore[arg-type]
@@ -215,9 +215,52 @@ class TestAnnotation:
                 use_cache=False,
             )
 
+    def test_get_model_response_rejects_known_provider_model_mismatch(self):
+        """A known model family cannot be routed through a different provider."""
+        provider_mock = MagicMock(return_value="Cluster 1: T cells")
+        with (
+            patch.dict(
+                "mllmcelltype.annotate.PROVIDER_FUNCTIONS",
+                {"openai": provider_mock},
+                clear=True,
+            ),
+            pytest.raises(ValueError, match="provider/model mismatch"),
+        ):
+            get_model_response(
+                prompt="Test prompt",
+                provider="openai",
+                model="claude-opus-4-7",
+                api_key="test-key",
+                use_cache=False,
+            )
+
+        provider_mock.assert_not_called()
+
+    def test_annotate_clusters_rejects_known_provider_model_mismatch(self):
+        """Direct annotation follows the same provider/model contract as consensus."""
+        provider_mock = MagicMock(return_value=["Cluster 1: T cells"])
+        with (
+            patch.dict(
+                "mllmcelltype.annotate.PROVIDER_FUNCTIONS",
+                {"openai": provider_mock},
+                clear=True,
+            ),
+            pytest.raises(ValueError, match="provider/model mismatch"),
+        ):
+            annotate_clusters(
+                marker_genes={"1": ["CD3D"]},
+                species="human",
+                provider="openai",
+                model="claude-opus-4-7",
+                api_key="test-key",
+                use_cache=False,
+            )
+
+        provider_mock.assert_not_called()
+
     def test_annotate_clusters_blank_provider_name(self):
         """Test annotate_clusters rejects blank provider names."""
-        with pytest.raises(ValueError, match="Provider name is required"):
+        with pytest.raises(ValueError, match="provider must be a non-empty string"):
             annotate_clusters(
                 marker_genes={"1": ["CD3D"]},
                 species="human",

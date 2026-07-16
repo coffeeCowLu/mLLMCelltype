@@ -18,6 +18,7 @@ from dotenv import dotenv_values
 
 from .config import get_api_key_env_var
 from .logger import write_log
+from .validation import normalize_text, validate_bool
 
 UNKNOWN_ANNOTATION_TOKENS = {
     "unknown",
@@ -37,32 +38,6 @@ ERROR_ANNOTATION_PATTERN = re.compile(r"(?i)^error(?:\s*:\s*.*|\s*\(.*\))?$")
 CACHE_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 CACHE_VERSION = "1.0"
 CACHE_ENVELOPE_KEYS = frozenset({"version", "timestamp", "data"})
-
-
-def validate_bool(value: Any, field_name: str) -> bool:
-    """Validate a strict boolean control without accepting truthy substitutes."""
-    if not isinstance(value, bool):
-        raise ValueError(f"{field_name} must be True or False")
-    return value
-
-
-def normalize_text(
-    value: Any,
-    field_name: str,
-    *,
-    required: bool = False,
-) -> str | None:
-    """Normalize optional text and enforce one required/optional string contract."""
-    if value is None:
-        if required:
-            raise ValueError(f"{field_name} must be a non-empty string")
-        return None
-    if not isinstance(value, str):
-        raise ValueError(f"{field_name} must be a string, got {type(value).__name__}")
-    normalized = value.strip()
-    if required and not normalized:
-        raise ValueError(f"{field_name} must be a non-empty string")
-    return normalized or None
 
 
 def is_missing_value(value: Any) -> bool:
@@ -138,8 +113,8 @@ def _get_cache_dir(cache_dir: str | None = None) -> str:
         str: Cache directory path
     """
     if cache_dir is None:
-        cache_dir = os.path.join(os.path.expanduser("~"), ".mllmcelltype", "cache")
-    return cache_dir
+        return os.path.join(os.path.expanduser("~"), ".mllmcelltype", "cache")
+    return normalize_text(cache_dir, "cache_dir", required=True)
 
 
 def _get_cache_file(cache_key: str, cache_dir: str | None = None) -> str:
@@ -384,26 +359,19 @@ def create_cache_key(prompt: str, model: str, provider: str, base_url: str | Non
         str: The cache key
 
     """
-    # Normalize inputs to ensure consistent keys
-    normalized_provider = str(provider).lower().strip()
-    normalized_model = str(model).lower().strip()
-    normalized_prompt = str(prompt).strip()
-
-    # For OpenRouter models (containing '/'), ensure provider is 'openrouter'
-    # This prevents cache key collisions between different providers
-    if "/" in normalized_model:
-        normalized_provider = "openrouter"
+    normalized_provider = normalize_text(provider, "provider", required=True).lower()
+    normalized_model = normalize_text(model, "model", required=True)
+    normalized_prompt = normalize_text(prompt, "prompt", required=True)
 
     # Create a string to hash with clear separators to avoid collisions
     hash_string = (
         f"provider:{normalized_provider}||model:{normalized_model}||prompt:{normalized_prompt}"
     )
 
-    # Include base_url when explicitly set (None = default endpoint, no change)
-    if base_url:
-        normalized_base_url = str(base_url).strip().rstrip("/")
-        if normalized_base_url:
-            hash_string += f"||base_url:{normalized_base_url}"
+    normalized_base_url = normalize_text(base_url, "base_url")
+    normalized_base_url = normalized_base_url.rstrip("/") if normalized_base_url else None
+    if normalized_base_url:
+        hash_string += f"||base_url:{normalized_base_url}"
 
     # Create hash
     hash_object = hashlib.sha256(hash_string.encode("utf-8"))
@@ -423,8 +391,8 @@ def save_to_cache(
         cache_dir: The cache directory. If None, uses default directory.
 
     """
-    cache_dir = _get_cache_dir(cache_dir)
     cache_file = _get_cache_file(cache_key, cache_dir)
+    cache_dir = os.path.dirname(cache_file)
 
     # Ensure results are in a consistent format
     cache_data = {"version": CACHE_VERSION, "timestamp": time.time(), "data": results}

@@ -1,32 +1,14 @@
 from __future__ import annotations
 
-from .config import PROVIDER_CONFIGS, get_supported_providers
-from .providers import (
-    process_anthropic,
-    process_deepseek,
-    process_gemini,
-    process_grok,
-    process_minimax,
-    process_openai,
-    process_openrouter,
-    process_qwen,
-    process_stepfun,
-    process_zhipu,
-)
+import inspect
+from collections.abc import Callable
 
-# Global provider function mapping for reuse across modules
-PROVIDER_FUNCTIONS = {
-    "openai": process_openai,
-    "anthropic": process_anthropic,
-    "deepseek": process_deepseek,
-    "gemini": process_gemini,
-    "qwen": process_qwen,
-    "stepfun": process_stepfun,
-    "zhipu": process_zhipu,
-    "minimax": process_minimax,
-    "grok": process_grok,
-    "openrouter": process_openrouter,
-}
+from . import providers as provider_runtime
+from .config import PROVIDER_CONFIGS, get_supported_providers
+from .validation import normalize_text
+
+ProviderFunction = Callable[..., list[str]]
+EXPECTED_PROVIDER_PARAMETERS = ("prompt", "model", "api_key", "base_url", "usage_sink")
 
 PROVIDER_MODEL_PREFIXES = {
     provider: config.model_prefixes
@@ -35,10 +17,14 @@ PROVIDER_MODEL_PREFIXES = {
 }
 
 
-def _validate_provider_function_registry() -> None:
-    """Fail fast when configured providers and runtime implementations drift."""
+def _build_provider_function_registry() -> dict[str, ProviderFunction]:
+    """Build and validate provider callables from configuration and runtime exports."""
     configured = set(get_supported_providers())
-    implemented = set(PROVIDER_FUNCTIONS)
+    implemented = {
+        name.removeprefix("process_")
+        for name, value in vars(provider_runtime).items()
+        if name.startswith("process_") and callable(value)
+    }
     if configured != implemented:
         missing = sorted(configured - implemented)
         unexpected = sorted(implemented - configured)
@@ -47,8 +33,24 @@ def _validate_provider_function_registry() -> None:
             f"missing implementations={missing}, unexpected implementations={unexpected}"
         )
 
+    registry: dict[str, ProviderFunction] = {}
+    for provider in get_supported_providers():
+        provider_func = getattr(provider_runtime, f"process_{provider}")
+        try:
+            parameters = tuple(inspect.signature(provider_func).parameters)
+        except (TypeError, ValueError) as error:
+            raise RuntimeError(f"Cannot inspect provider implementation: {provider}") from error
+        if parameters != EXPECTED_PROVIDER_PARAMETERS:
+            raise RuntimeError(
+                f"Provider signature mismatch for {provider}: "
+                f"expected={list(EXPECTED_PROVIDER_PARAMETERS)}, got={list(parameters)}"
+            )
+        registry[provider] = provider_func
+    return registry
 
-_validate_provider_function_registry()
+
+# Global provider function mapping retained for orchestration and test injection.
+PROVIDER_FUNCTIONS = _build_provider_function_registry()
 
 
 def get_provider(model: str) -> str:
@@ -66,13 +68,7 @@ def get_provider(model: str) -> str:
     Raises:
         ValueError: If the provider cannot be determined from the model name
     """
-    if not isinstance(model, str):
-        raise ValueError(f"Model name must be a string, got {type(model).__name__}")
-
-    model_normalized = model.strip()
-    if not model_normalized:
-        raise ValueError("Model name cannot be empty")
-
+    model_normalized = normalize_text(model, "model", required=True)
     model_lower = model_normalized.lower()
 
     # OpenRouter models contain '/' (e.g., 'anthropic/claude-sonnet-4.6')
@@ -94,3 +90,25 @@ def get_provider(model: str) -> str:
         f"Cannot determine provider for model: {model_normalized}. "
         f"Supported model prefixes: {', '.join(supported_prefixes)}"
     )
+
+
+def validate_provider_model_match(provider: str, model: str, field_name: str) -> None:
+    """Reject model names that clearly belong to a different provider.
+
+    Unknown model families remain valid for custom or newly released models.
+    OpenRouter is exempt because it intentionally routes models from other providers.
+    """
+    if provider == "openrouter":
+        return
+
+    try:
+        inferred_provider = get_provider(model)
+    except ValueError:
+        return
+
+    if inferred_provider != provider:
+        raise ValueError(
+            f"{field_name} provider/model mismatch: "
+            f"provider='{provider}', model='{model}' "
+            f"(inferred provider '{inferred_provider}')"
+        )

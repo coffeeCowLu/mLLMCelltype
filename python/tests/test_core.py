@@ -343,11 +343,67 @@ def test_create_cache_key():
     assert len(key1) > 0
 
 
-def test_create_cache_key_with_non_string_base_url():
-    """Test create_cache_key handles non-string base_url robustly."""
-    key = create_cache_key("test prompt", "gpt-5.5", "openai", base_url=123)  # type: ignore[arg-type]
-    assert isinstance(key, str)
-    assert len(key) > 0
+def test_create_cache_key_preserves_explicit_provider_identity():
+    """Test slash-delimited model names cannot collapse distinct providers."""
+    first = create_cache_key("test prompt", "organization/model", "provider-a")
+    second = create_cache_key("test prompt", "organization/model", "provider-b")
+
+    assert first != second
+
+
+def test_create_cache_key_preserves_case_sensitive_model_identity():
+    """Model identifiers remain opaque because upstream APIs may be case-sensitive."""
+    canonical = create_cache_key("test prompt", "MiniMax-M2.7", "minimax")
+    different_model = create_cache_key("test prompt", "minimax-m2.7", "minimax")
+
+    assert canonical != different_model
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("prompt", None),
+        ("model", 123),
+        ("provider", "   "),
+        ("base_url", 123),
+    ],
+)
+def test_create_cache_key_rejects_invalid_text_inputs(field_name, value):
+    """Test cache identity accepts only normalized textual request fields."""
+    request = {
+        "prompt": "test prompt",
+        "model": "gpt-5.5",
+        "provider": "openai",
+        "base_url": None,
+    }
+    request[field_name] = value
+
+    with pytest.raises(ValueError, match=field_name):
+        create_cache_key(**request)
+
+
+def test_cache_directory_is_normalized_once_for_public_operations():
+    """Test cache APIs share one trimmed directory identity."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        cache_dir = os.path.join(temp_dir, "cache")
+        padded_cache_dir = f"  {cache_dir}  "
+
+        stats = get_cache_stats(cache_dir=padded_cache_dir)
+
+        assert stats["path"] == cache_dir
+        cache_key = create_cache_key("directory identity", "gpt-5.5", "openai")
+        save_to_cache(cache_key, "cached value", cache_dir=padded_cache_dir)
+        assert load_from_cache(cache_key, cache_dir=cache_dir) == "cached value"
+        assert clear_cache(cache_dir=padded_cache_dir) == 1
+
+
+@pytest.mark.parametrize("cache_dir", [123, "   "])
+def test_cache_operations_reject_invalid_directories(cache_dir):
+    """Test public cache operations reject ambiguous directory inputs."""
+    with pytest.raises(ValueError, match="cache_dir"):
+        get_cache_stats(cache_dir=cache_dir)
+    with pytest.raises(ValueError, match="cache_dir"):
+        clear_cache(cache_dir=cache_dir)
 
 
 def test_save_and_load_from_cache():

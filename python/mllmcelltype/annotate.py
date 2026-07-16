@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 
 from .config import get_default_model
-from .functions import PROVIDER_FUNCTIONS
+from .functions import PROVIDER_FUNCTIONS, validate_provider_model_match
 from .logger import setup_logging, write_log
 from .prompts import create_prompt
 from .providers.common import normalize_response_lines
@@ -22,23 +22,15 @@ from .utils import (
     load_api_key,
     load_from_cache,
     normalize_marker_genes_keys,
-    normalize_text,
     parse_marker_genes,
     save_to_cache,
-    validate_bool,
 )
+from .validation import normalize_text, validate_bool
 
 
 def _resolve_provider(provider: str) -> tuple[str, Callable[..., Any]]:
     """Normalize provider name and resolve provider callable."""
-    if not isinstance(provider, str):
-        raise ValueError(f"Provider name must be a string, got {type(provider).__name__}")
-    if not provider:
-        raise ValueError("Provider name is required")
-
-    normalized_provider = provider.strip().lower()
-    if not normalized_provider:
-        raise ValueError("Provider name is required")
+    normalized_provider = normalize_text(provider, "provider", required=True).lower()
     provider_func = PROVIDER_FUNCTIONS.get(normalized_provider)
     if not provider_func:
         error_msg = f"Unknown provider: {normalized_provider}"
@@ -54,6 +46,7 @@ def _resolve_model(provider: str, model: str | None) -> str:
     if not resolved_model:
         resolved_model = get_default_model(provider)
         write_log(f"Using default model for {provider}: {resolved_model}")
+    validate_provider_model_match(provider, resolved_model, "model")
     return resolved_model
 
 

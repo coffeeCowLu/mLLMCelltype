@@ -5,7 +5,8 @@ from __future__ import annotations
 import string
 
 from .logger import write_log
-from .utils import cluster_sort_key, normalize_text
+from .utils import cluster_sort_key
+from .validation import normalize_text
 
 
 def _format_marker_genes_for_prompt(

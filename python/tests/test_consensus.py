@@ -21,6 +21,7 @@ from mllmcelltype.consensus import (
     _merge_consensus_and_resolved,
     _normalize_api_keys,
     _normalize_consensus_model_spec,
+    _normalize_models_spec,
     _run_initial_annotations,
     check_consensus,
     check_consensus_for_discussion_round,
@@ -137,7 +138,7 @@ class TestConsensus:
             _run_initial_annotations(
                 marker_genes={"1": ["CD3D", "CD3E"]},
                 species="human",
-                models=[{"provider": "openai", "model": "gpt-4o"}],
+                models=_normalize_models_spec([{"provider": "openai", "model": "gpt-4o"}]),
                 api_keys={"openai": "sk-test"},
                 tissue="blood",
                 additional_context=None,
@@ -2254,6 +2255,17 @@ class TestConsensus:
                 marker_genes={"1": ["CD3D"]},
                 species="human",
                 models=[123],  # type: ignore[list-item]
+                api_keys={"openai": "test-key"},
+                use_cache=False,
+            )
+
+    def test_interactive_consensus_annotation_rejects_non_list_models_container(self):
+        """Test a model mapping cannot be misread as an iterable of model names."""
+        with pytest.raises(ValueError, match="models must be a non-empty list"):
+            interactive_consensus_annotation(
+                marker_genes={"1": ["CD3D"]},
+                species="human",
+                models={"provider": "openai", "model": "gpt-5.5"},  # type: ignore[arg-type]
                 api_keys={"openai": "test-key"},
                 use_cache=False,
             )

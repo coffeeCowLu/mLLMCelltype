@@ -7,6 +7,7 @@ import json
 import math
 import re
 import time
+from dataclasses import dataclass
 from typing import Any
 
 import requests
@@ -18,7 +19,7 @@ from .config import (
     get_default_model,
     get_supported_providers,
 )
-from .functions import get_provider
+from .functions import get_provider, validate_provider_model_match
 from .logger import write_log
 from .prompts import (
     create_cell_type_extraction_prompt,
@@ -36,9 +37,8 @@ from .utils import (
     load_api_key,
     normalize_annotation,
     normalize_marker_genes_keys,
-    normalize_text,
-    validate_bool,
 )
+from .validation import normalize_text, validate_bool
 
 # Default result structure for discussion round consensus check
 # Used when consensus check fails or has insufficient data
@@ -61,6 +61,21 @@ RECOVERABLE_LLM_EXCEPTIONS = (
     TypeError,
     RuntimeError,
 )
+
+ModelSpecInput = str | dict[str, str]
+
+
+@dataclass(frozen=True)
+class _ResolvedModelSpec:
+    """Canonical provider/model identity used by consensus internals."""
+
+    provider: str
+    model: str
+
+    @property
+    def key(self) -> str:
+        """Return the collision-safe identity used in result mappings."""
+        return f"{self.provider}:{self.model}"
 
 
 def _normalize_probability(value: Any, field_name: str) -> float:
@@ -165,7 +180,7 @@ def _normalize_consensus_model_spec(
     if provider_normalized is not None and model_normalized is None:
         model_normalized = get_default_model(provider_normalized)
 
-    _validate_provider_model_match(provider_normalized, model_normalized, "consensus_model")
+    validate_provider_model_match(provider_normalized, model_normalized, "consensus_model")
 
     return {"provider": provider_normalized, "model": model_normalized}
 
@@ -208,25 +223,6 @@ def _normalize_consensus_model_name_field(model: Any) -> str | None:
     if not normalized:
         raise ValueError("consensus_model.model cannot be empty when provided")
     return normalized
-
-
-def _validate_provider_model_match(
-    provider: str | None,
-    model: str | None,
-    field_name: str,
-) -> None:
-    """Validate provider/model consistency when both are specified."""
-    if not provider or not model or provider == "openrouter":
-        return
-    inferred_provider = None
-    with contextlib.suppress(ValueError):
-        inferred_provider = get_provider(model)
-    if inferred_provider and inferred_provider != provider:
-        raise ValueError(
-            f"{field_name} provider/model mismatch: "
-            f"provider='{provider}', model='{model}' "
-            f"(inferred provider '{inferred_provider}')"
-        )
 
 
 def _normalize_single_prediction_map(model_name: str, raw_results: Any) -> dict[str, str]:
@@ -382,7 +378,7 @@ def _build_interactive_result(
 
 
 def _resolve_api_keys_for_models(
-    models: list[str | dict[str, str]],
+    models: list[_ResolvedModelSpec],
     api_keys: dict[str, str] | None,
 ) -> dict[str, str]:
     """Resolve API keys for all model providers.
@@ -393,36 +389,41 @@ def _resolve_api_keys_for_models(
     """
     resolved_keys = _normalize_api_keys(api_keys)
 
-    for model_item in models:
-        provider, _model_name = _resolve_model_spec(model_item)
-        if not provider:
+    for model_spec in models:
+        if resolved_keys.get(model_spec.provider):
             continue
-        if resolved_keys.get(provider):
-            continue
-        env_key = load_api_key(provider)
+        env_key = load_api_key(model_spec.provider)
         if env_key:
-            resolved_keys[provider] = env_key
+            resolved_keys[model_spec.provider] = env_key
 
     return resolved_keys
 
 
-def _validate_models_spec(models: list[str | dict[str, str]]) -> None:
-    """Validate model specification list."""
+def _normalize_models_spec(models: Any) -> list[_ResolvedModelSpec]:
+    """Parse public model inputs into one canonical internal representation."""
+    if not isinstance(models, list) or not models:
+        raise ValueError("models must be a non-empty list of model specifications")
+
     supported_providers = set(get_supported_providers())
+    normalized: list[_ResolvedModelSpec] = []
 
-    for i, item in enumerate(models):
-        if isinstance(item, dict):
-            _validate_model_spec_dict(item, i, supported_providers)
-            continue
-        _validate_model_spec_scalar(item, i)
+    for index, item in enumerate(models):
+        if isinstance(item, _ResolvedModelSpec):
+            normalized.append(item)
+        elif isinstance(item, dict):
+            normalized.append(_normalize_model_spec_dict(item, index, supported_providers))
+        else:
+            normalized.append(_normalize_model_spec_scalar(item, index))
+
+    return normalized
 
 
-def _validate_model_spec_dict(
+def _normalize_model_spec_dict(
     item: dict[str, str],
     index: int,
     supported_providers: set[str],
-) -> None:
-    """Validate dict-form model specification."""
+) -> _ResolvedModelSpec:
+    """Normalize one dict-form model specification."""
     model_name = item.get("model")
     provider_name = item.get("provider")
     if not isinstance(model_name, str) or not model_name.strip():
@@ -430,69 +431,52 @@ def _validate_model_spec_dict(
             f"Invalid model specification at index {index}: "
             f"dict must include a non-empty string 'model' key, got {item}"
         )
+    model = model_name.strip()
+
     if provider_name is None:
-        return
-    if not isinstance(provider_name, str):
+        provider = get_provider(model)
+    elif not isinstance(provider_name, str):
         raise ValueError(
             f"Invalid model specification at index {index}: "
             f"'provider' must be a string when provided, got {item}"
         )
-    provider_normalized = provider_name.strip().lower()
-    if not provider_normalized:
-        raise ValueError(
-            f"Invalid model specification at index {index}: "
-            f"'provider' must be a non-empty string when provided, got {item}"
-        )
-    if provider_normalized not in supported_providers:
-        raise ValueError(
-            f"Invalid model specification at index {index}: "
-            f"unsupported provider '{provider_name}'. "
-            f"Supported providers: {sorted(supported_providers)}"
-        )
-    _validate_provider_model_match(
-        provider_normalized,
-        model_name.strip(),
+    else:
+        provider = provider_name.strip().lower()
+        if not provider:
+            raise ValueError(
+                f"Invalid model specification at index {index}: "
+                f"'provider' must be a non-empty string when provided, got {item}"
+            )
+        if provider not in supported_providers:
+            raise ValueError(
+                f"Invalid model specification at index {index}: "
+                f"unsupported provider '{provider_name}'. "
+                f"Supported providers: {sorted(supported_providers)}"
+            )
+
+    validate_provider_model_match(
+        provider,
+        model,
         f"models[{index}]",
     )
+    return _ResolvedModelSpec(provider=provider, model=model)
 
 
-def _validate_model_spec_scalar(item: Any, index: int) -> None:
-    """Validate scalar-form model specification."""
+def _normalize_model_spec_scalar(item: Any, index: int) -> _ResolvedModelSpec:
+    """Normalize one scalar-form model specification."""
     if isinstance(item, str):
-        if item.strip():
-            return
+        model = item.strip()
+        if model:
+            return _ResolvedModelSpec(provider=get_provider(model), model=model)
+    elif item:
         raise ValueError(
-            f"Invalid model specification at index {index}: model name must be a non-empty string"
+            f"Invalid model specification at index {index}: "
+            f"expected string or dict, got {type(item).__name__}"
         )
-    if not item:
-        raise ValueError(
-            f"Invalid model specification at index {index}: model name must be a non-empty string"
-        )
+
     raise ValueError(
-        f"Invalid model specification at index {index}: "
-        f"expected string or dict, got {type(item).__name__}"
+        f"Invalid model specification at index {index}: model name must be a non-empty string"
     )
-
-
-def _resolve_model_spec(model_item: str | dict[str, str]) -> tuple[str | None, str]:
-    """Resolve provider and model name from a model specification."""
-    if isinstance(model_item, dict):
-        provider = model_item.get("provider")
-        model_name = model_item.get("model")
-        if not isinstance(model_name, str) or not model_name.strip():
-            raise ValueError(f"Model spec must include 'model': {model_item}")
-        model_name = model_name.strip()
-        if isinstance(provider, str):
-            provider = provider.strip()
-            if not provider:
-                provider = None
-        if not provider:
-            provider = get_provider(model_name)
-    else:
-        model_name = model_item.strip()
-        provider = get_provider(model_name)
-
-    return str(provider).strip().lower() if provider else None, model_name
 
 
 def _iter_supported_provider_keys(api_keys: dict[str, str]) -> list[tuple[str, str, str]]:
@@ -1782,7 +1766,7 @@ def check_consensus_for_discussion_round(
 
 
 def _build_discussion_model_info(
-    models: list[str | dict[str, str]],
+    models: list[_ResolvedModelSpec],
     api_keys: dict[str, str],
     base_urls: str | dict[str, str] | None,
 ) -> list[dict[str, Any]]:
@@ -1790,34 +1774,30 @@ def _build_discussion_model_info(
     model_info_list: list[dict[str, Any]] = []
     seen_model_keys: set[str] = set()
 
-    for model_item in models:
-        provider, model_name = _resolve_model_spec(model_item)
-        if not provider:
-            write_log(
-                f"Could not determine provider for model {model_name}, skipping", level="warning"
-            )
-            continue
-
-        api_key = api_keys.get(provider) or load_api_key(provider)
+    for model_spec in models:
+        api_key = api_keys.get(model_spec.provider) or load_api_key(model_spec.provider)
         if not api_key:
-            write_log(f"No API key for {provider}, skipping {model_name}", level="warning")
-            continue
-
-        model_key = f"{provider}:{model_name}"
-        if model_key in seen_model_keys:
             write_log(
-                f"Duplicate discussion model '{model_key}' detected, skipping", level="warning"
+                f"No API key for {model_spec.provider}, skipping {model_spec.model}",
+                level="warning",
             )
             continue
-        seen_model_keys.add(model_key)
+
+        if model_spec.key in seen_model_keys:
+            write_log(
+                f"Duplicate discussion model '{model_spec.key}' detected, skipping",
+                level="warning",
+            )
+            continue
+        seen_model_keys.add(model_spec.key)
 
         model_info_list.append(
             {
-                "key": model_key,
-                "name": model_name,
-                "provider": provider,
+                "key": model_spec.key,
+                "name": model_spec.model,
+                "provider": model_spec.provider,
                 "api_key": api_key,
-                "base_url": resolve_provider_base_url(provider, base_urls),
+                "base_url": resolve_provider_base_url(model_spec.provider, base_urls),
             }
         )
 
@@ -2155,7 +2135,7 @@ def process_controversial_clusters(
     model_predictions: dict[str, dict[str, str]],
     species: str,
     tissue: str | None = None,
-    models: list[str | dict[str, str]] | None = None,
+    models: list[ModelSpecInput | _ResolvedModelSpec] | None = None,
     api_keys: dict[str, str] | None = None,
     max_discussion_rounds: int = 3,
     consensus_threshold: float = 0.7,
@@ -2226,7 +2206,7 @@ def process_controversial_clusters(
             "model_predictions must be a dict mapping model name to cluster predictions"
         )
 
-    _validate_models_spec(models)
+    resolved_models = _normalize_models_spec(models)
 
     api_keys = _normalize_api_keys(api_keys)
     consensus_model_dict = _normalize_consensus_model_spec(consensus_model)
@@ -2242,7 +2222,7 @@ def process_controversial_clusters(
     updated_consensus_proportion = {}
     updated_entropy = {}
 
-    model_info_list = _build_discussion_model_info(models, api_keys, base_urls)
+    model_info_list = _build_discussion_model_info(resolved_models, api_keys, base_urls)
 
     if len(model_info_list) < 2:
         write_log(
@@ -2394,7 +2374,7 @@ def _run_initial_annotations(
     *,
     marker_genes: dict[str, list[str]],
     species: str,
-    models: list[str | dict[str, str]],
+    models: list[_ResolvedModelSpec],
     api_keys: dict[str, str],
     tissue: str | None,
     additional_context: str | None,
@@ -2409,38 +2389,32 @@ def _run_initial_annotations(
     model_results: dict[str, dict[str, str]] = {}
     seen_model_keys: set[str] = set()
 
-    for model_item in models:
-        provider, model_name = _resolve_model_spec(model_item)
-        if not provider:
-            write_log(
-                f"Warning: Could not determine provider for model {model_name}, skipping",
-                level="warning",
-            )
-            continue
-
-        api_key = api_keys.get(provider)
+    for model_spec in models:
+        api_key = api_keys.get(model_spec.provider)
         if not api_key:
             write_log(
-                f"Warning: No API key found for {provider}, skipping {model_name}",
+                f"Warning: No API key found for {model_spec.provider}, skipping {model_spec.model}",
                 level="warning",
             )
             continue
 
-        model_key = f"{provider}:{model_name}"
-        if model_key in seen_model_keys:
-            write_log(f"Warning: Duplicate model '{model_key}' detected, skipping", level="warning")
+        if model_spec.key in seen_model_keys:
+            write_log(
+                f"Warning: Duplicate model '{model_spec.key}' detected, skipping",
+                level="warning",
+            )
             continue
-        seen_model_keys.add(model_key)
+        seen_model_keys.add(model_spec.key)
 
         if verbose:
-            write_log(f"Annotating with {model_key}")
+            write_log(f"Annotating with {model_spec.key}")
 
         try:
             results = annotate_clusters(
                 marker_genes=marker_genes,
                 species=species,
-                provider=provider,
-                model=model_name,
+                provider=model_spec.provider,
+                model=model_spec.model,
                 api_key=api_key,
                 tissue=tissue,
                 additional_context=additional_context,
@@ -2449,11 +2423,11 @@ def _run_initial_annotations(
                 cache_dir=cache_dir,
                 base_urls=base_urls,
             )
-            model_results[model_key] = results
+            model_results[model_spec.key] = results
             if verbose:
-                write_log(f"Successfully annotated with {model_key}")
+                write_log(f"Successfully annotated with {model_spec.key}")
         except RECOVERABLE_LLM_EXCEPTIONS as e:
-            write_log(f"Error annotating with {model_key}: {e!s}", level="error")
+            write_log(f"Error annotating with {model_spec.key}: {e!s}", level="error")
 
     return model_results
 
@@ -2482,15 +2456,12 @@ def _prepare_interactive_annotation_context(
 ) -> tuple[
     dict[str, Any],
     dict[str, list[str]],
-    list[str | dict[str, str]],
+    list[_ResolvedModelSpec],
     dict[str, str],
     dict[str, str] | None,
 ]:
     """Prepare normalized context for interactive consensus orchestration."""
-    if not models:
-        raise ValueError("models must be a non-empty list of model specifications")
-
-    _validate_models_spec(models)
+    resolved_models = _normalize_models_spec(models)
 
     metadata = _build_metadata(
         models=models,
@@ -2509,11 +2480,11 @@ def _prepare_interactive_annotation_context(
         clusters_to_analyze,
     )
 
-    resolved_api_keys = _resolve_api_keys_for_models(models, api_keys)
+    resolved_api_keys = _resolve_api_keys_for_models(resolved_models, api_keys)
     consensus_model_dict = _normalize_consensus_model_spec(consensus_model)
     resolved_api_keys = _ensure_consensus_model_api_key(resolved_api_keys, consensus_model_dict)
 
-    return metadata, marker_genes_filtered, models, resolved_api_keys, consensus_model_dict
+    return metadata, marker_genes_filtered, resolved_models, resolved_api_keys, consensus_model_dict
 
 
 def _update_metrics_for_resolved_clusters(
@@ -2536,7 +2507,7 @@ def _resolve_controversial_clusters_if_needed(
     model_results: dict[str, dict[str, str]],
     species: str,
     tissue: str | None,
-    models: list[str | dict[str, str]],
+    models: list[_ResolvedModelSpec],
     api_keys: dict[str, str],
     max_discussion_rounds: int,
     consensus_threshold: float,
@@ -2679,7 +2650,7 @@ def interactive_consensus_annotation(
     additional_context = normalize_text(additional_context, "additional_context")
     prompt_template = validate_prompt_template(prompt_template)
 
-    metadata, marker_genes, models, api_keys, consensus_model_dict = (
+    metadata, marker_genes, resolved_models, api_keys, consensus_model_dict = (
         _prepare_interactive_annotation_context(
             marker_genes=marker_genes,
             species=species,
@@ -2698,7 +2669,7 @@ def interactive_consensus_annotation(
     model_results = _run_initial_annotations(
         marker_genes=marker_genes,
         species=species,
-        models=models,
+        models=resolved_models,
         api_keys=api_keys,
         tissue=tissue,
         additional_context=additional_context,
@@ -2737,7 +2708,7 @@ def interactive_consensus_annotation(
         model_results=model_results,
         species=species,
         tissue=tissue,
-        models=models,
+        models=resolved_models,
         api_keys=api_keys,
         max_discussion_rounds=max_discussion_rounds,
         consensus_threshold=consensus_threshold,
