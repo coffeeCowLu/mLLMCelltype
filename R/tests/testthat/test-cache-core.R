@@ -27,9 +27,43 @@ test_that("CacheManager rejects ambiguous cache directory inputs", {
   for (cache_dir in invalid_dirs) {
     expect_error(
       CacheManager$new(cache_dir = cache_dir),
-      "cache_dir must be NULL or a non-empty character scalar"
+      "cache_dir must be a non-empty character scalar"
     )
   }
+})
+
+test_that("CacheManager normalizes cache directory selectors", {
+  sandbox <- tempfile("cache_selector_")
+  dir.create(sandbox)
+  original_wd <- setwd(sandbox)
+  on.exit({
+    setwd(original_wd)
+    unlink(sandbox, recursive = TRUE)
+  }, add = TRUE)
+
+  cache_manager <- CacheManager$new(cache_dir = "  temp  ")
+
+  expect_identical(
+    cache_manager$get_cache_dir(),
+    file.path(tempdir(), "mllmcelltype_cache")
+  )
+  expect_false(dir.exists("  temp  "))
+})
+
+test_that("Cache statistics keep one schema when the directory is absent", {
+  cache_dir <- tempfile("missing_cache_")
+  cache_manager <- CacheManager$new(cache_dir = cache_dir)
+  unlink(cache_dir, recursive = TRUE)
+
+  expect_identical(
+    cache_manager$get_cache_stats(),
+    list(
+      cache_exists = FALSE,
+      cache_count = 0,
+      cache_size_mb = 0,
+      cache_files = character()
+    )
+  )
 })
 
 test_that("Cache directory creation follows CRAN policies", {
@@ -135,9 +169,15 @@ test_that("Cache key preserves marker rank and model order", {
     c("claude-sonnet-4-6", "gpt-5.5"),
     "0"
   )
+  named_models_key <- cache_manager$generate_key(
+    ranked_markers,
+    c(primary = "gpt-5.5", secondary = "claude-sonnet-4-6"),
+    "0"
+  )
 
   expect_false(ranked_key == reversed_genes_key)
   expect_false(ranked_key == reversed_models_key)
+  expect_equal(ranked_key, named_models_key)
   expect_match(ranked_key, "^v_1\\.2_")
 })
 

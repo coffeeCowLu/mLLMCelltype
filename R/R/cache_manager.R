@@ -45,10 +45,7 @@ CacheManager <- R6::R6Class(
           "consensus_cache"
         )
       } else {
-        if (!is.character(cache_dir) || length(cache_dir) != 1 ||
-            is.na(cache_dir) || !nzchar(trimws(cache_dir))) {
-          stop("cache_dir must be NULL or a non-empty character scalar")
-        }
+        cache_dir <- .normalize_required_string(cache_dir, "cache_dir")
       }
 
       if (identical(cache_dir, "local")) {
@@ -96,8 +93,7 @@ CacheManager <- R6::R6Class(
         stop("discussion_context must be NULL or a list")
       }
 
-      # Extract genes using a standardized approach
-      genes <- private$extract_genes_standardized(
+      genes <- select_cluster_marker_genes(
         input,
         cluster_id,
         top_gene_count
@@ -180,7 +176,8 @@ CacheManager <- R6::R6Class(
         return(list(
           cache_exists = FALSE,
           cache_count = 0,
-          cache_size_mb = 0
+          cache_size_mb = 0,
+          cache_files = character()
         ))
       }
       
@@ -324,32 +321,14 @@ CacheManager <- R6::R6Class(
       invisible(TRUE)
     },
 
-    #' Extract genes from input in a standardized way
-    #
-    #
-    #
-    extract_genes_standardized = function(input, cluster_id, top_gene_count) {
-      select_cluster_marker_genes(input, cluster_id, top_gene_count)
-    },
-    
     #' Create stable hash from genes list
-    #
-    #
-    #
-    #
     create_genes_hash = function(genes) {
       # Marker rank is part of the prompt, so preserve the selected gene order.
       digest::digest(genes, algo = "xxhash64")
     },
     
     #' Create stable hash from models list
-    #
-    #
     create_models_hash = function(models) {
-      if (length(models) == 0) {
-        return("no_models")
-      }
-      
       # Model order controls response ordering in later discussion prompts.
       digest::digest(as.character(models), algo = "xxhash64")
     },
@@ -365,18 +344,12 @@ CacheManager <- R6::R6Class(
     },
 
     #' Create stable hash from cluster ID
-    #
-    #
     create_cluster_hash = function(cluster_id) {
-      # Always convert to character for consistency
-      cluster_str <- as.character(cluster_id)
-      
       # Keep only short path-safe IDs readable; hash every other value.
-      if (length(cluster_str) == 1 && !is.na(cluster_str) &&
-          grepl("^[A-Za-z0-9_-]{1,8}$", cluster_str)) {
-        return(paste0("c", cluster_str))
+      if (grepl("^[A-Za-z0-9_-]{1,8}$", cluster_id)) {
+        return(paste0("c", cluster_id))
       } else {
-        return(paste0("c", substr(digest::digest(cluster_str, algo = "xxhash64"), 1, 8)))
+        return(paste0("c", substr(digest::digest(cluster_id, algo = "xxhash64"), 1, 8)))
       }
     }
   )

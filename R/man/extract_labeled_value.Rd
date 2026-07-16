@@ -4,7 +4,7 @@
 \alias{extract_labeled_value}
 \title{Extract numeric value from line containing a label}
 \usage{
-extract_labeled_value(lines, pattern, value_pattern)
+extract_labeled_value(lines, label_pattern)
 }
 \description{
 Extract numeric value from line containing a label

@@ -37,6 +37,28 @@ enable_logger_file_writes <- function() {
   }
 }
 
+preserve_environment_variables <- function(variables) {
+  previous <- Sys.getenv(variables, unset = NA_character_)
+
+  function() {
+    Sys.unsetenv(variables)
+    configured <- !is.na(previous)
+    if (any(configured)) {
+      do.call(
+        Sys.setenv,
+        setNames(as.list(previous[configured]), variables[configured])
+      )
+    }
+  }
+}
+
+make_mock_builtin_processor_factory <- function(process_request) {
+  force(process_request)
+  function(provider, base_url = NULL) {
+    list(process_request = process_request)
+  }
+}
+
 test_that("normalize_cluster_gene_list canonicalizes list inputs", {
   unnamed <- normalize_cluster_gene_list(list(c("G1"), c("G2")))
   expect_identical(names(unnamed), c("0", "1"))
@@ -1118,6 +1140,10 @@ test_that("custom provider identifiers are normalized and cannot shadow built-in
     "reserved for a built-in provider"
   )
   expect_error(
+    register_custom_provider("openrouter", function(prompt, model, api_key) "x"),
+    "reserved for a built-in provider"
+  )
+  expect_error(
     register_custom_provider("   ", function(prompt, model, api_key) "x"),
     "provider_name must be a non-empty character scalar"
   )
@@ -1641,10 +1667,26 @@ test_that("get_provider validates model as non-empty scalar", {
   expect_identical(get_provider("o4-mini"), "openai")
 })
 
-test_that("built-in provider patterns and dispatch registry stay aligned", {
+test_that("built-in provider registry owns detection and processor construction", {
   expect_setequal(
-    names(get_builtin_provider_processors()),
+    names(.BUILTIN_PROVIDER_SPECS),
     c(names(.BUILTIN_PROVIDER_PATTERNS), "openrouter")
+  )
+  expect_silent(validate_builtin_provider_registry())
+
+  processor <- new_builtin_provider_processor(
+    "openai",
+    "https://proxy.example.test/v1/chat/completions/"
+  )
+  expect_s3_class(processor, "OpenAIProcessor")
+  expect_identical(processor$provider_name, "openai")
+  expect_identical(
+    processor$base_url,
+    "https://proxy.example.test/v1/chat/completions"
+  )
+  expect_error(
+    new_builtin_provider_processor("unsupported"),
+    "Unsupported model provider"
   )
 })
 
@@ -1660,10 +1702,12 @@ test_that("get_model_response validates and normalizes prompt text", {
   result <- testthat::with_mocked_bindings({
     get_model_response("  prompt  ", "gpt-5.5", "key")
   },
-  process_openai = function(prompt, model, api_key, base_url = NULL) {
-    expect_identical(prompt, "prompt")
-    "ok"
-  })
+  new_builtin_provider_processor = make_mock_builtin_processor_factory(
+    function(prompt, model, api_key) {
+      expect_identical(prompt, "prompt")
+      "ok"
+    }
+  ))
   expect_identical(result, "ok")
 })
 
@@ -1721,6 +1765,30 @@ test_that("interactive_consensus_annotation validates api_keys list contract", {
     ),
     "api_keys must be a named, non-empty list"
   )
+  expect_error(
+    interactive_consensus_annotation(
+      input = list("0" = list(genes = c("CD3D"))),
+      tissue_name = "PBMC",
+      models = c("gpt-5.5", "grok-4.3"),
+      api_keys = list(openai = c("first", "second"), grok = "key"),
+      use_cache = FALSE
+    ),
+    "api_keys value for 'openai' must be a character scalar or missing"
+  )
+})
+
+test_that("model identity normalization trims without rewriting case", {
+  expect_identical(
+    .normalize_model_vector(c(" MiniMax-M2.7 ", "minimax-m2.7")),
+    c("MiniMax-M2.7", "minimax-m2.7")
+  )
+
+  cache_manager <- CacheManager$new("temp")
+  input <- list("0" = "CD3D")
+  expect_false(identical(
+    cache_manager$generate_key(input, "MiniMax-M2.7", "0"),
+    cache_manager$generate_key(input, "minimax-m2.7", "0")
+  ))
 })
 
 test_that("multi-model entry points share strict control validation", {
@@ -1766,13 +1834,29 @@ test_that("multi-model entry points share strict control validation", {
 })
 
 test_that("api key names reject ambiguous normalized duplicates", {
+  ambiguous_provider_keys <- list("OpenAI" = "first", " openai " = "second")
+  expect_error(
+    .normalize_api_keys(ambiguous_provider_keys),
+    "api_keys provider names must be unique after case/whitespace normalization"
+  )
   expect_error(
     get_api_key(
       "gpt-5.5",
-      list("OpenAI" = "first", " openai " = "second")
+      ambiguous_provider_keys
     ),
-    "api_keys names must be unique after case/whitespace normalization"
+    "api_keys provider names must be unique after case/whitespace normalization"
   )
+})
+
+test_that("model-specific api key names preserve model identity case", {
+  api_keys <- list(
+    "MiniMax-M2.7" = "canonical-key",
+    "minimax-m2.7" = "different-key"
+  )
+
+  expect_identical(get_api_key("MiniMax-M2.7", api_keys), "canonical-key")
+  expect_identical(get_api_key("minimax-m2.7", api_keys), "different-key")
+  expect_null(get_api_key("MINIMAX-M2.7", api_keys))
 })
 
 test_that("get_api_key ignores empty/NA/non-scalar keys and falls back correctly", {
@@ -1783,18 +1867,98 @@ test_that("get_api_key ignores empty/NA/non-scalar keys and falls back correctly
   expect_identical(get_api_key("gpt-5.5", list(openai = "", "gpt-5.5" = "k2")), "k2")
   expect_identical(get_api_key("gpt-5.5", list(openai = "  k1  ")), "k1")
   expect_identical(get_api_key("  gpt-5.5  ", list(" OpenAI " = "  k1  ")), "k1")
-  expect_identical(get_api_key("  gpt-5.5  ", list(" GPT-5.5 " = "  k2  ")), "k2")
+  expect_null(get_api_key("  gpt-5.5  ", list(" GPT-5.5 " = "  k2  ")))
+  expect_identical(get_api_key("  GPT-5.5  ", list(" GPT-5.5 " = "  k2  ")), "k2")
+})
+
+test_that("consensus credentials use Gemini environment aliases in priority order", {
+  variables <- c("GEMINI_API_KEY", "GOOGLE_API_KEY")
+  restore_environment <- preserve_environment_variables(variables)
+  on.exit(restore_environment(), add = TRUE)
+  Sys.unsetenv(variables)
+  Sys.setenv(GOOGLE_API_KEY = "  alias-key  ")
+
+  alias_credential <- .resolve_model_api_key(
+    "gemini-3.1-pro-preview",
+    api_keys = NULL
+  )
+  expect_identical(alias_credential$api_key, "alias-key")
+  expect_identical(alias_credential$provider, "gemini")
+  expect_identical(alias_credential$source, "environment")
+
+  observed_key <- NULL
+  result <- testthat::with_mocked_bindings(
+    execute_consensus_check(
+      "prompt",
+      api_keys = NULL,
+      models_to_try = "gemini-3.1-pro-preview"
+    ),
+    get_model_response = function(prompt, model, api_key, base_urls = NULL) {
+      observed_key <<- api_key
+      "1\n1\n0\nT cell"
+    }
+  )
+  expect_true(result$success)
+  expect_identical(observed_key, "alias-key")
+
+  Sys.setenv(GEMINI_API_KEY = "  primary-key  ")
+  primary_credential <- .resolve_model_api_key(
+    "gemini-3.1-pro-preview",
+    api_keys = NULL
+  )
+  expect_identical(primary_credential$api_key, "primary-key")
+
+  explicit_credential <- .resolve_model_api_key(
+    "gemini-3.1-pro-preview",
+    api_keys = list(gemini = "  explicit-key  ")
+  )
+  expect_identical(explicit_credential$api_key, "explicit-key")
+  expect_identical(explicit_credential$source, "api_keys")
+})
+
+test_that("discussion cache context uses the resolved credential source", {
+  variables <- c("GEMINI_API_KEY", "GOOGLE_API_KEY")
+  restore_environment <- preserve_environment_variables(variables)
+  on.exit(restore_environment(), add = TRUE)
+  Sys.unsetenv(variables)
+  Sys.setenv(GOOGLE_API_KEY = "alias-key")
+
+  context <- build_discussion_cache_context(
+    input = list("0" = "CD3D"),
+    cluster_id = "0",
+    models = "gemini-3.1-pro-preview",
+    api_keys = NULL,
+    initial_predictions = list(
+      "gemini-3.1-pro-preview" = "Cluster 0: T cell"
+    ),
+    max_discussion_rounds = 2,
+    controversy_threshold = 0.7,
+    entropy_threshold = 1,
+    consensus_check_model = "gemini-3.1-pro-preview",
+    base_urls = list(gemini = "https://proxy.example.test/v1/")
+  )
+
+  expect_identical(
+    context$requests[[1]][c("provider", "credential_source", "base_url")],
+    list(
+      provider = "gemini",
+      credential_source = "environment",
+      base_url = "https://proxy.example.test/v1"
+    )
+  )
 })
 
 test_that("model and api_key are trimmed before R provider dispatch", {
   direct_result <- testthat::with_mocked_bindings({
     get_model_response("prompt", "  gpt-5.5  ", "  key  ")
   },
-  process_openai = function(prompt, model, api_key, base_url = NULL) {
-    expect_identical(model, "gpt-5.5")
-    expect_identical(api_key, "key")
-    "ok"
-  })
+  new_builtin_provider_processor = make_mock_builtin_processor_factory(
+    function(prompt, model, api_key) {
+      expect_identical(model, "gpt-5.5")
+      expect_identical(api_key, "key")
+      "ok"
+    }
+  ))
   expect_identical(direct_result, "ok")
 
   public_result <- testthat::with_mocked_bindings({
@@ -1959,6 +2123,59 @@ test_that("check_consensus rejects an LLM indicator that contradicts its metrics
   expect_equal(result$entropy, 1)
 })
 
+test_that("consensus filtering uses the canonical unknown-annotation contract", {
+  invalid_annotations <- c(
+    "Unknown",
+    "unknown (low confidence)",
+    "[Inconclusive]",
+    "error: upstream timeout",
+    "N/A",
+    "--"
+  )
+  expect_false(any(vapply(
+    as.list(invalid_annotations),
+    is_real_cell_type_annotation,
+    logical(1)
+  )))
+  expect_true(is_real_cell_type_annotation("CD4+ T cell"))
+  expect_identical(clean_annotation("unknown (low confidence)"), "Unknown")
+
+  result <- testthat::with_mocked_bindings(
+    suppressMessages(check_consensus(
+      round_responses = c(first_model = "unknown", second_model = "UNKNOWN")
+    )),
+    execute_consensus_check = function(...) {
+      stop("unknown annotations must be filtered before an LLM request")
+    }
+  )
+
+  expect_false(result$reached)
+  expect_identical(result$majority_prediction, "Insufficient_Responses")
+})
+
+test_that("check_consensus does not expose an invalid LLM majority label", {
+  result <- testthat::with_mocked_bindings(
+    suppressMessages(check_consensus(
+      round_responses = c(first_model = "T cell", second_model = "B cell"),
+      api_keys = list(openai = "key"),
+      controversy_threshold = 0.5,
+      entropy_threshold = 1,
+      consensus_check_model = "gpt-5.5"
+    )),
+    execute_consensus_check = function(...) {
+      list(
+        success = TRUE,
+        response = "1\n0.5\n1\nunknown (low confidence)"
+      )
+    }
+  )
+
+  expect_false(result$reached)
+  expect_identical(result$majority_prediction, "T cell")
+  expect_equal(result$consensus_proportion, 0.5)
+  expect_equal(result$entropy, 1)
+})
+
 test_that("check_consensus rejects metrics that cannot arise from the model votes", {
   result <- testthat::with_mocked_bindings(
     suppressMessages(check_consensus(
@@ -2013,6 +2230,37 @@ test_that("consensus response parsing rejects non-text and ignores blank lines",
   )
 })
 
+test_that("flexible consensus parsing requires complete metrics and extracts labels", {
+  structured <- parse_consensus_response(paste(
+    "Consensus: 1",
+    "Consensus Proportion: 0.5",
+    "Entropy: 1",
+    "Majority Prediction: T cell",
+    sep = "\n"
+  ))
+  expect_identical(structured, list(
+    reached = TRUE,
+    consensus_proportion = 0.5,
+    entropy = 1,
+    majority_prediction = "T cell"
+  ))
+
+  negative <- parse_consensus_response(c(
+    "1",
+    "Consensus Proportion = -0.5",
+    "Entropy = 1",
+    "T cell"
+  ))
+  oversized <- parse_consensus_response(c(
+    "1",
+    "Consensus Proportion = 1.5",
+    "Entropy = 1",
+    "T cell"
+  ))
+  expect_identical(negative$consensus_proportion, 0)
+  expect_identical(oversized$consensus_proportion, 0)
+})
+
 test_that("prepare_models_list only adds valid direct-provider fallbacks", {
   openai_models <- prepare_models_list("openai/gpt-5.5")
   unsupported_models <- prepare_models_list("meta-llama/llama-3.3-70b")
@@ -2029,10 +2277,12 @@ test_that("model requests retry only transient API failures", {
     state$waits <- numeric(0)
     error <- tryCatch(testthat::with_mocked_bindings(
       get_model_response("prompt", "gpt-5.5", "key"),
-      process_openai = function(...) {
-        state$calls <- state$calls + 1L
-        stop_api_request_error("request failed", status_code = status_code)
-      },
+      new_builtin_provider_processor = make_mock_builtin_processor_factory(
+        function(...) {
+          state$calls <- state$calls + 1L
+          stop_api_request_error("request failed", status_code = status_code)
+        }
+      ),
       wait_before_model_retry = function(seconds) {
         state$waits <- c(state$waits, seconds)
       }
@@ -2057,13 +2307,15 @@ test_that("model request retry returns the first successful transient recovery",
 
   result <- testthat::with_mocked_bindings(
     get_model_response("prompt", "gpt-5.5", "key"),
-    process_openai = function(...) {
-      calls <<- calls + 1L
-      if (calls == 1L) {
-        stop_api_request_error("rate limited", status_code = 429L)
+    new_builtin_provider_processor = make_mock_builtin_processor_factory(
+      function(...) {
+        calls <<- calls + 1L
+        if (calls == 1L) {
+          stop_api_request_error("rate limited", status_code = 429L)
+        }
+        "T cell"
       }
-      "T cell"
-    },
+    ),
     wait_before_model_retry = function(seconds) {
       waits <<- c(waits, seconds)
     }

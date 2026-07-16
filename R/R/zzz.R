@@ -49,6 +49,8 @@ utils::globalVariables(c("custom_models", "cluster", "avg_log2FC", "gene"))
 #' Package load message
 #' @keywords internal
 .onLoad <- function(libname, pkgname) {
+  validate_builtin_provider_registry()
+
   # Set any package-wide options here if needed
   # For example, you could set default logging level
   op <- options()

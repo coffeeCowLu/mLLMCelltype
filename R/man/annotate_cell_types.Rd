@@ -202,6 +202,5 @@ mouse_annotations <- annotate_cell_types(
 \itemize{
 \item \code{\link[Seurat:FindAllMarkers]{Seurat::FindAllMarkers()}}
 \item \code{\link[=get_provider]{get_provider()}}
-\item \code{\link[=process_openai]{process_openai()}}
 }
 }

@@ -200,7 +200,6 @@ Return deterministic paths for regular RDS cache files
 Resolve a validated cache key to a path inside the cache directory
 Write one R object to a path; separated for deterministic failure testing
 Persist cache data through a same-directory temporary file
-Extract genes from input in a standardized way
 Create stable hash from genes list
 Create stable hash from models list
 Create stable hash from tissue_name and top_gene_count

@@ -165,15 +165,11 @@ consensus_metrics_plausible <- function(result, vote_count, tolerance = 0.02) {
 .CONSENSUS_CONSTANTS <- list(
   DEFAULT_RESPONSE = "0\n0\n0\nUnknown",
   FALLBACK_MODELS = c("claude-sonnet-4-6", "gpt-5.5", "gemini-3-flash-preview", "qwen3.6-flash", "deepseek-v4-flash"),
-  NUMERIC_PATTERNS = list(
-    CONSENSUS_INDICATOR = "^\\s*[01]\\s*$",
-    PROPORTION = "^\\s*(0\\.\\d+|1\\.0*|1)\\s*$",
-    ENTROPY = "^\\s*(\\d+\\.\\d+|\\d+)\\s*$",
-    GENERAL_NUMERIC = "^\\s*\\d+(\\.\\d+)?\\s*$"
-  ),
+  NUMBER_PATTERN = "^[+-]?([0-9]+(\\.[0-9]+)?|\\.[0-9]+)$",
+  SEPARATOR_PATTERN = "(?:[:=]|\uFF1A)",
   SEARCH_PATTERNS = list(
-    CONSENSUS_LABEL = "(C|c)onsensus (P|p)roportion",
-    ENTROPY_LABEL = "(E|e)ntropy"
+    CONSENSUS_LABEL = "(?:consensus\\s+proportion(?:\\s*\\(\\s*cp\\s*\\))?|cp)",
+    ENTROPY_LABEL = "(?:(?:shannon\\s+)?entropy(?:\\s*\\(\\s*h\\s*\\))?|h)"
   )
 )
 
@@ -184,6 +180,17 @@ consensus_metrics_plausible <- function(result, vote_count, tolerance = 0.02) {
   entropy = 0,
   majority_prediction = "Unknown"
 )
+
+parse_consensus_number <- function(value) {
+  value <- trimws(value)
+  if (length(value) != 1 || is.na(value) ||
+      !grepl(.CONSENSUS_CONSTANTS$NUMBER_PATTERN, value)) {
+    return(NULL)
+  }
+
+  number <- suppressWarnings(as.numeric(value))
+  if (!is.finite(number)) NULL else number
+}
 
 #' Prepare list of models to try for consensus checking
 #
@@ -228,23 +235,26 @@ prepare_models_list <- function(consensus_check_model = NULL) {
 #' @keywords internal
 parse_standard_format <- function(result_lines) {
   if (length(result_lines) != 4) return(NULL)
-  
-  patterns <- .CONSENSUS_CONSTANTS$NUMERIC_PATTERNS
-  is_line1_valid <- grepl(patterns$CONSENSUS_INDICATOR, result_lines[1])
-  is_line2_valid <- grepl(patterns$PROPORTION, result_lines[2])
-  is_line3_valid <- grepl(patterns$ENTROPY, result_lines[3])
-  
-  if (!all(c(is_line1_valid, is_line2_valid, is_line3_valid))) {
+
+  indicator <- trimws(result_lines[[1]])
+  consensus_proportion <- parse_consensus_number(result_lines[[2]])
+  entropy <- parse_consensus_number(result_lines[[3]])
+  valid_metrics <- !is.null(consensus_proportion) &&
+    consensus_proportion >= 0 &&
+    consensus_proportion <= 1 &&
+    !is.null(entropy) &&
+    entropy >= 0
+  if (!indicator %in% c("0", "1") || !valid_metrics) {
     return(NULL)
   }
-  
+
   get_logger()$debug("Detected standard 4-line format")
-  
+
   list(
-    consensus = as.numeric(trimws(result_lines[1])) == 1,
-    consensus_proportion = as.numeric(trimws(result_lines[2])),
-    entropy = as.numeric(trimws(result_lines[3])),
-    majority_prediction = trimws(result_lines[4])
+    reached = indicator == "1",
+    consensus_proportion = consensus_proportion,
+    entropy = entropy,
+    majority_prediction = trimws(result_lines[[4]])
   )
 }
 
@@ -254,25 +264,50 @@ parse_standard_format <- function(result_lines) {
 #
 #
 #' @keywords internal
-extract_labeled_value <- function(lines, pattern, value_pattern) {
+extract_labeled_value <- function(lines, label_pattern) {
+  line_pattern <- paste0(
+    "^\\s*",
+    label_pattern,
+    "\\s*",
+    .CONSENSUS_CONSTANTS$SEPARATOR_PATTERN,
+    "\\s*(.*?)\\s*$"
+  )
   for (line in lines) {
-    if (grepl(pattern, line) && grepl("=", line)) {
-      parts <- strsplit(line, "=")[[1]]
-      if (length(parts) > 1) {
-        last_part <- trimws(parts[length(parts)])
-        num_match <- regexpr(value_pattern, last_part)
-        if (num_match > 0) {
-          value_str <- substr(last_part, num_match, num_match + attr(num_match, "match.length") - 1)
-          value <- as.numeric(value_str)
-          if (!is.na(value)) {
-            get_logger()$debug("Found value in line", list(value = value, line = line))
-            return(value)
-          }
-        }
-      }
+    match <- regexec(line_pattern, line, ignore.case = TRUE, perl = TRUE)
+    captures <- regmatches(line, match)[[1]]
+    if (length(captures) != 2) {
+      next
+    }
+
+    value <- parse_consensus_number(captures[[2]])
+    if (!is.null(value)) {
+      get_logger()$debug("Found value in line", list(value = value, line = line))
+      return(value)
     }
   }
   NULL
+}
+
+extract_consensus_indicator <- function(lines) {
+  first_line <- trimws(lines[[1]])
+  if (first_line %in% c("0", "1")) {
+    return(first_line == "1")
+  }
+
+  indicator_pattern <- paste0(
+    "^\\s*consensus(?:\\s+reached)?\\s*",
+    .CONSENSUS_CONSTANTS$SEPARATOR_PATTERN,
+    "\\s*",
+    "(0|1|true|false|yes|no)\\s*$"
+  )
+  for (line in lines) {
+    match <- regexec(indicator_pattern, line, ignore.case = TRUE, perl = TRUE)
+    captures <- regmatches(line, match)[[1]]
+    if (length(captures) == 2) {
+      return(tolower(captures[[2]]) %in% c("1", "true", "yes"))
+    }
+  }
+  FALSE
 }
 
 #' Find majority prediction from response lines
@@ -280,25 +315,55 @@ extract_labeled_value <- function(lines, pattern, value_pattern) {
 #
 #' @keywords internal
 find_majority_prediction <- function(lines) {
-  numeric_pattern <- .CONSENSUS_CONSTANTS$NUMERIC_PATTERNS$GENERAL_NUMERIC
-  
+  structured_labels <- c(
+    "majority(?:\\s+prediction|\\s+cell\\s*type)?",
+    "cell\\s*type",
+    "claim"
+  )
+  separators <- paste0(
+    "\\s*",
+    .CONSENSUS_CONSTANTS$SEPARATOR_PATTERN,
+    "\\s*"
+  )
+
+  for (line in lines) {
+    for (label_pattern in structured_labels) {
+      pattern <- paste0("^\\s*", label_pattern, separators, "(.*?)\\s*$")
+      match <- regexec(pattern, line, ignore.case = TRUE, perl = TRUE)
+      captures <- regmatches(line, match)[[1]]
+      if (length(captures) == 2 && nzchar(trimws(captures[[2]]))) {
+        return(trimws(captures[[2]]))
+      }
+    }
+  }
+
+  metadata_labels <- c(
+    .CONSENSUS_CONSTANTS$SEARCH_PATTERNS$CONSENSUS_LABEL,
+    .CONSENSUS_CONSTANTS$SEARCH_PATTERNS$ENTROPY_LABEL,
+    "consensus(?:\\s+reached)?",
+    structured_labels
+  )
   for (line in lines) {
     line_clean <- trimws(line)
-    if (nchar(line_clean) == 0) next
-    
-    # Skip lines that match numeric patterns or contain labels
-    if (grepl(numeric_pattern, line_clean) ||
-        grepl(.CONSENSUS_CONSTANTS$NUMERIC_PATTERNS$CONSENSUS_INDICATOR, line_clean) ||
-        grepl(.CONSENSUS_CONSTANTS$NUMERIC_PATTERNS$PROPORTION, line_clean) ||
-        grepl(.CONSENSUS_CONSTANTS$NUMERIC_PATTERNS$ENTROPY, line_clean) ||
-        grepl(.CONSENSUS_CONSTANTS$SEARCH_PATTERNS$CONSENSUS_LABEL, line_clean) ||
-        grepl(.CONSENSUS_CONSTANTS$SEARCH_PATTERNS$ENTROPY_LABEL, line_clean)) {
+    if (!nzchar(line_clean) || !is.null(parse_consensus_number(line_clean))) {
       next
     }
-    
+
+    is_metadata <- any(vapply(metadata_labels, function(label_pattern) {
+      grepl(
+        paste0("^\\s*", label_pattern, separators),
+        line_clean,
+        ignore.case = TRUE,
+        perl = TRUE
+      )
+    }, logical(1)))
+    if (is_metadata) {
+      next
+    }
+
     return(line_clean)
   }
-  
+
   "Parsing_Failed"
 }
 
@@ -307,44 +372,26 @@ find_majority_prediction <- function(lines) {
 #
 #' @keywords internal
 parse_flexible_format <- function(lines) {
-  result <- list(
-    consensus = FALSE,
-    consensus_proportion = 0,
-    entropy = 0,
-    majority_prediction = "Unknown"
-  )
-  
-  # Extract consensus indicator (0 or 1)
-  for (line in lines) {
-    if (grepl(.CONSENSUS_CONSTANTS$NUMERIC_PATTERNS$CONSENSUS_INDICATOR, line)) {
-      result$consensus <- as.numeric(trimws(line)) == 1
-      break
-    }
-  }
-  
-  # Extract consensus proportion
+  result <- .DEFAULT_CONSENSUS_RESULT
+  result$reached <- extract_consensus_indicator(lines)
+
   proportion_value <- extract_labeled_value(
-    lines, 
-    .CONSENSUS_CONSTANTS$SEARCH_PATTERNS$CONSENSUS_LABEL, 
-    "0\\.\\d+|1\\.0*|1"
+    lines,
+    .CONSENSUS_CONSTANTS$SEARCH_PATTERNS$CONSENSUS_LABEL
   )
   if (!is.null(proportion_value) && proportion_value >= 0 && proportion_value <= 1) {
     result$consensus_proportion <- proportion_value
   }
-  
-  # Extract entropy
+
   entropy_value <- extract_labeled_value(
-    lines, 
-    .CONSENSUS_CONSTANTS$SEARCH_PATTERNS$ENTROPY_LABEL, 
-    "\\d+\\.\\d+|\\d+"
+    lines,
+    .CONSENSUS_CONSTANTS$SEARCH_PATTERNS$ENTROPY_LABEL
   )
   if (!is.null(entropy_value) && entropy_value >= 0) {
     result$entropy <- entropy_value
   }
-  
-  # Extract majority prediction
+
   result$majority_prediction <- find_majority_prediction(lines)
-  
   result
 }
 
@@ -373,29 +420,17 @@ parse_consensus_response <- function(response) {
     
     if (!is.null(standard_result)) {
       get_logger()$info("Parsed standard format", list(
-        consensus = standard_result$consensus,
+        consensus = standard_result$reached,
         proportion = standard_result$consensus_proportion,
         entropy = standard_result$entropy
       ))
-      return(list(
-        reached = standard_result$consensus,
-        consensus_proportion = standard_result$consensus_proportion,
-        entropy = standard_result$entropy,
-        majority_prediction = standard_result$majority_prediction
-      ))
+      return(standard_result)
     }
   }
-  
+
   # Fall back to flexible parsing
   get_logger()$debug("Using flexible format parsing")
-  flexible_result <- parse_flexible_format(lines)
-  
-  list(
-    reached = flexible_result$consensus,
-    consensus_proportion = flexible_result$consensus_proportion,
-    entropy = flexible_result$entropy,
-    majority_prediction = flexible_result$majority_prediction
-  )
+  parse_flexible_format(lines)
 }
 
 #' Execute consensus check across ordered model candidates
@@ -409,23 +444,8 @@ execute_consensus_check <- function(formatted_responses, api_keys, models_to_try
   for (model_name in models_to_try) {
     get_logger()$info("Trying model for consensus check", list(model = model_name))
     
-    # Get API key
-    api_key <- get_api_key(model_name, api_keys)
-    if (is.null(api_key) || nchar(api_key) == 0) {
-      provider <- tryCatch({
-        get_provider(model_name)
-      }, error = function(e) {
-        get_logger()$error("Could not determine provider for model", list(model = model_name, error = e$message))
-        return(NULL)
-      })
-      
-      if (!is.null(provider)) {
-        env_var <- paste0(toupper(provider), "_API_KEY")
-        api_key <- Sys.getenv(env_var)
-      }
-    }
-    
-    if (is.null(api_key) || nchar(api_key) == 0) {
+    credential <- .resolve_model_api_key(model_name, api_keys)
+    if (is.null(credential$api_key)) {
       get_logger()$warn("No API key available for model, skipping", list(model = model_name))
       next
     }
@@ -434,7 +454,7 @@ execute_consensus_check <- function(formatted_responses, api_keys, models_to_try
       temp_response <- get_model_response(
         formatted_responses,
         model_name,
-        api_key,
+        credential$api_key,
         base_urls
       )
 
@@ -509,11 +529,12 @@ check_consensus <- function(round_responses, api_keys = NULL, controversy_thresh
     character(1),
     default = NA_character_
   )
-  extracted_cell_types <- extracted_cell_types[
-    !is.na(extracted_cell_types) &
-      nzchar(trimws(extracted_cell_types)) &
-      !extracted_cell_types %in% .SENTINEL_VALUES
-  ]
+  real_annotation_mask <- vapply(
+    as.list(extracted_cell_types),
+    is_real_cell_type_annotation,
+    logical(1)
+  )
+  extracted_cell_types <- extracted_cell_types[real_annotation_mask]
   if (length(extracted_cell_types) < 2) {
     get_logger()$warn("Not enough parseable cell type responses to check consensus", list(
       response_count = length(extracted_cell_types)
@@ -524,14 +545,18 @@ check_consensus <- function(round_responses, api_keys = NULL, controversy_thresh
   
   # Calculate simple consensus
   simple_result <- calculate_simple_consensus(extracted_cell_types)
-  
-  
-  # Check if simple consensus meets thresholds
-  if (simple_consensus_reached(
-    simple_result,
-    controversy_threshold,
-    entropy_threshold
-  )) {
+  deterministic_result <- list(
+    reached = simple_consensus_reached(
+      simple_result,
+      controversy_threshold,
+      entropy_threshold
+    ),
+    consensus_proportion = simple_result$consensus_proportion,
+    entropy = simple_result$entropy,
+    majority_prediction = simple_result$majority_prediction
+  )
+
+  if (deterministic_result$reached) {
     # Simple consensus is sufficient
     get_logger()$info("CONSENSUS ACHIEVED WITH SIMPLE CHECK - NO LLM NEEDED", list(
       proportion = simple_result$consensus_proportion,
@@ -546,29 +571,29 @@ check_consensus <- function(round_responses, api_keys = NULL, controversy_thresh
                     simple_result$consensus_proportion,
                     simple_result$entropy))
     
-    return(list(
-      reached = TRUE,
-      consensus_proportion = simple_result$consensus_proportion,
-      entropy = simple_result$entropy,
-      majority_prediction = simple_result$majority_prediction
-    ))
+    return(deterministic_result)
   }
-  
+
   # Simple consensus didn't meet thresholds, use LLM for double-checking
+  failure_reasons <- c(
+    if (!isTRUE(simple_result$has_unique_majority)) "no unique majority",
+    if (simple_result$consensus_proportion < controversy_threshold) {
+      "consensus proportion below threshold"
+    },
+    if (simple_result$entropy > entropy_threshold) "entropy above threshold"
+  )
   get_logger()$info("Simple consensus BELOW threshold, REQUIRING LLM double-check", list(
     proportion = simple_result$consensus_proportion,
     entropy = simple_result$entropy,
     controversy_threshold = controversy_threshold,
     entropy_threshold = entropy_threshold,
-    reason = if(simple_result$consensus_proportion < controversy_threshold) 
-             "Low consensus proportion" else "High entropy"
+    reasons = failure_reasons
   ))
-  
-  message(sprintf("Simple check insufficient (CP=%.2f < %.2f OR H=%.2f > %.2f) - Using LLM",
+
+  message(sprintf("Simple check insufficient (%s; CP=%.2f, H=%.2f) - Using LLM",
+                  paste(failure_reasons, collapse = "; "),
                   simple_result$consensus_proportion,
-                  controversy_threshold,
-                  simple_result$entropy,
-                  entropy_threshold))
+                  simple_result$entropy))
 
   # Get the formatted prompt from the dedicated function
   formatted_responses <- create_consensus_check_prompt(extracted_cell_types, controversy_threshold, entropy_threshold)
@@ -580,16 +605,7 @@ check_consensus <- function(round_responses, api_keys = NULL, controversy_thresh
   # Handle execution failure - fall back to simple consensus
   if (!execution_result$success) {
     get_logger()$error("All model attempts failed, using simple consensus results")
-    return(list(
-      reached = simple_consensus_reached(
-        simple_result,
-        controversy_threshold,
-        entropy_threshold
-      ),
-      consensus_proportion = simple_result$consensus_proportion,
-      entropy = simple_result$entropy,
-      majority_prediction = simple_result$majority_prediction
-    ))
+    return(deterministic_result)
   }
 
   # Parse the response using the new modular approach
@@ -601,33 +617,24 @@ check_consensus <- function(round_responses, api_keys = NULL, controversy_thresh
       entropy = result$entropy,
       vote_count = length(extracted_cell_types)
     ))
-    return(list(
-      reached = simple_consensus_reached(
-        simple_result,
-        controversy_threshold,
-        entropy_threshold
-      ),
-      consensus_proportion = simple_result$consensus_proportion,
-      entropy = simple_result$entropy,
-      majority_prediction = simple_result$majority_prediction
-    ))
+    return(deterministic_result)
   }
 
-  valid_majority <- is.character(result$majority_prediction) &&
-    length(result$majority_prediction) == 1 &&
-    !is.na(result$majority_prediction) &&
-    nzchar(trimws(result$majority_prediction)) &&
-    !result$majority_prediction %in% .SENTINEL_VALUES
+  reported_majority <- result$majority_prediction
+  valid_majority <- is_real_cell_type_annotation(reported_majority)
   metrics_reach_consensus <- result$consensus_proportion >= controversy_threshold &&
     result$entropy <= entropy_threshold
   llm_claimed_consensus <- isTRUE(result$reached)
   result$reached <- llm_claimed_consensus && metrics_reach_consensus && valid_majority
+  if (!valid_majority) {
+    result$majority_prediction <- deterministic_result$majority_prediction
+  }
 
   if (llm_claimed_consensus && !result$reached) {
     get_logger()$warn("Ignoring inconsistent LLM consensus indicator", list(
       consensus_proportion = result$consensus_proportion,
       entropy = result$entropy,
-      majority_prediction = result$majority_prediction
+      majority_prediction = reported_majority
     ))
   }
   

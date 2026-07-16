@@ -2,11 +2,7 @@
 # Custom model manager for user-defined providers and models.
 
 .normalize_custom_identifier <- function(value, field_name) {
-  if (!is.character(value) || length(value) != 1 || is.na(value) ||
-      !nzchar(trimws(value))) {
-    stop(field_name, " must be a non-empty character scalar")
-  }
-  normalized <- tolower(trimws(value))
+  normalized <- tolower(.normalize_required_string(value, field_name))
   if (!grepl("^[a-z0-9][a-z0-9._-]*$", normalized)) {
     stop(
       field_name,
@@ -54,7 +50,7 @@ register_custom_provider <- function(provider_name, process_fn,
 
   # Normalize provider name to lowercase for consistent lookup
   provider_name <- .normalize_custom_identifier(provider_name, "provider_name")
-  if (provider_name %in% names(.BUILTIN_PROVIDER_PATTERNS)) {
+  if (provider_name %in% names(.BUILTIN_PROVIDER_SPECS)) {
     stop("Provider '", provider_name, "' is reserved for a built-in provider")
   }
 

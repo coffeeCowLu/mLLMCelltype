@@ -74,28 +74,8 @@
   }
 
   normalized <- trimws(models)
-  if (anyDuplicated(tolower(normalized))) {
+  if (anyDuplicated(normalized)) {
     stop("models must not contain duplicate names")
   }
   normalized
-}
-
-.normalize_api_keys <- function(api_keys, allow_null = FALSE) {
-  if (is.null(api_keys) && allow_null) {
-    return(NULL)
-  }
-  if (!is.list(api_keys) || length(api_keys) == 0 || is.null(names(api_keys))) {
-    stop("api_keys must be a named, non-empty list")
-  }
-
-  normalized_names <- tolower(trimws(names(api_keys)))
-  if (anyNA(names(api_keys)) || any(!nzchar(normalized_names))) {
-    stop("api_keys names must be non-empty strings")
-  }
-  if (anyDuplicated(normalized_names)) {
-    stop("api_keys names must be unique after case/whitespace normalization")
-  }
-
-  names(api_keys) <- trimws(names(api_keys))
-  api_keys
 }

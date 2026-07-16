@@ -1,27 +1,4 @@
 # =============================================================================
-# CONSTANTS
-# =============================================================================
-
-# Internal sentinel values that indicate processing failures, not real cell types.
-# Used by select_best_prediction() and clean_annotation() to avoid leaking
-# error signals into user-facing results.
-.SENTINEL_VALUES <- c(
-  "Parsing_Failed",
-  "Insufficient_Responses",
-  "Prediction_Missing",
-  "Annotation_Missing",
-  "Unknown"
-)
-
-is_real_cell_type_annotation <- function(annotation) {
-  is.character(annotation) &&
-    length(annotation) == 1 &&
-    !is.na(annotation) &&
-    nzchar(trimws(annotation)) &&
-    !tolower(trimws(annotation)) %in% tolower(.SENTINEL_VALUES)
-}
-
-# =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
@@ -205,19 +182,11 @@ build_discussion_cache_context <- function(input, cluster_id, models, api_keys,
     prepare_models_list(consensus_check_model)
   ))
   request_context <- lapply(request_models, function(model) {
-    provider <- get_provider(model)
-    api_key <- get_api_key(model, api_keys)
-    credential_source <- if (!is.null(api_key)) {
-      "api_keys"
-    } else if (nzchar(Sys.getenv(paste0(toupper(provider), "_API_KEY")))) {
-      "environment"
-    } else {
-      "none"
-    }
-    base_url <- if (credential_source == "none") {
+    credential <- .resolve_model_api_key(model, api_keys)
+    base_url <- if (credential$source == "none") {
       NULL
     } else {
-      resolve_provider_base_url(provider, base_urls)
+      resolve_provider_base_url(credential$provider, base_urls)
     }
     model_config <- NULL
     model_name <- tolower(trimws(model))
@@ -227,8 +196,8 @@ build_discussion_cache_context <- function(input, cluster_id, models, api_keys,
 
     list(
       model = model,
-      provider = provider,
-      credential_source = credential_source,
+      provider = credential$provider,
+      credential_source = credential$source,
       base_url = base_url,
       model_config = model_config
     )
@@ -664,7 +633,7 @@ clean_annotation <- function(annotation) {
   annotation <- trimws(annotation)
 
   # Normalize sentinel values to a user-friendly fallback
-  if (tolower(annotation) %in% tolower(.SENTINEL_VALUES) || !nzchar(annotation)) {
+  if (!is_real_cell_type_annotation(annotation)) {
     return("Unknown")
   }
 

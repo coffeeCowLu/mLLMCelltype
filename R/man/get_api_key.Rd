@@ -2,7 +2,7 @@
 % Please edit documentation in R/api_utils.R
 \name{get_api_key}
 \alias{get_api_key}
-\title{Utility functions for API key management}
+\title{Get an API key for a model}
 \usage{
 get_api_key(model, api_keys)
 }
@@ -12,13 +12,9 @@ get_api_key(model, api_keys)
 \item{api_keys}{Named list of API keys with provider or model names as keys}
 }
 \value{
-API key string for the specified model
+A trimmed API key string, or \code{NULL} when no valid key is configured.
 }
 \description{
-This file contains utility functions for managing API keys and related operations.
-Get API key for a specific model
-}
-\details{
-This function retrieves the appropriate API key for a given model by first checking
-the provider name and then the model name in the provided API keys list.
+Retrieves a configured API key by checking the model's provider name first,
+followed by the exact model name.
 }

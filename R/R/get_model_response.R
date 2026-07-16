@@ -1,19 +1,3 @@
-# Return the built-in provider dispatch table.
-get_builtin_provider_processors <- function() {
-  list(
-    openai = process_openai,
-    anthropic = process_anthropic,
-    deepseek = process_deepseek,
-    gemini = process_gemini,
-    qwen = process_qwen,
-    stepfun = process_stepfun,
-    zhipu = process_zhipu,
-    minimax = process_minimax,
-    grok = process_grok,
-    openrouter = process_openrouter
-  )
-}
-
 .MODEL_REQUEST_RETRY <- list(
   MAX_ATTEMPTS = 3L,
   BASE_DELAY_SECONDS = 5
@@ -33,16 +17,8 @@ dispatch_model_request_once <- function(prompt, model, api_key, provider,
       process_custom(prompt, model, api_key, provider_base_url)
     }
   } else {
-    processors <- get_builtin_provider_processors()
-    configured_providers <- c(names(.BUILTIN_PROVIDER_PATTERNS), "openrouter")
-    if (!setequal(names(processors), configured_providers)) {
-      stop("Built-in provider registry mismatch")
-    }
-    processor <- processors[[provider]]
-    if (is.null(processor)) {
-      stop("Unsupported model provider: ", provider)
-    }
-    response <- processor(prompt, model, api_key, provider_base_url)
+    processor <- new_builtin_provider_processor(provider, provider_base_url)
+    response <- processor$process_request(prompt, model, api_key)
   }
 
   tryCatch(

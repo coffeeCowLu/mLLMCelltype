@@ -126,37 +126,33 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
   ),
   
   private = list(
-    normalize_required_string = function(value, argument_name, error_message) {
-      is_valid <- is.character(value) &&
-        length(value) == 1 &&
-        !is.na(value) &&
-        nzchar(trimws(value))
-
-      if (!is_valid) {
-        self$logger$error(
-          sprintf("%s is missing, empty, or not a character scalar", argument_name),
-          list(provider = self$provider_name, argument = argument_name)
-        )
-        stop(error_message)
-      }
-
-      trimws(value)
+    normalize_processor_input = function(value, argument_name, error_message) {
+      tryCatch(
+        .normalize_required_string(value, argument_name),
+        error = function(e) {
+          self$logger$error(
+            sprintf("%s is missing, empty, or not a character scalar", argument_name),
+            list(provider = self$provider_name, argument = argument_name)
+          )
+          stop(error_message)
+        }
+      )
     },
 
     # Validate and normalize input parameters
     validate_inputs = function(prompt, model, api_key) {
       normalized <- list(
-        api_key = private$normalize_required_string(
+        api_key = private$normalize_processor_input(
           api_key,
           "API key",
           sprintf("%s API key is required but not provided", self$provider_name)
         ),
-        prompt = private$normalize_required_string(
+        prompt = private$normalize_processor_input(
           prompt,
           "Prompt",
           "Prompt is required but not provided"
         ),
-        model = private$normalize_required_string(
+        model = private$normalize_processor_input(
           model,
           "Model",
           "Model is required but not provided"
@@ -251,26 +247,6 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
       return(list(response = normalized_content, usage = usage))
     },
 
-    provider_display_name = function() {
-      provider_names <- list(
-        openai = "OpenAI",
-        anthropic = "Anthropic",
-        deepseek = "DeepSeek",
-        gemini = "Gemini",
-        qwen = "Qwen",
-        stepfun = "StepFun",
-        zhipu = "Zhipu",
-        minimax = "MiniMax",
-        grok = "Grok",
-        openrouter = "OpenRouter"
-      )
-      provider_label <- provider_names[[self$provider_name]]
-      if (is.null(provider_label)) {
-        return(self$provider_name)
-      }
-      provider_label
-    },
-
     build_chat_completions_body = function(chunk_content, model, extra = list()) {
       body <- list(
         model = model,
@@ -317,7 +293,11 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
       sprintf("HTTP %d error", httr::status_code(response))
     },
 
-    stop_for_http_error = function(response, model, provider_label = private$provider_display_name()) {
+    stop_for_http_error = function(
+      response,
+      model,
+      provider_label = get_builtin_provider_display_name(self$provider_name)
+    ) {
       status_code <- httr::status_code(response)
       if (identical(as.integer(status_code), 200L)) {
         return(invisible(NULL))
@@ -343,7 +323,9 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
                                             api_url = self$get_api_url(),
                                             body_extra = list(),
                                             headers = list(),
-                                            provider_label = private$provider_display_name()) {
+                                            provider_label = get_builtin_provider_display_name(
+                                              self$provider_name
+                                            )) {
       body <- private$build_chat_completions_body(
         chunk_content = chunk_content,
         model = model,
@@ -375,7 +357,9 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
 
     extract_chat_completions_content = function(response,
                                                model,
-                                               provider_label = private$provider_display_name()) {
+                                               provider_label = get_builtin_provider_display_name(
+                                                 self$provider_name
+                                               )) {
       self$logger$debug(sprintf("Parsing %s API response", provider_label),
                        list(provider = self$provider_name, model = model))
 

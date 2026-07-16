@@ -1,3 +1,73 @@
+# Internal failure markers that must never become user-facing annotations.
+.SENTINEL_VALUES <- c(
+  "Parsing_Failed",
+  "Insufficient_Responses",
+  "Prediction_Missing",
+  "Annotation_Missing",
+  "Unknown"
+)
+
+.UNKNOWN_ANNOTATION_TOKENS <- c(
+  tolower(.SENTINEL_VALUES),
+  "unk",
+  "n/a",
+  "na",
+  "none",
+  "null",
+  "nan",
+  "-",
+  "--",
+  "inconclusive"
+)
+
+.unwrap_annotation_wrappers <- function(annotation) {
+  wrapper_pairs <- c(
+    "[" = "]",
+    "(" = ")",
+    "{" = "}",
+    "\"" = "\"",
+    "'" = "'"
+  )
+  normalized <- trimws(annotation)
+
+  while (nchar(normalized) >= 2) {
+    opening <- substr(normalized, 1, 1)
+    expected_closing <- unname(wrapper_pairs[opening])
+    if (is.na(expected_closing) ||
+        substr(normalized, nchar(normalized), nchar(normalized)) != expected_closing) {
+      break
+    }
+    normalized <- trimws(substr(normalized, 2, nchar(normalized) - 1))
+  }
+  normalized
+}
+
+is_real_cell_type_annotation <- function(annotation) {
+  is_text_scalar <- is.character(annotation) &&
+    length(annotation) == 1 &&
+    !is.na(annotation)
+  if (!is_text_scalar) {
+    return(FALSE)
+  }
+
+  normalized <- tolower(.unwrap_annotation_wrappers(annotation))
+  if (!nzchar(normalized) || normalized %in% .UNKNOWN_ANNOTATION_TOKENS) {
+    return(FALSE)
+  }
+
+  contextual_unknown <- grepl(
+    "^(unknown|inconclusive)\\s*[\\(\\[\\{].*[\\)\\]\\}]$",
+    normalized,
+    perl = TRUE
+  )
+  error_sentinel <- grepl(
+    "^error(\\s*:.*|\\s*\\(.*\\))?$",
+    normalized,
+    perl = TRUE
+  )
+  !contextual_unknown && !error_sentinel
+}
+
 is_error_response <- function(result) {
   is.character(result) &&
     length(result) > 0 &&

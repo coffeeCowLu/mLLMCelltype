@@ -187,7 +187,6 @@
 #' @seealso
 #' * [Seurat::FindAllMarkers()]
 #' * [mLLMCelltype::get_provider()]
-#' * [mLLMCelltype::process_openai()]
 #' @export
 annotate_cell_types <- function(input,
                                tissue_name,
@@ -203,14 +202,9 @@ annotate_cell_types <- function(input,
       stop("tissue_name is required. Specify the tissue type (e.g., 'human PBMC', 'mouse brain').")
     }
   )
-  if (!is.character(model) || length(model) != 1 || is.na(model) || !nzchar(trimws(model))) {
-    stop("model must be a non-empty character scalar")
-  }
-  model <- trimws(model)
+  model <- .normalize_required_string(model, "model")
   top_gene_count <- .normalize_top_gene_count(top_gene_count)
-  if (!is.logical(debug) || length(debug) != 1 || is.na(debug)) {
-    stop("debug must be TRUE or FALSE")
-  }
+  debug <- .normalize_flag(debug, "debug")
 
   # Determine provider from model name
   provider <- get_provider(model)
