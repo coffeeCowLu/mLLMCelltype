@@ -2,6 +2,21 @@
 
 All notable changes to the Python implementation of mLLMCelltype will be documented in this file.
 
+## [2.0.7] - Unreleased
+
+### Added
+- Built-in Kimi provider targeting the Moonshot AI Open Platform
+  (`https://api.moonshot.cn/v1/chat/completions`) via the OpenAI-compatible
+  Chat Completions protocol. Models prefixed with `kimi-` or `moonshot-`
+  resolve automatically (default model `kimi-k2.6`, API key from
+  `MOONSHOT_API_KEY`), and Kimi k2 thinking mode is disabled for deterministic
+  annotation output.
+- The Kimi provider also accepts Kimi Code platform endpoints through
+  `base_urls`: URLs ending in `/messages` (or the Kimi Code base
+  `https://api.kimi.com/coding`) use the Anthropic Messages protocol, while
+  `https://api.kimi.com/coding/v1` and other URLs use OpenAI-compatible Chat
+  Completions.
+
 ## [2.0.6] - 2026-07-15
 
 ### Added

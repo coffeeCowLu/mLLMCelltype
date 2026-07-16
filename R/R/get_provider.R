@@ -45,6 +45,12 @@
     processor_class = "GrokProcessor",
     display_name = "Grok"
   ),
+  kimi = list(
+    pattern = "^(kimi-|moonshot-)",
+    processor_class = "KimiProcessor",
+    display_name = "Kimi",
+    api_key_env_aliases = "MOONSHOT_API_KEY"
+  ),
   openrouter = list(
     pattern = NULL,
     processor_class = "OpenRouterProcessor",
@@ -165,6 +171,7 @@ validate_builtin_provider_registry <- function() {
 #'   \item Zhipu: glm-*, chatglm* (e.g., 'glm-5.1', 'glm-5-turbo')
 #'   \item MiniMax: minimax-* (e.g., 'MiniMax-M2.7', 'MiniMax-M2.5')
 #'   \item Grok: grok-* (e.g., 'grok-4.3', 'grok-4.3-latest')
+#'   \item Kimi (Moonshot AI Open Platform): kimi-*, moonshot-* (e.g., 'kimi-k2.6', 'moonshot-v1-8k')
 #'   \item OpenRouter: Any model with '/' in the name (e.g., 'openai/gpt-5.5', 'anthropic/claude-opus-4.7')
 #' }
 #' @export
