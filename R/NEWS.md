@@ -22,10 +22,6 @@
   request pipeline now preserves the raw response string for reasoning-mode JSON
   parsing while keeping line normalization for plain-text annotation output.
 
-### Adjustments
-* Increased the default Kimi request temperature from 0.6 to 0.7 in both
-  OpenAI-compatible Chat Completions and Anthropic Messages protocol paths.
-
 ## 2.0.6 (2026-07-15)
 
 ### Reliability

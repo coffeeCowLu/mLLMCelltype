@@ -23,10 +23,6 @@ All notable changes to the Python implementation of mLLMCelltype will be documen
   text through to reasoning JSON parsing instead of normalizing it into lines
   first, preserving commas and other JSON punctuation.
 
-### Changed
-- Increased the default Kimi sampling temperature from 0.6 to 0.7 in both
-  OpenAI-compatible Chat Completions and Anthropic Messages protocol paths.
-
 ## [2.0.6] - 2026-07-15
 
 ### Added

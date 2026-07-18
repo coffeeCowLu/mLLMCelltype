@@ -45,7 +45,7 @@ KimiProcessor <- R6::R6Class("KimiProcessor",
         api_key,
         api_url = private$endpoint$url,
         body_extra = list(
-          temperature = 0.7,
+          temperature = 0.6,
           max_tokens = 4096,
           thinking = list(type = "disabled")
         )
@@ -120,7 +120,7 @@ KimiProcessor <- R6::R6Class("KimiProcessor",
       body <- list(
         model = model,
         max_tokens = 4096,
-        temperature = 0.7,
+        temperature = 0.6,
         messages = list(
           list(
             role = "user",

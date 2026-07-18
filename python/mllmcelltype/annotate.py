@@ -308,7 +308,7 @@ def annotate_clusters(
                 model,
                 api_key,
                 base_url,
-                normalize_response=return_reasoning,
+                normalize_response=not return_reasoning,
             ),
             return_reasoning=return_reasoning,
         )

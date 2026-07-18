@@ -116,7 +116,7 @@ def process_kimi(
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 4096,
-            "temperature": 0.7,
+            "temperature": 0.6,
         }
         headers = {
             "Content-Type": "application/json",
@@ -138,7 +138,7 @@ def process_kimi(
     body = build_chat_completions_body(
         model=model,
         prompt=prompt,
-        temperature=0.7,
+        temperature=0.6,
         max_tokens=4096,
     )
     body["thinking"] = dict(KIMI_THINKING_POLICY)

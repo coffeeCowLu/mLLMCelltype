@@ -117,7 +117,7 @@ def test_process_kimi_request_shape(mock_resolve_endpoint, mock_call_api):
     assert kwargs["url"] == KIMI_DEFAULT_URL
     assert kwargs["body"]["model"] == "kimi-k2.6"
     assert kwargs["body"]["messages"] == [{"role": "user", "content": "genes"}]
-    assert kwargs["body"]["temperature"] == 0.7
+    assert kwargs["body"]["temperature"] == 0.6
     assert kwargs["body"]["max_tokens"] == 4096
     assert kwargs["body"]["thinking"] == {"type": "disabled"}
 
