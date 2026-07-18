@@ -15,6 +15,13 @@
   `https://api.kimi.com/coding/v1` and other URLs use OpenAI-compatible Chat
   Completions.
 
+### Bug Fixes
+* Fixed intermittent `Unknown` results in `annotate_cell_types()` when
+  `return_reasoning = TRUE`. The response-line normalizer was stripping trailing
+  commas, which broke valid JSON arrays/objects returned by providers. The
+  request pipeline now preserves the raw response string for reasoning-mode JSON
+  parsing while keeping line normalization for plain-text annotation output.
+
 ## 2.0.6 (2026-07-15)
 
 ### Reliability
