@@ -11,6 +11,7 @@ from .common import (
     UsageSink,
     call_http_api_with_retry,
     ensure_api_key,
+    extract_messages_response_text,
     normalize_response_lines,
     normalize_usage,
     resolve_endpoint_url,
@@ -54,11 +55,7 @@ def _resolve_model_name(model: str) -> str:
 
 def _parse_anthropic_response(content: dict[str, Any]) -> list[str]:
     """Parse Anthropic response payload into clean lines."""
-    try:
-        text = content["content"][0]["text"]
-    except (KeyError, IndexError, TypeError) as e:
-        raise ValueError(f"Unexpected response format from Anthropic: {content}") from e
-
+    text = extract_messages_response_text(content, "Anthropic")
     return normalize_response_lines(text, "Anthropic")
 
 

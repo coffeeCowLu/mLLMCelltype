@@ -5,9 +5,10 @@
 #' Completions protocol, with k2 thinking mode disabled for deterministic
 #' output. A custom `base_url` may instead point at the Kimi Code platform
 #' (api.kimi.com/coding), which speaks both protocols; the protocol is
-#' inferred from the effective endpoint URL. URLs ending in '/messages' (or
-#' the Kimi Code base 'https://api.kimi.com/coding') use the Anthropic
-#' Messages protocol, everything else uses OpenAI-compatible Chat Completions.
+#' inferred from the effective endpoint URL. URLs ending in '/messages' use
+#' the Anthropic Messages protocol; the Kimi Code base
+#' 'https://api.kimi.com/coding' and URLs ending in '/chat/completions' use
+#' OpenAI-compatible Chat Completions.
 #'
 #' @export
 KimiProcessor <- R6::R6Class("KimiProcessor",
@@ -57,7 +58,7 @@ KimiProcessor <- R6::R6Class("KimiProcessor",
     #' @param model Model identifier
     extract_response_content = function(response, model) {
       if (identical(private$endpoint$mode, "anthropic")) {
-        return(private$extract_messages_content(response, model))
+        return(private$extract_messages_content(response, model, "Kimi"))
       }
       private$extract_chat_completions_content(response, model)
     },
@@ -104,12 +105,12 @@ KimiProcessor <- R6::R6Class("KimiProcessor",
         return(list(url = completed, mode = "openai"))
       }
       if (grepl("/coding$", lower)) {
-        completed <- paste0(url, "/v1/messages")
+        completed <- paste0(url, "/v1/chat/completions")
         self$logger$debug(
-          sprintf("Using Kimi Code Anthropic-compatible endpoint: %s", completed),
+          sprintf("Using Kimi Code OpenAI-compatible endpoint: %s", completed),
           list(provider = self$provider_name)
         )
-        return(list(url = completed, mode = "anthropic"))
+        return(list(url = completed, mode = "openai"))
       }
       list(url = url, mode = "openai")
     },
@@ -145,26 +146,6 @@ KimiProcessor <- R6::R6Class("KimiProcessor",
 
       private$stop_for_http_error(response, model)
       response
-    },
-
-    # Anthropic Messages protocol response parsing (Kimi Code endpoints)
-    extract_messages_content = function(response, model) {
-      self$logger$debug("Parsing Kimi Messages API response",
-                       list(provider = self$provider_name, model = model))
-
-      content <- httr::content(response, "parsed")
-
-      if (is.null(content) || is.null(content$content) || length(content$content) == 0 ||
-          is.null(content$content[[1]]$text)) {
-        self$logger$error("Unexpected response format from Kimi Messages API",
-                         list(provider = self$provider_name,
-                              model = model,
-                              content_structure = names(content),
-                              content_available = !is.null(content$content)))
-        stop("Unexpected response format from Kimi Messages API")
-      }
-
-      content$content[[1]]$text
     }
   )
 )

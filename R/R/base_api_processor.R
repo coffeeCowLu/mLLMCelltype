@@ -388,6 +388,57 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
       content$choices[[1]]$message$content
     },
 
+    extract_messages_content = function(response,
+                                        model,
+                                        provider_label = get_builtin_provider_display_name(
+                                          self$provider_name
+                                        )) {
+      self$logger$debug(sprintf("Parsing %s Messages API response", provider_label),
+                       list(provider = self$provider_name, model = model))
+
+      content <- httr::content(response, "parsed")
+
+      if (is.null(content) || is.null(content$content) || length(content$content) == 0) {
+        self$logger$error(sprintf("Unexpected response format from %s Messages API", provider_label),
+                         list(provider = self$provider_name,
+                              model = model,
+                              content_structure = names(content),
+                              content_available = !is.null(content$content)))
+        stop(sprintf("Unexpected response format from %s Messages API", provider_label))
+      }
+
+      text_blocks <- vapply(
+        content$content,
+        function(block) {
+          if (!is.null(block$text) && (is.null(block$type) || identical(block$type, "text"))) {
+            return(block$text)
+          }
+          NA_character_
+        },
+        character(1)
+      )
+      text_blocks <- text_blocks[!is.na(text_blocks)]
+
+      if (length(text_blocks) == 0) {
+        block_types <- vapply(
+          content$content,
+          function(block) if (is.null(block$type)) "unknown" else block$type,
+          character(1)
+        )
+        self$logger$error(
+          sprintf("Unexpected response format from %s Messages API: no text block found", provider_label),
+          list(provider = self$provider_name,
+               model = model,
+               content_structure = names(content),
+               content_count = length(content$content),
+               content_types = block_types)
+        )
+        stop(sprintf("Unexpected response format from %s Messages API", provider_label))
+      }
+
+      paste(text_blocks, collapse = "\n")
+    },
+
     extract_usage_fields = function(response,
                                     usage_field = "usage",
                                     prompt_field = "prompt_tokens",

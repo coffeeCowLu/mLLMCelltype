@@ -290,15 +290,16 @@ test_that("KimiProcessor switches to the Anthropic protocol for Messages endpoin
   get_logger = quiet_kimi_logger)
 })
 
-test_that("KimiProcessor completes Kimi Code base URLs to the matching protocol", {
+test_that("KimiProcessor completes Kimi Code base URLs to the OpenAI protocol by default", {
   captured <- new.env(parent = emptyenv())
 
   testthat::with_mocked_bindings({
     testthat::with_mocked_bindings({
-      anthropic_processor <- KimiProcessor$new("https://api.kimi.com/coding/")
-      anthropic_processor$make_api_call("genes", "kimi-for-coding", "test-key")
-      expect_identical(captured$url, "https://api.kimi.com/coding/v1/messages")
-      expect_identical(captured$headers[["x-api-key"]], "test-key")
+      coding_processor <- KimiProcessor$new("https://api.kimi.com/coding/")
+      coding_processor$make_api_call("genes", "kimi-for-coding", "test-key")
+      expect_identical(captured$url, "https://api.kimi.com/coding/v1/chat/completions")
+      expect_identical(captured$headers[["Authorization"]], "Bearer test-key")
+      expect_identical(captured$body$thinking, list(type = "disabled"))
 
       openai_processor <- KimiProcessor$new("https://api.kimi.com/coding/v1")
       openai_processor$make_api_call("genes", "kimi-for-coding", "test-key")
@@ -311,7 +312,6 @@ test_that("KimiProcessor completes Kimi Code base URLs to the matching protocol"
       captured$headers <- config$headers
       captured$body <- body
       make_kimi_json_response(list(
-        content = list(list(text = "Cluster 1: T cells")),
         choices = list(list(message = list(content = "Cluster 1: T cells")))
       ))
     },
@@ -341,6 +341,44 @@ test_that("KimiProcessor parses Anthropic-mode content and derives total usage",
         make_kimi_json_response(list(invalid = "payload")),
         "kimi-for-coding"
       ),
+      "Unexpected response format from Kimi Messages API"
+    )
+  },
+  get_logger = quiet_kimi_logger)
+})
+
+test_that("KimiProcessor parses multi-block Anthropic-mode responses", {
+  processor <- KimiProcessor$new("https://api.kimi.com/coding/v1/messages")
+
+  thinking_then_text <- make_kimi_json_response(list(
+    content = list(
+      list(type = "thinking", thinking = "reasoning..."),
+      list(type = "text", text = "Cluster 1: T cells")
+    )
+  ))
+
+  multiple_text <- make_kimi_json_response(list(
+    content = list(
+      list(type = "text", text = "Cluster 1: T cells"),
+      list(type = "text", text = "Cluster 2: B cells")
+    )
+  ))
+
+  only_thinking <- make_kimi_json_response(list(
+    content = list(list(type = "thinking", thinking = "reasoning..."))
+  ))
+
+  testthat::with_mocked_bindings({
+    expect_identical(
+      processor$extract_response_content(thinking_then_text, "kimi-for-coding"),
+      "Cluster 1: T cells"
+    )
+    expect_identical(
+      processor$extract_response_content(multiple_text, "kimi-for-coding"),
+      "Cluster 1: T cells\nCluster 2: B cells"
+    )
+    expect_error(
+      processor$extract_response_content(only_thinking, "kimi-for-coding"),
       "Unexpected response format from Kimi Messages API"
     )
   },

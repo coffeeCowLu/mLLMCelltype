@@ -305,8 +305,8 @@ def test_resolve_kimi_protocol_classifies_endpoints():
         "openai",
     )
     assert _resolve_kimi_protocol("https://api.kimi.com/coding") == (
-        "https://api.kimi.com/coding/v1/messages",
-        "anthropic",
+        "https://api.kimi.com/coding/v1/chat/completions",
+        "openai",
     )
     # Generic custom endpoints default to OpenAI-compatible mode as-is
     assert _resolve_kimi_protocol("https://proxy.example/v1") == (
@@ -349,9 +349,9 @@ def test_process_kimi_anthropic_mode_request_shape(mock_post):
 
 
 @patch("mllmcelltype.providers.kimi.requests.post")
-def test_process_kimi_anthropic_mode_from_coding_base_url(mock_post):
-    """Test the bare Kimi Code base resolves to the Messages endpoint."""
-    mock_post.return_value = _ok_response({"content": [{"text": "Cluster 1: T cells"}]})
+def test_process_kimi_openai_mode_from_coding_base_url(mock_post):
+    """Test the bare Kimi Code base resolves to OpenAI chat/completions."""
+    mock_post.return_value = _ok_response(_annotation_payload("Cluster 1: T cells"))
 
     result = process_kimi(
         "genes",
@@ -362,8 +362,10 @@ def test_process_kimi_anthropic_mode_from_coding_base_url(mock_post):
 
     assert result == ["Cluster 1: T cells"]
     kwargs = mock_post.call_args.kwargs
-    assert kwargs["url"] == "https://api.kimi.com/coding/v1/messages"
-    assert kwargs["headers"]["x-api-key"] == "test-key"
+    assert kwargs["url"] == "https://api.kimi.com/coding/v1/chat/completions"
+    assert kwargs["headers"]["Authorization"] == "Bearer test-key"
+    body = json.loads(kwargs["data"])
+    assert body["thinking"] == {"type": "disabled"}
 
 
 @patch("mllmcelltype.providers.kimi.requests.post")
@@ -416,3 +418,40 @@ def test_process_kimi_anthropic_mode_non_200_surfaces_error(mock_post):
         )
 
     assert mock_post.call_count == 1
+
+
+@patch("mllmcelltype.providers.kimi.requests.post")
+def test_process_kimi_anthropic_mode_parses_multi_block_response(mock_post):
+    """Test Messages responses with thinking + text blocks return text content."""
+    mock_post.return_value = _ok_response({
+        "content": [
+            {"type": "thinking", "thinking": "reasoning..."},
+            {"type": "text", "text": "Cluster 1: T cells"},
+        ],
+        "usage": {"input_tokens": 20, "output_tokens": 4},
+    })
+
+    result = process_kimi(
+        "genes",
+        "kimi-for-coding",
+        "test-key",
+        base_url="https://api.kimi.com/coding/v1/messages",
+    )
+
+    assert result == ["Cluster 1: T cells"]
+
+
+@patch("mllmcelltype.providers.kimi.requests.post")
+def test_process_kimi_anthropic_mode_rejects_thinking_only_response(mock_post):
+    """Test Messages responses with only thinking blocks are rejected."""
+    mock_post.return_value = _ok_response({
+        "content": [{"type": "thinking", "thinking": "reasoning..."}]
+    })
+
+    with pytest.raises(NonRetryableProviderError, match="Failed to parse Kimi response"):
+        process_kimi(
+            "genes",
+            "kimi-for-coding",
+            "test-key",
+            base_url="https://api.kimi.com/coding/v1/messages",
+        )

@@ -66,30 +66,7 @@ AnthropicProcessor <- R6::R6Class("AnthropicProcessor",
     #' @param response HTTP response object
     #' @param model Model identifier
     extract_response_content = function(response, model) {
-      self$logger$debug("Parsing Anthropic API response",
-                       list(provider = self$provider_name, model = model))
-      
-      # Parse the response
-      content <- httr::content(response, "parsed")
-      
-      # Check if response has the expected structure
-      if (is.null(content) || is.null(content$content) || length(content$content) == 0 ||
-          is.null(content$content[[1]]$text)) {
-        
-        self$logger$error("Unexpected response format from Anthropic API",
-                         list(provider = self$provider_name,
-                              model = model,
-                              content_structure = names(content),
-                              content_available = !is.null(content$content),
-                              content_count = if(!is.null(content$content)) length(content$content) else 0))
-        
-        stop("Unexpected response format from Anthropic API")
-      }
-      
-      # Extract the response content
-      response_content <- content$content[[1]]$text
-      
-      return(response_content)
+      private$extract_messages_content(response, model, "Anthropic")
     },
 
     #' @description

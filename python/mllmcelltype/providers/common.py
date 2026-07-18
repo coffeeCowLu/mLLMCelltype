@@ -127,6 +127,45 @@ def parse_chat_completions_response(content: dict[str, Any], provider_name: str)
     return normalize_response_lines(text, provider_name)
 
 
+def extract_messages_response_text(content: dict[str, Any], provider_name: str) -> str:
+    """Extract text from an Anthropic Messages-style content block list.
+
+    Handles multi-block responses (e.g., thinking/reasoning blocks followed by
+    text blocks) by iterating through all blocks and concatenating text blocks.
+    """
+    blocks = content.get("content")
+    if not isinstance(blocks, list) or len(blocks) == 0:
+        raise ValueError(
+            f"Unexpected response format from {provider_name}: no content blocks"
+        )
+
+    text_parts: list[str] = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        block_type = block.get("type")
+        text = block.get("text")
+        if text is None:
+            continue
+        if not isinstance(text, str):
+            raise NonRetryableProviderError(
+                f"Unexpected non-string response content from {provider_name}"
+            )
+        if block_type is None or block_type == "text":
+            text_parts.append(text)
+
+    if not text_parts:
+        block_types = [
+            b.get("type") if isinstance(b, dict) else type(b).__name__ for b in blocks
+        ]
+        raise ValueError(
+            f"Unexpected response format from {provider_name}: no text block found "
+            f"(block types: {block_types})"
+        )
+
+    return "\n".join(text_parts)
+
+
 def _extract_error_message(response: requests.Response) -> str | None:
     """Extract provider error message from a non-200 response."""
     try:

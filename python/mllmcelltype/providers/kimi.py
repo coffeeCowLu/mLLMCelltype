@@ -8,9 +8,9 @@ A custom ``base_url`` may instead point at the Kimi Code platform
 (api.kimi.com/coding), which speaks both protocols. The protocol is inferred
 from the effective endpoint URL:
 
-- ``.../v1/messages`` or the base ``https://api.kimi.com/coding``
-  -> Anthropic Messages protocol (x-api-key + anthropic-version headers)
-- ``.../v1/chat/completions``, the base ``https://api.kimi.com/coding/v1``,
+- ``.../v1/messages`` -> Anthropic Messages protocol (x-api-key +
+  anthropic-version headers)
+- ``.../v1/chat/completions``, the base ``https://api.kimi.com/coding``,
   or any other URL -> OpenAI-compatible Chat Completions protocol
 """
 
@@ -28,6 +28,7 @@ from .common import (
     call_http_api_with_retry,
     call_openai_compatible_api,
     ensure_api_key,
+    extract_messages_response_text,
     normalize_response_lines,
     resolve_endpoint_url,
 )
@@ -56,19 +57,15 @@ def _resolve_kimi_protocol(url: str) -> tuple[str, str]:
         write_log(f"Using Kimi Code OpenAI-compatible endpoint: {completed}")
         return completed, "openai"
     if lower.endswith("/coding"):
-        completed = f"{url}/v1/messages"
-        write_log(f"Using Kimi Code Anthropic-compatible endpoint: {completed}")
-        return completed, "anthropic"
+        completed = f"{url}/v1/chat/completions"
+        write_log(f"Using Kimi Code OpenAI-compatible endpoint: {completed}")
+        return completed, "openai"
     return url, "openai"
 
 
 def _parse_kimi_messages_response(content: dict[str, Any]) -> list[str]:
     """Parse an Anthropic-compatible Kimi Messages payload into clean lines."""
-    try:
-        text = content["content"][0]["text"]
-    except (KeyError, IndexError, TypeError) as e:
-        raise ValueError(f"Unexpected response format from Kimi Messages API: {content}") from e
-
+    text = extract_messages_response_text(content, "Kimi")
     return normalize_response_lines(text, "Kimi")
 
 
@@ -86,9 +83,9 @@ def process_kimi(
         model: The model name (e.g., 'kimi-k2.6', 'moonshot-v1-8k')
         api_key: Moonshot API key
         base_url: Optional custom base URL. Kimi Code endpoints are detected
-            automatically: URLs ending in '/messages' (or the Kimi Code base
-            'https://api.kimi.com/coding') use the Anthropic Messages
-            protocol, everything else uses OpenAI-compatible Chat Completions.
+            automatically: URLs ending in '/messages' use the Anthropic Messages
+            protocol; the Kimi Code base 'https://api.kimi.com/coding' and URLs
+            ending in '/chat/completions' use OpenAI-compatible Chat Completions.
         usage_sink: Optional dict populated in place with token usage.
 
     Returns:
