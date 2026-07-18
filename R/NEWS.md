@@ -14,6 +14,11 @@
   `https://api.kimi.com/coding`) use the Anthropic Messages protocol, while
   `https://api.kimi.com/coding/v1` and other URLs use OpenAI-compatible Chat
   Completions.
+* Added `return_reasoning` argument to `annotate_cell_types()`. When set to
+  `TRUE`, the function returns a structured list per cluster containing
+  `cell_type`, `marker_genes`, and `gene_expression` fields instead of plain
+  cell-type labels, enabling downstream inspection of the marker genes and
+  expression rationale that support each annotation.
 
 ### Bug Fixes
 * Fixed intermittent `Unknown` results in `annotate_cell_types()` when

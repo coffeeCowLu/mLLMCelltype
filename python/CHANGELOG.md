@@ -16,6 +16,11 @@ All notable changes to the Python implementation of mLLMCelltype will be documen
   `https://api.kimi.com/coding`) use the Anthropic Messages protocol, while
   `https://api.kimi.com/coding/v1` and other URLs use OpenAI-compatible Chat
   Completions.
+- Added `return_reasoning` argument to `annotate_clusters()`. When set to
+  `True`, the function returns a structured dictionary per cluster containing
+  `cell_type`, `marker_genes`, and `gene_expression` fields instead of plain
+  cell-type labels, enabling downstream inspection of the marker genes and
+  expression rationale that support each annotation.
 
 ### Fixed
 - Intermittent `Unknown` reasoning records in `annotate_clusters()` when
