@@ -265,7 +265,7 @@ create_reasoning_annotation_prompt <- function(input, tissue_name, top_gene_coun
   base_prompt <- create_annotation_prompt(input, tissue_name, top_gene_count)
 
   marker_section <- sub(
-    ".*\\n\\nReturn exactly one cell type name per line, in the same order as the clusters shown above, without cluster IDs or explanation.$",
+    "\n\nReturn exactly one cell type name per line, in the same order as the clusters shown above, without cluster IDs or explanation\\.$",
     "",
     base_prompt$prompt
   )

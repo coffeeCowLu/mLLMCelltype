@@ -132,6 +132,8 @@ test_that("annotate_cell_types return_reasoning=TRUE with api_key=NA returns pro
   )
 
   expect_type(prompt, "character")
+  expect_match(prompt, "0: CD3D", fixed = TRUE)
+  expect_match(prompt, "CD3D", fixed = TRUE)
   expect_match(prompt, "JSON object", fixed = TRUE)
   expect_match(prompt, "marker_genes", fixed = TRUE)
   expect_match(prompt, "gene_expression", fixed = TRUE)
