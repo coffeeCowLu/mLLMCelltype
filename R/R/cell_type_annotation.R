@@ -265,8 +265,13 @@ annotate_cell_types <- function(input,
   }
   api_key <- trimws(api_key)
 
-  # Delegate to get_model_response which handles provider dispatch
-  result <- get_model_response(prompt, model, api_key, base_urls)
+  # Delegate to get_model_response which handles provider dispatch.
+  # For reasoning mode, preserve the raw response string so JSON structure
+  # (including trailing commas) is not altered by line normalization.
+  result <- get_model_response(
+    prompt, model, api_key, base_urls,
+    normalize = !return_reasoning
+  )
 
   if (return_reasoning) {
     cluster_ids <- names(prompt_result$gene_lists)

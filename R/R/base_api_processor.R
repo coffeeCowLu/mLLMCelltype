@@ -34,7 +34,11 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
     #' @param prompt Prompt text to send
     #' @param model Model identifier
     #' @param api_key Provider API key
-    process_request = function(prompt, model, api_key) {
+    #' @param normalize Logical. If \code{TRUE} (default), the response is
+    #'   normalized into non-empty trimmed lines. If \code{FALSE}, the raw
+    #'   response string is returned instead. Set to \code{FALSE} when the
+    #'   caller needs the original text (e.g., JSON parsing in reasoning mode).
+    process_request = function(prompt, model, api_key, normalize = TRUE) {
       start_time <- Sys.time()
 
       tryCatch({
@@ -47,7 +51,7 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
                         list(model = model, provider = self$provider_name))
 
         # Make the API call and extract response
-        call_result <- private$call_and_extract(prompt, model, api_key)
+        call_result <- private$call_and_extract(prompt, model, api_key, normalize = normalize)
         final_result <- call_result$response
         
         # Log final status using semantic success (not just exception status)
@@ -168,7 +172,7 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
     #
     #
     #
-    call_and_extract = function(prompt, model, api_key) {
+    call_and_extract = function(prompt, model, api_key, normalize = TRUE) {
       # Track progress through stages so the error handler knows what failed
       response <- NULL
 
@@ -244,7 +248,8 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
           NULL
         }
       )
-      return(list(response = normalized_content, usage = usage))
+      final_response <- if (isTRUE(normalize)) normalized_content else content
+      return(list(response = final_response, usage = usage))
     },
 
     build_chat_completions_body = function(chunk_content, model, extra = list()) {
