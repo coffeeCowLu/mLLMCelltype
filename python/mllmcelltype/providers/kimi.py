@@ -69,13 +69,19 @@ def _parse_kimi_messages_response(content: dict[str, Any]) -> list[str]:
     return normalize_response_lines(text, "Kimi")
 
 
+def _extract_kimi_messages_raw_text(content: dict[str, Any]) -> str:
+    """Return the raw text from an Anthropic-compatible Kimi Messages payload."""
+    return extract_messages_response_text(content, "Kimi")
+
+
 def process_kimi(
     prompt: str,
     model: str,
     api_key: str,
     base_url: str | None = None,
     usage_sink: UsageSink | None = None,
-) -> list[str]:
+    normalize_response: bool = True,
+) -> list[str] | str:
     """Process request using Kimi models.
 
     Args:
@@ -87,9 +93,14 @@ def process_kimi(
             protocol; the Kimi Code base 'https://api.kimi.com/coding' and URLs
             ending in '/chat/completions' use OpenAI-compatible Chat Completions.
         usage_sink: Optional dict populated in place with token usage.
+        normalize_response: If True (default), return normalized non-empty lines.
+            Set to False for reasoning mode so the original response string
+            (including JSON punctuation) is preserved.
 
     Returns:
-        List[str]: Processed responses, one per cluster
+        List[str]: Processed responses, one per cluster, when normalize_response
+            is True.
+        str: Raw response text when normalize_response is False.
 
     """
     write_log(f"Starting Kimi API request with model: {model}")
@@ -105,7 +116,7 @@ def process_kimi(
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 4096,
-            "temperature": 0.6,
+            "temperature": 0.7,
         }
         headers = {
             "Content-Type": "application/json",
@@ -118,15 +129,16 @@ def process_kimi(
             body=body,
             headers=headers,
             post_func=requests.post,
-            response_parser=_parse_kimi_messages_response,
+            response_parser=_parse_kimi_messages_response if normalize_response else _extract_kimi_messages_raw_text,
             usage_sink=usage_sink,
             usage_parser=extract_anthropic_usage,
+            normalize_response=normalize_response,
         )
 
     body = build_chat_completions_body(
         model=model,
         prompt=prompt,
-        temperature=0.6,
+        temperature=0.7,
         max_tokens=4096,
     )
     body["thinking"] = dict(KIMI_THINKING_POLICY)
@@ -138,4 +150,5 @@ def process_kimi(
         body=body,
         post_func=requests.post,
         usage_sink=usage_sink,
+        normalize_response=normalize_response,
     )

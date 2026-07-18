@@ -94,7 +94,7 @@ def test_kimi_runtime_registry_is_built_from_config():
     assert PROVIDER_FUNCTIONS["kimi"] is process_kimi
     assert PROVIDER_MODEL_PREFIXES["kimi"] == ("kimi-", "moonshot-")
     parameters = tuple(inspect.signature(process_kimi).parameters)
-    assert parameters == ("prompt", "model", "api_key", "base_url", "usage_sink")
+    assert parameters == ("prompt", "model", "api_key", "base_url", "usage_sink", "normalize_response")
 
 
 # --- Request shape ---
@@ -117,7 +117,7 @@ def test_process_kimi_request_shape(mock_resolve_endpoint, mock_call_api):
     assert kwargs["url"] == KIMI_DEFAULT_URL
     assert kwargs["body"]["model"] == "kimi-k2.6"
     assert kwargs["body"]["messages"] == [{"role": "user", "content": "genes"}]
-    assert kwargs["body"]["temperature"] == 0.6
+    assert kwargs["body"]["temperature"] == 0.7
     assert kwargs["body"]["max_tokens"] == 4096
     assert kwargs["body"]["thinking"] == {"type": "disabled"}
 

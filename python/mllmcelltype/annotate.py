@@ -70,14 +70,26 @@ def _to_text_response(result: Any) -> str:
 def _normalize_annotation_response(
     result: Any,
     return_reasoning: bool = False,
-) -> list[str] | dict[str, Any]:
-    """Validate provider/cache payload before annotation parsing."""
+) -> list[str] | dict[str, Any] | str:
+    """Validate provider/cache payload before annotation parsing.
+
+    When ``return_reasoning`` is True the original response text is preserved
+    so that downstream JSON parsing sees intact punctuation (e.g. trailing
+    commas inside JSON arrays/objects). Otherwise the response is normalized
+    into non-empty lines as before.
+    """
     if isinstance(result, dict):
         allowed_value_types = (str, dict) if return_reasoning else str
         for annotation in result.values():
             if not is_missing_value(annotation) and not isinstance(annotation, allowed_value_types):
                 raise ValueError("Annotation response mappings must contain string values")
         return result
+    if isinstance(result, str):
+        if not result.strip():
+            raise ValueError("Annotation response must contain non-empty text")
+        return result if return_reasoning else normalize_response_lines(result, "annotation provider")
+    if return_reasoning:
+        raise ValueError("Reasoning response must be a string or dictionary")
     return normalize_response_lines(result, "annotation provider")
 
 
@@ -288,9 +300,16 @@ def annotate_clusters(
         write_log(f"Processing request with {provider} using model {model}")
         start_time = time.time()
 
-        # Call provider function with base_url
+        # Call provider function with base_url; preserve raw response text for
+        # reasoning mode so JSON punctuation survives line normalization.
         results = _normalize_annotation_response(
-            provider_func(prompt, model, api_key, base_url),
+            provider_func(
+                prompt,
+                model,
+                api_key,
+                base_url,
+                normalize_response=return_reasoning,
+            ),
             return_reasoning=return_reasoning,
         )
 

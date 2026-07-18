@@ -59,6 +59,11 @@ def _parse_anthropic_response(content: dict[str, Any]) -> list[str]:
     return normalize_response_lines(text, "Anthropic")
 
 
+def _extract_anthropic_raw_text(content: dict[str, Any]) -> str:
+    """Return the raw text from an Anthropic response payload."""
+    return extract_messages_response_text(content, "Anthropic")
+
+
 def extract_anthropic_usage(content: dict[str, Any]) -> dict[str, Any] | None:
     """Normalize Anthropic input/output token counts to the shared usage schema."""
     usage = content.get("usage")
@@ -84,7 +89,8 @@ def process_anthropic(
     api_key: str,
     base_url: str | None = None,
     usage_sink: UsageSink | None = None,
-) -> list[str]:
+    normalize_response: bool = True,
+) -> list[str] | str:
     """Process request using Anthropic Claude models.
 
     Args:
@@ -125,11 +131,12 @@ def process_anthropic(
         body=body,
         headers=headers,
         post_func=requests.post,
-        response_parser=_parse_anthropic_response,
+        response_parser=_parse_anthropic_response if normalize_response else _extract_anthropic_raw_text,
         max_retries=3,
         retry_delay=2,
         timeout=30,
         request_json=False,
         usage_sink=usage_sink,
         usage_parser=extract_anthropic_usage,
+        normalize_response=normalize_response,
     )

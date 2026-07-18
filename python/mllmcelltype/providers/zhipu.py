@@ -20,7 +20,8 @@ def process_zhipu(
     api_key: str,
     base_url: str | None = None,
     usage_sink: UsageSink | None = None,
-) -> list[str]:
+    normalize_response: bool = True,
+) -> list[str] | str:
     """Process request using Zhipu AI (ChatGLM) models.
 
     Args:
@@ -55,4 +56,5 @@ def process_zhipu(
         body=body,
         post_func=requests.post,
         usage_sink=usage_sink,
+        normalize_response=normalize_response,
     )

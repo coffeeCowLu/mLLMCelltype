@@ -76,7 +76,7 @@ def test_provider_model_prefixes_are_derived_from_config():
 
 def test_provider_callables_share_one_runtime_signature():
     """Test every provider supports the same orchestration arguments."""
-    expected_parameters = ["prompt", "model", "api_key", "base_url", "usage_sink"]
+    expected_parameters = ["prompt", "model", "api_key", "base_url", "usage_sink", "normalize_response"]
 
     for provider, provider_func in PROVIDER_FUNCTIONS.items():
         parameters = list(inspect.signature(provider_func).parameters)

@@ -20,7 +20,8 @@ def process_openai(
     api_key: str,
     base_url: str | None = None,
     usage_sink: UsageSink | None = None,
-) -> list[str]:
+    normalize_response: bool = True,
+) -> list[str] | str:
     """Process request using OpenAI models.
 
     Args:
@@ -49,4 +50,5 @@ def process_openai(
         body=body,
         post_func=requests.post,
         usage_sink=usage_sink,
+        normalize_response=normalize_response,
     )
