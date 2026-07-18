@@ -740,17 +740,151 @@ class TestAnnotation:
             )
 
     @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
-    def test_annotate_clusters_rejects_mapping_marker_values(self):
-        """Test marker gene values must be sequence-like genes, not dictionaries."""
-        with pytest.raises(ValueError, match="marker_genes values must be gene lists"):
-            annotate_clusters(
-                marker_genes={"1": {"gene": "CD3D"}},  # type: ignore[dict-item]
-                species="human",
-                provider="mock_provider",
-                model="mock_model",
-                api_key="test-key",
-                use_cache=False,
-            )
+    def test_annotate_clusters_return_reasoning_json_array(self):
+        """Test return_reasoning=True parses a JSON array response."""
+        from mllmcelltype.annotate import PROVIDER_FUNCTIONS
+
+        json_response = (
+            '[{"cluster_id": "1", "cell_type": "T cells", '
+            '"marker_genes": "CD3D, CD3E", '
+            '"gene_expression": "CD3D is highly expressed in T cells"}, '
+            '{"cluster_id": "2", "cell_type": "B cells", '
+            '"marker_genes": "CD19, CD79A", '
+            '"gene_expression": "CD19 is highly expressed in B cells"}]'
+        )
+        PROVIDER_FUNCTIONS["mock_provider"] = MagicMock(return_value=[json_response])
+
+        result = annotate_clusters(
+            marker_genes={"1": ["CD3D", "CD3E"], "2": ["CD19", "CD79A"]},
+            species="human",
+            provider="mock_provider",
+            model="mock_model",
+            api_key="test-key",
+            use_cache=False,
+            return_reasoning=True,
+        )
+
+        assert isinstance(result, dict)
+        assert result["1"]["cell_type"] == "T cells"
+        assert result["1"]["marker_genes"] == "CD3D, CD3E"
+        assert "CD3D is highly expressed in T cells" in result["1"]["gene_expression"]
+        assert result["2"]["cell_type"] == "B cells"
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
+    def test_annotate_clusters_return_reasoning_json_object(self):
+        """Test return_reasoning=True parses a JSON object mapping cluster IDs."""
+        from mllmcelltype.annotate import PROVIDER_FUNCTIONS
+
+        json_response = (
+            '{"1": {"cell_type": "T cells", "marker_genes": "CD3D", '
+            '"gene_expression": "CD3D in T cells"}, '
+            '"2": {"cell_type": "B cells", "marker_genes": "CD19", '
+            '"gene_expression": "CD19 in B cells"}}'
+        )
+        PROVIDER_FUNCTIONS["mock_provider"] = MagicMock(return_value=[json_response])
+
+        result = annotate_clusters(
+            marker_genes={"1": ["CD3D"], "2": ["CD19"]},
+            species="human",
+            provider="mock_provider",
+            model="mock_model",
+            api_key="test-key",
+            use_cache=False,
+            return_reasoning=True,
+        )
+
+        assert result["1"]["cell_type"] == "T cells"
+        assert result["2"]["cell_type"] == "B cells"
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
+    def test_annotate_clusters_return_reasoning_preserves_case(self):
+        """Test marker_genes preserve original gene case from input."""
+        from mllmcelltype.annotate import PROVIDER_FUNCTIONS
+
+        json_response = (
+            '[{"cluster_id": "1", "cell_type": "T cells", '
+            '"marker_genes": "Cd3d, CD3E", "gene_expression": "..."}]'
+        )
+        PROVIDER_FUNCTIONS["mock_provider"] = MagicMock(return_value=[json_response])
+
+        result = annotate_clusters(
+            marker_genes={"1": ["Cd3d", "CD3E"]},
+            species="human",
+            provider="mock_provider",
+            model="mock_model",
+            api_key="test-key",
+            use_cache=False,
+            return_reasoning=True,
+        )
+
+        assert result["1"]["marker_genes"] == "Cd3d, CD3E"
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
+    def test_annotate_clusters_return_reasoning_invalid_json_fallback(self):
+        """Test invalid JSON response falls back to Unknown reasoning records."""
+        from mllmcelltype.annotate import PROVIDER_FUNCTIONS
+
+        PROVIDER_FUNCTIONS["mock_provider"] = MagicMock(return_value=["not valid json"])
+
+        result = annotate_clusters(
+            marker_genes={"1": ["CD3D"]},
+            species="human",
+            provider="mock_provider",
+            model="mock_model",
+            api_key="test-key",
+            use_cache=False,
+            return_reasoning=True,
+        )
+
+        assert result["1"]["cell_type"] == "Unknown"
+        assert result["1"]["marker_genes"] == ""
+        assert result["1"]["gene_expression"] == ""
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
+    def test_annotate_clusters_return_reasoning_false_unchanged(self):
+        """Test return_reasoning=False still returns plain labels."""
+        from mllmcelltype.annotate import PROVIDER_FUNCTIONS
+
+        PROVIDER_FUNCTIONS["mock_provider"] = MagicMock(
+            return_value=["Cluster 1: T cells"]
+        )
+
+        result = annotate_clusters(
+            marker_genes={"1": ["CD3D"]},
+            species="human",
+            provider="mock_provider",
+            model="mock_model",
+            api_key="test-key",
+            use_cache=False,
+            return_reasoning=False,
+        )
+
+        assert result == {"1": "T cells"}
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
+    def test_annotate_clusters_return_reasoning_empty_cluster_unknown(self):
+        """Test empty-marker clusters get Unknown reasoning records."""
+        from mllmcelltype.annotate import PROVIDER_FUNCTIONS
+
+        json_response = (
+            '[{"cluster_id": "1", "cell_type": "T cells", '
+            '"marker_genes": "CD3D", "gene_expression": "..."}]'
+        )
+        PROVIDER_FUNCTIONS["mock_provider"] = MagicMock(return_value=[json_response])
+
+        result = annotate_clusters(
+            marker_genes={"1": ["CD3D"], "2": []},
+            species="human",
+            provider="mock_provider",
+            model="mock_model",
+            api_key="test-key",
+            use_cache=False,
+            return_reasoning=True,
+        )
+
+        assert result["1"]["cell_type"] == "T cells"
+        assert result["2"]["cell_type"] == "Unknown"
+        assert result["2"]["marker_genes"] == ""
 
 
 if __name__ == "__main__":

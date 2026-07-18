@@ -67,11 +67,15 @@ def _to_text_response(result: Any) -> str:
     return "\n".join(normalize_response_lines(result, "model provider"))
 
 
-def _normalize_annotation_response(result: Any) -> list[str] | dict[str, Any]:
+def _normalize_annotation_response(
+    result: Any,
+    return_reasoning: bool = False,
+) -> list[str] | dict[str, Any]:
     """Validate provider/cache payload before annotation parsing."""
     if isinstance(result, dict):
+        allowed_value_types = (str, dict) if return_reasoning else str
         for annotation in result.values():
-            if not is_missing_value(annotation) and not isinstance(annotation, str):
+            if not is_missing_value(annotation) and not isinstance(annotation, allowed_value_types):
                 raise ValueError("Annotation response mappings must contain string values")
         return result
     return normalize_response_lines(result, "annotation provider")
@@ -119,11 +123,28 @@ def _split_analyzable_clusters(
 def _merge_annotation_results(
     *,
     all_clusters: list[str],
-    analyzed_results: dict[str, str],
+    analyzed_results: dict[str, str] | dict[str, dict[str, str]],
     empty_clusters: list[str],
-) -> dict[str, str]:
+    return_reasoning: bool = False,
+) -> dict[str, str] | dict[str, dict[str, str]]:
     """Merge model annotations with deterministic Unknown for empty-marker clusters."""
     empty_cluster_set = set(empty_clusters)
+
+    if return_reasoning:
+        unknown: dict[str, str] = {
+            "cell_type": "Unknown",
+            "marker_genes": "",
+            "gene_expression": "",
+        }
+        return {
+            cluster_id: (
+                unknown
+                if cluster_id in empty_cluster_set
+                else analyzed_results.get(cluster_id, unknown)
+            )
+            for cluster_id in all_clusters
+        }
+
     return {
         cluster_id: (
             "Unknown"
@@ -148,7 +169,8 @@ def annotate_clusters(
     log_dir: str | None = None,
     log_level: str = "INFO",
     base_urls: str | dict[str, str] | None = None,
-) -> dict[str, str]:
+    return_reasoning: bool = False,
+) -> dict[str, str] | dict[str, dict[str, str]]:
     """Annotate cell clusters using LLM.
 
     Args:
@@ -168,12 +190,19 @@ def annotate_clusters(
         base_urls: Custom base URLs for API endpoints. Can be:
                   - str: Single URL applied to all providers
                   - dict: Provider-specific URLs (e.g., {'openai': 'https://proxy.com/v1'})
+        return_reasoning: If True, return a structured dict per cluster with
+            'cell_type', 'marker_genes', and 'gene_expression' fields instead of
+            plain labels.
 
     Returns:
-        Dict[str, str]: Dictionary mapping cluster names to annotations
+        Dict[str, str]: Dictionary mapping cluster names to annotations when
+            return_reasoning is False.
+        Dict[str, Dict[str, str]]: Dictionary mapping cluster names to reasoning
+            records when return_reasoning is True.
 
     """
     use_cache = validate_bool(use_cache, "use_cache")
+    return_reasoning = validate_bool(return_reasoning, "return_reasoning")
     species = normalize_text(species, "species", required=True)
 
     # Setup logging
@@ -212,6 +241,9 @@ def annotate_clusters(
             "No clusters have non-empty marker genes; returning Unknown for all clusters",
             level="warning",
         )
+        if return_reasoning:
+            unknown = {"cell_type": "Unknown", "marker_genes": "", "gene_expression": ""}
+            return {cluster_id: unknown for cluster_id in all_clusters}
         return {cluster_id: "Unknown" for cluster_id in all_clusters}
 
     model = _resolve_model(provider, model)
@@ -223,6 +255,7 @@ def annotate_clusters(
         tissue=tissue,
         additional_context=additional_context,
         prompt_template=prompt_template,
+        return_reasoning=return_reasoning,
     )
 
     # Resolve base URL (before cache check — base_url is part of the cache key)
@@ -233,16 +266,19 @@ def annotate_clusters(
     cached_results = _load_valid_cached_response(
         cache_key=cache_key,
         cache_dir=cache_dir,
-        normalizer=_normalize_annotation_response,
+        normalizer=lambda result: _normalize_annotation_response(
+            result, return_reasoning=return_reasoning
+        ),
         response_kind="annotation",
     )
     if cached_results is not None:
         write_log("Using cached results")
-        analyzed_results = format_results(cached_results, analyzable_clusters)
+        analyzed_results = format_results(cached_results, analyzable_clusters, return_reasoning)
         return _merge_annotation_results(
             all_clusters=all_clusters,
             analyzed_results=analyzed_results,
             empty_clusters=empty_clusters,
+            return_reasoning=return_reasoning,
         )
 
     api_key = _resolve_api_key(provider, api_key)
@@ -253,7 +289,10 @@ def annotate_clusters(
         start_time = time.time()
 
         # Call provider function with base_url
-        results = _normalize_annotation_response(provider_func(prompt, model, api_key, base_url))
+        results = _normalize_annotation_response(
+            provider_func(prompt, model, api_key, base_url),
+            return_reasoning=return_reasoning,
+        )
 
         end_time = time.time()
         write_log(f"Request processed in {end_time - start_time:.2f} seconds")
@@ -263,11 +302,12 @@ def annotate_clusters(
             save_to_cache(cache_key, results, cache_dir)
 
         # Format results
-        analyzed_results = format_results(results, analyzable_clusters)
+        analyzed_results = format_results(results, analyzable_clusters, return_reasoning)
         return _merge_annotation_results(
             all_clusters=all_clusters,
             analyzed_results=analyzed_results,
             empty_clusters=empty_clusters,
+            return_reasoning=return_reasoning,
         )
 
     except Exception as e:

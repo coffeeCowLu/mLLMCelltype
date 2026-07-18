@@ -11,7 +11,8 @@ annotate_cell_types(
   api_key = NA,
   top_gene_count = 10,
   debug = FALSE,
-  base_urls = NULL
+  base_urls = NULL,
+  return_reasoning = FALSE
 )
 }
 \arguments{
@@ -29,10 +30,16 @@ If \code{NA}, returns prompt only.}
 \item{debug}{Logical indicating whether to enable debug output. Default: FALSE}
 
 \item{base_urls}{Optional base URLs for API endpoints. Can be a string or named list for custom endpoints}
+
+\item{return_reasoning}{Logical. If \code{TRUE}, returns a structured list per cluster containing
+\code{cell_type}, \code{marker_genes}, and \code{gene_expression} fields instead of plain labels.
+Default: \code{FALSE}.}
 }
 \value{
-When \code{api_key} is provided, the provider response split by newline as
-a character vector. When \code{api_key} is \code{NA}, the generated prompt string.
+When \code{api_key} is provided and \code{return_reasoning} is \code{FALSE}, the provider response
+split by newline as a character vector. When \code{return_reasoning} is \code{TRUE}, a named list
+where each element is a list with \code{cell_type}, \code{marker_genes}, and
+\code{gene_expression}. When \code{api_key} is \code{NA}, the generated prompt string.
 }
 \description{
 A comprehensive function for automated cell type annotation using multiple Large Language Models (LLMs).

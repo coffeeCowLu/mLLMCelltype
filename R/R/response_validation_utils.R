@@ -136,6 +136,138 @@ is_retryable_http_status <- function(status_code) {
     (status_code %in% c(408, 425, 429) || status_code >= 500)
 }
 
+#' Extract the first JSON document from a model response
+#'
+#' Strips surrounding markdown fences and returns the first parseable JSON
+#' array or object found in the text.
+#'
+#' @param text Single character string containing the model response.
+#' @return The extracted JSON text as a character string.
+#' @noRd
+extract_json_from_response <- function(text) {
+  if (!is.character(text) || length(text) != 1 || is.na(text)) {
+    stop("Response text must be a single non-missing character string")
+  }
+
+  text <- paste(text, collapse = "\n")
+  text <- trimws(text)
+
+  # Strip markdown code fences if present
+  text <- sub("^```[[:alnum:]]*\\s*\n?", "", text)
+  text <- sub("\n?```\\s*$", "", text)
+  text <- trimws(text)
+
+  # Try parsing the whole text first
+  parsed <- tryCatch(
+    jsonlite::fromJSON(text, simplifyVector = FALSE),
+    error = function(e) NULL
+  )
+  if (!is.null(parsed)) {
+    return(text)
+  }
+
+  # Extract between first JSON delimiter and a matching closing delimiter
+  first_bracket <- regexpr("\\[", text)
+  first_brace <- regexpr("\\{", text)
+
+  if (first_bracket > 0 && (first_brace < 0 || first_bracket < first_brace)) {
+    start <- first_bracket
+    end_positions <- gregexpr("\\]", text)[[1]]
+  } else if (first_brace > 0) {
+    start <- first_brace
+    end_positions <- gregexpr("\\}", text)[[1]]
+  } else {
+    stop("No JSON array or object found in response")
+  }
+
+  end_positions <- end_positions[end_positions > start]
+  if (length(end_positions) == 0) {
+    stop("No complete JSON array or object found in response")
+  }
+
+  for (end in sort(end_positions, decreasing = TRUE)) {
+    candidate <- substring(text, start, end)
+    parsed <- tryCatch(
+      jsonlite::fromJSON(candidate, simplifyVector = FALSE),
+      error = function(e) NULL
+    )
+    if (!is.null(parsed)) {
+      return(candidate)
+    }
+  }
+
+  stop("Could not parse JSON array or object from response")
+}
+
+#' Parse reasoning annotation JSON into a structured named list
+#'
+#' @param json_text JSON text containing reasoning annotations.
+#' @param expected_clusters Character vector of expected cluster IDs.
+#' @return Named list mapping each expected cluster ID to a list with
+#'   `cell_type`, `marker_genes`, and `gene_expression`.
+#' @noRd
+parse_reasoning_annotations <- function(json_text, expected_clusters) {
+  json_text <- extract_json_from_response(json_text)
+
+  parsed <- tryCatch(
+    jsonlite::fromJSON(json_text, simplifyVector = FALSE),
+    error = function(e) stop(paste("Failed to parse reasoning JSON response:", e$message))
+  )
+
+  if (!is.list(parsed)) {
+    stop("Reasoning response must be a JSON array or object")
+  }
+
+  # Normalize array or object form into a list of records
+  if (is.null(names(parsed))) {
+    records <- parsed
+  } else {
+    records <- lapply(names(parsed), function(cid) {
+      record <- parsed[[cid]]
+      if (is.list(record)) {
+        record$cluster_id <- cid
+      }
+      record
+    })
+  }
+
+  result <- list()
+  for (cid in expected_clusters) {
+    result[[cid]] <- list(
+      cell_type = "Unknown",
+      marker_genes = "",
+      gene_expression = ""
+    )
+  }
+
+  for (record in records) {
+    if (!is.list(record) || is.null(record$cluster_id)) {
+      next
+    }
+    cid <- trimws(as.character(record$cluster_id))
+    if (!(cid %in% expected_clusters)) {
+      next
+    }
+
+    get_field <- function(field) {
+      value <- record[[field]]
+      if (!is.null(value) && is.character(value) && length(value) == 1 && !is.na(value)) {
+        trimws(value)
+      } else {
+        ""
+      }
+    }
+
+    result[[cid]] <- list(
+      cell_type = get_field("cell_type"),
+      marker_genes = get_field("marker_genes"),
+      gene_expression = get_field("gene_expression")
+    )
+  }
+
+  result
+}
+
 stop_api_request_error <- function(message, status_code = NULL,
                                    retryable = NULL) {
   if (is.null(retryable)) {

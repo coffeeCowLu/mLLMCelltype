@@ -14,9 +14,10 @@ targets the Moonshot AI Open Platform over the OpenAI-compatible Chat
 Completions protocol, with k2 thinking mode disabled for deterministic
 output. A custom \code{base_url} may instead point at the Kimi Code platform
 (api.kimi.com/coding), which speaks both protocols; the protocol is
-inferred from the effective endpoint URL. URLs ending in '/messages' (or
-the Kimi Code base 'https://api.kimi.com/coding') use the Anthropic
-Messages protocol, everything else uses OpenAI-compatible Chat Completions.
+inferred from the effective endpoint URL. URLs ending in '/messages' use
+the Anthropic Messages protocol; the Kimi Code base
+'https://api.kimi.com/coding' and URLs ending in '/chat/completions' use
+OpenAI-compatible Chat Completions.
 }
 \section{Super class}{
 \code{\link[mLLMCelltype:BaseAPIProcessor]{mLLMCelltype::BaseAPIProcessor}} -> \code{KimiProcessor}

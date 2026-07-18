@@ -97,9 +97,14 @@
 #' @param top_gene_count Number of top genes to use per cluster when input is from Seurat. Default: 10
 #' @param debug Logical indicating whether to enable debug output. Default: FALSE
 #' @param base_urls Optional base URLs for API endpoints. Can be a string or named list for custom endpoints
+#' @param return_reasoning Logical. If \code{TRUE}, returns a structured list per cluster containing
+#'   \code{cell_type}, \code{marker_genes}, and \code{gene_expression} fields instead of plain labels.
+#'   Default: \code{FALSE}.
 #'
-#' @return When `api_key` is provided, the provider response split by newline as
-#'   a character vector. When `api_key` is `NA`, the generated prompt string.
+#' @return When `api_key` is provided and `return_reasoning` is \code{FALSE}, the provider response
+#'   split by newline as a character vector. When `return_reasoning` is \code{TRUE}, a named list
+#'   where each element is a list with \code{cell_type}, \code{marker_genes}, and
+#'   \code{gene_expression}. When `api_key` is \code{NA}, the generated prompt string.
 #'
 #' @examples
 #' # Example 1: Using custom gene lists, returning prompt only (no API call)
@@ -194,7 +199,8 @@ annotate_cell_types <- function(input,
                                api_key = NA,
                                top_gene_count = 10,
                                debug = FALSE,
-                               base_urls = NULL) {
+                               base_urls = NULL,
+                               return_reasoning = FALSE) {
 
   tissue_name <- tryCatch(
     .normalize_required_string(tissue_name, "tissue_name"),
@@ -205,6 +211,7 @@ annotate_cell_types <- function(input,
   model <- .normalize_required_string(model, "model")
   top_gene_count <- .normalize_top_gene_count(top_gene_count)
   debug <- .normalize_flag(debug, "debug")
+  return_reasoning <- .normalize_flag(return_reasoning, "return_reasoning")
 
   # Determine provider from model name
   provider <- get_provider(model)
@@ -212,11 +219,16 @@ annotate_cell_types <- function(input,
   # Log model and provider information
   log_info("Processing input with model and provider", list(
     model = model, provider = provider,
-    custom_url = !is.null(resolve_provider_base_url(provider, base_urls))
+    custom_url = !is.null(resolve_provider_base_url(provider, base_urls)),
+    return_reasoning = return_reasoning
   ))
 
   # Generate prompt using the dedicated function
-  prompt_result <- create_annotation_prompt(input, tissue_name, top_gene_count)
+  if (return_reasoning) {
+    prompt_result <- create_reasoning_annotation_prompt(input, tissue_name, top_gene_count)
+  } else {
+    prompt_result <- create_annotation_prompt(input, tissue_name, top_gene_count)
+  }
   prompt <- prompt_result$prompt
 
   # If debug mode is enabled, temporarily enable console debug output
@@ -255,6 +267,25 @@ annotate_cell_types <- function(input,
 
   # Delegate to get_model_response which handles provider dispatch
   result <- get_model_response(prompt, model, api_key, base_urls)
+
+  if (return_reasoning) {
+    cluster_ids <- names(prompt_result$gene_lists)
+    return(tryCatch(
+      parse_reasoning_annotations(result, cluster_ids),
+      error = function(e) {
+        log_warn(
+          "Failed to parse reasoning response; returning Unknown for all clusters",
+          list(error = e$message)
+        )
+        unknown_record <- list(
+          cell_type = "Unknown",
+          marker_genes = "",
+          gene_expression = ""
+        )
+        stats::setNames(rep(list(unknown_record), length(cluster_ids)), cluster_ids)
+      }
+    ))
+  }
 
   logger <- get_logger()
   if (!is.null(logger$log_model_response) && is.function(logger$log_model_response)) {
