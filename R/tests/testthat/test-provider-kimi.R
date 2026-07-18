@@ -131,7 +131,7 @@ test_that("KimiProcessor sends Bearer auth, model, messages, and disabled thinki
         captured$body$messages,
         list(list(role = "user", content = "genes"))
       )
-      expect_identical(captured$body$temperature, 0.6)
+      expect_identical(captured$body$temperature, 0.7)
       expect_identical(captured$body$max_tokens, 4096)
       expect_identical(captured$body$thinking, list(type = "disabled"))
       expect_s3_class(response, "response")
