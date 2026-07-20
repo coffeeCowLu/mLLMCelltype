@@ -1,6 +1,6 @@
 # mLLMCelltype Changelog
 
-## 2.0.7 (unreleased)
+## Unreleased
 
 ### New Features
 * Added Kimi as a built-in provider, targeting the Moonshot AI Open Platform

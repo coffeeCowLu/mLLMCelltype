@@ -2,7 +2,7 @@
 
 All notable changes to the Python implementation of mLLMCelltype will be documented in this file.
 
-## [2.0.7] - Unreleased
+## [Unreleased]
 
 ### Added
 - Built-in Kimi provider targeting the Moonshot AI Open Platform

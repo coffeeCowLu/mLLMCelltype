@@ -740,6 +740,19 @@ class TestAnnotation:
             )
 
     @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
+    def test_annotate_clusters_rejects_mapping_marker_values(self):
+        """Test marker gene values must be sequence-like genes, not dictionaries."""
+        with pytest.raises(ValueError, match="marker_genes values must be gene lists"):
+            annotate_clusters(
+                marker_genes={"1": {"gene": "CD3D"}},  # type: ignore[dict-item]
+                species="human",
+                provider="mock_provider",
+                model="mock_model",
+                api_key="test-key",
+                use_cache=False,
+            )
+
+    @patch("mllmcelltype.annotate.PROVIDER_FUNCTIONS", {"mock_provider": MagicMock()})
     def test_annotate_clusters_return_reasoning_json_array(self):
         """Test return_reasoning=True parses a JSON array response."""
         from mllmcelltype.annotate import PROVIDER_FUNCTIONS
