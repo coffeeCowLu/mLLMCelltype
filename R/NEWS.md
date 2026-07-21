@@ -1,6 +1,6 @@
 # mLLMCelltype Changelog
 
-## Unreleased
+## 2.0.7 (2026-07-20)
 
 ### New Features
 * Added Kimi as a built-in provider, targeting the Moonshot AI Open Platform
@@ -26,6 +26,22 @@
   commas, which broke valid JSON arrays/objects returned by providers. The
   request pipeline now preserves the raw response string for reasoning-mode JSON
   parsing while keeping line normalization for plain-text annotation output.
+* Corrected labeled/positional parsing of model responses so common LLM output
+  shapes no longer produce wrong or shifted annotations on 0-based (Seurat)
+  clusters: numbered lists (`1.`, `2.`, …), preamble/header lines,
+  annotation-internal colons, a mid-list `Unknown`, a stray non-cluster
+  `Summary:`-style line, and out-of-order explicit labels are now all handled
+  correctly.
+* MiniMax transient in-body business errors (rate limits / timeouts reported as
+  HTTP 200 with a non-zero `base_resp$status_code`) are now retried instead of
+  silently dropping the model from the consensus panel.
+* Anthropic responses that lead with a non-text (thinking) block no longer
+  discard the answer; every text block is concatenated and non-text blocks are
+  skipped.
+* `is_error_response()` no longer discards a valid multi-cluster response that
+  merely flags a single uncertain cluster with an `Error:` line.
+* Emit a warning when a provider response is truncated at `max_tokens`, so
+  silently-dropped trailing clusters are diagnosable.
 
 ## 2.0.6 (2026-07-15)
 
