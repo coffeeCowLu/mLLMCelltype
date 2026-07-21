@@ -1,5 +1,32 @@
 # mLLMCelltype Changelog
 
+## Unreleased
+
+### New Features
+* Added Kimi as a built-in provider, targeting the Moonshot AI Open Platform
+  (`https://api.moonshot.cn/v1/chat/completions`) over the OpenAI-compatible
+  Chat Completions protocol. Models prefixed with `kimi-` or `moonshot-`
+  (default `kimi-k2.6`) are detected automatically, requests authenticate with
+  `MOONSHOT_API_KEY` (or `KIMI_API_KEY`), and Kimi k2 thinking mode is disabled
+  for deterministic annotation output.
+* The Kimi provider also accepts Kimi Code platform endpoints through
+  `base_urls`: URLs ending in `/messages` (or the Kimi Code base
+  `https://api.kimi.com/coding`) use the Anthropic Messages protocol, while
+  `https://api.kimi.com/coding/v1` and other URLs use OpenAI-compatible Chat
+  Completions.
+* Added `return_reasoning` argument to `annotate_cell_types()`. When set to
+  `TRUE`, the function returns a structured list per cluster containing
+  `cell_type`, `marker_genes`, and `gene_expression` fields instead of plain
+  cell-type labels, enabling downstream inspection of the marker genes and
+  expression rationale that support each annotation.
+
+### Bug Fixes
+* Fixed intermittent `Unknown` results in `annotate_cell_types()` when
+  `return_reasoning = TRUE`. The response-line normalizer was stripping trailing
+  commas, which broke valid JSON arrays/objects returned by providers. The
+  request pipeline now preserves the raw response string for reasoning-mode JSON
+  parsing while keeping line normalization for plain-text annotation output.
+
 ## 2.0.6 (2026-07-15)
 
 ### Reliability

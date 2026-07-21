@@ -20,7 +20,8 @@ def process_openrouter(
     api_key: str,
     base_url: str | None = None,
     usage_sink: UsageSink | None = None,
-) -> list[str]:
+    normalize_response: bool = True,
+) -> list[str] | str:
     """Process request using OpenRouter API, which provides access to various LLM models.
 
     Args:
@@ -63,4 +64,5 @@ def process_openrouter(
             "X-Title": "mLLMCelltype",
         },
         usage_sink=usage_sink,
+        normalize_response=normalize_response,
     )

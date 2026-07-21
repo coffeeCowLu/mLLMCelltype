@@ -127,7 +127,7 @@ class TestConsensus:
         """
         captured: list[str] = []
 
-        def fake_provider_func(prompt, model, api_key, base_url):
+        def fake_provider_func(prompt, model, api_key, base_url, normalize_response=True):
             captured.append(prompt)
             return ["Cluster 1: T cells"]
 

@@ -760,6 +760,77 @@ def _looks_like_cluster_ref(key: str) -> bool:
     return stripped.isdigit()
 
 
+def _json_reasoning_records(payload: Any) -> list[dict[str, Any]]:
+    """Extract reasoning records from supported JSON response shapes."""
+    if isinstance(payload, dict) and isinstance(payload.get("annotations"), list):
+        records = payload["annotations"]
+    elif isinstance(payload, list):
+        records = payload
+    elif isinstance(payload, dict):
+        # Direct mapping: cluster_id -> record
+        return [
+            {"cluster_id": cluster_id, **record}
+            for cluster_id, record in payload.items()
+            if isinstance(record, dict)
+        ]
+    else:
+        return []
+
+    return [record for record in records if isinstance(record, dict)]
+
+
+def _normalize_reasoning_record(record: dict[str, Any]) -> dict[str, str]:
+    """Normalize one reasoning JSON record to the canonical schema."""
+
+    def _get_text(field: str) -> str:
+        value = record.get(field)
+        if is_missing_value(value):
+            return ""
+        return str(value).strip()
+
+    cell_type = _get_text("cell_type")
+    return {
+        "cell_type": cell_type if cell_type else "Unknown",
+        "marker_genes": _get_text("marker_genes"),
+        "gene_expression": _get_text("gene_expression"),
+    }
+
+
+def _format_reasoning_results(
+    results: list[str] | dict[str, Any] | str,
+    clusters: list[str],
+    cluster_lookup: dict[str, str],
+) -> dict[str, dict[str, str]]:
+    """Format provider results into a structured reasoning mapping."""
+    unknown = {"cell_type": "Unknown", "marker_genes": "", "gene_expression": ""}
+
+    if isinstance(results, dict):
+        resolved: dict[str, dict[str, str]] = {}
+        for raw_cluster_id, raw_annotation in results.items():
+            cluster_id = _resolve_result_cluster(raw_cluster_id, cluster_lookup)
+            if cluster_id and isinstance(raw_annotation, dict):
+                resolved[cluster_id] = _normalize_reasoning_record(raw_annotation)
+        return {str(cluster): resolved.get(str(cluster), unknown) for cluster in clusters}
+
+    lines = _normalize_result_lines(results)
+    json_payload = _extract_json_document(lines)
+    records = _json_reasoning_records(json_payload)
+
+    resolved = {}
+    for record in records:
+        cluster_id = _resolve_result_cluster(record.get("cluster_id"), cluster_lookup)
+        if cluster_id:
+            resolved[cluster_id] = _normalize_reasoning_record(record)
+
+    if not resolved:
+        write_log(
+            "Could not parse reasoning JSON response; returning Unknown for all clusters",
+            level="warning",
+        )
+
+    return {str(cluster): resolved.get(str(cluster), unknown) for cluster in clusters}
+
+
 def _parse_labeled_annotations(
     lines: list[str],
     cluster_lookup: dict[str, str],
@@ -840,9 +911,13 @@ def _extract_positional_annotation(
 def format_results(
     results: list[str] | dict[str, Any] | str,
     clusters: list[str],
-) -> dict[str, str]:
+    return_reasoning: bool = False,
+) -> dict[str, str] | dict[str, dict[str, str]]:
     """Format provider results into a complete cluster-to-annotation mapping."""
     cluster_lookup = _build_requested_cluster_lookup(clusters)
+
+    if return_reasoning:
+        return _format_reasoning_results(results, clusters, cluster_lookup)
 
     if isinstance(results, dict):
         resolved = _resolve_annotation_pairs(results.items(), cluster_lookup)

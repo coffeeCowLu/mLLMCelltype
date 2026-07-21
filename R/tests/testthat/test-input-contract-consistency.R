@@ -55,7 +55,9 @@ preserve_environment_variables <- function(variables) {
 make_mock_builtin_processor_factory <- function(process_request) {
   force(process_request)
   function(provider, base_url = NULL) {
-    list(process_request = process_request)
+    list(process_request = function(prompt, model, api_key, ...) {
+      process_request(prompt, model, api_key)
+    })
   }
 }
 
@@ -2037,7 +2039,7 @@ test_that("model and api_key are trimmed before R provider dispatch", {
       api_key = "  key  "
     ))
   },
-  get_model_response = function(prompt, model, api_key, base_urls = NULL) {
+  get_model_response = function(prompt, model, api_key, base_urls = NULL, normalize = TRUE) {
     expect_identical(model, "gpt-5.5")
     expect_identical(api_key, "key")
     c("T cell")

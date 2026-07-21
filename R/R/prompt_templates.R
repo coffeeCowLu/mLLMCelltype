@@ -251,6 +251,45 @@ create_annotation_prompt <- function(input, tissue_name, top_gene_count = 10) {
   ))
 }
 
+#' Create reasoning-aware prompt for cell type annotation
+#'
+#' @param input Either a data frame from Seurat's FindAllMarkers() or a list for each cluster
+#'   where each element is either a character vector of genes or a list containing a `genes` field.
+#' @param tissue_name Tissue context for the annotation (e.g., 'human PBMC', 'mouse brain')
+#' @param top_gene_count Number of top genes to use per cluster when input is from Seurat. Default: 10
+#'
+#' @return A list with `prompt` (formatted prompt text), `expected_count`
+#'   (number of clusters), and `gene_lists` (cluster ID to marker genes mapping).
+#' @export
+create_reasoning_annotation_prompt <- function(input, tissue_name, top_gene_count = 10) {
+  base_prompt <- create_annotation_prompt(input, tissue_name, top_gene_count)
+
+  marker_section <- sub(
+    "\n\nReturn exactly one cell type name per line, in the same order as the clusters shown above, without cluster IDs or explanation\\.$",
+    "",
+    base_prompt$prompt
+  )
+
+  reasoning_prompt <- paste0(
+    marker_section,
+    "\n\nFor each cluster, return a JSON object with the following fields:\n",
+    "- \"cluster_id\": the cluster ID as shown above\n",
+    "- \"cell_type\": the annotated cell type\n",
+    "- \"marker_genes\": the marker genes from the provided gene set that support this annotation, ",
+    "comma-separated, preserving the original case exactly as shown above\n",
+    "- \"gene_expression\": a concise natural-language description of where each provided ",
+    "differential gene is typically expressed across cell types\n\n",
+    "Return a single JSON array containing one object per cluster, in the same order as the clusters shown above. ",
+    "Do not include markdown formatting or any explanation outside the JSON array."
+  )
+
+  return(list(
+    prompt = reasoning_prompt,
+    expected_count = base_prompt$expected_count,
+    gene_lists = base_prompt$gene_lists
+  ))
+}
+
 #' Create prompt for checking consensus among model predictions
 #
 #

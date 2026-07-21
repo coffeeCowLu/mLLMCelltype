@@ -51,6 +51,14 @@ def _parse_gemini_response(response: Any) -> list[str]:
     return normalize_response_lines(response_text, "Gemini")
 
 
+def _extract_gemini_raw_text(response: Any) -> str:
+    """Return the raw text from a Gemini SDK response."""
+    response_text = getattr(response, "text", None)
+    if response_text is None:
+        raise NonRetryableProviderError("Gemini response missing text content")
+    return str(response_text)
+
+
 def _is_retryable_gemini_error(error: Exception, api_error_type: type[Exception]) -> bool:
     """Apply the shared transient-failure policy to Google SDK errors."""
     if isinstance(error, api_error_type):
@@ -64,7 +72,8 @@ def process_gemini(
     api_key: str,
     base_url: str | None = None,
     usage_sink: UsageSink | None = None,
-) -> list[str]:
+    normalize_response: bool = True,
+) -> list[str] | str:
     """Process request using Google Gemini models.
 
     Args:
@@ -119,9 +128,13 @@ def process_gemini(
                 config=types.GenerateContentConfig(temperature=0.7, max_output_tokens=4096),
             )
 
-            result = _parse_gemini_response(response)
+            result = (
+                _parse_gemini_response(response)
+                if normalize_response
+                else _extract_gemini_raw_text(response)
+            )
             capture_usage(response, usage_sink, extract_gemini_usage)
-            write_log(f"Got response with {len(result)} lines")
+            write_log(f"Got response with {len(result) if isinstance(result, list) else 1} lines")
             write_log(f"Raw response from Gemini:\n{result}", level="debug")
             return result
 

@@ -14,7 +14,7 @@ import requests
 from ..logger import write_log
 from ..url_utils import get_default_api_url, validate_base_url
 
-ResponseParser = Callable[[dict[str, Any]], list[str]]
+ResponseParser = Callable[[dict[str, Any]], list[str] | str]
 
 # A caller-supplied dict that, when passed, is populated in place with token
 # usage for the call: prompt_tokens / completion_tokens / total_tokens, plus an
@@ -145,6 +145,45 @@ def parse_chat_completions_response(content: dict[str, Any], provider_name: str)
     return normalize_response_lines(text, provider_name)
 
 
+def extract_messages_response_text(content: dict[str, Any], provider_name: str) -> str:
+    """Extract text from an Anthropic Messages-style content block list.
+
+    Handles multi-block responses (e.g., thinking/reasoning blocks followed by
+    text blocks) by iterating through all blocks and concatenating text blocks.
+    """
+    blocks = content.get("content")
+    if not isinstance(blocks, list) or len(blocks) == 0:
+        raise ValueError(
+            f"Unexpected response format from {provider_name}: no content blocks"
+        )
+
+    text_parts: list[str] = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        block_type = block.get("type")
+        text = block.get("text")
+        if text is None:
+            continue
+        if not isinstance(text, str):
+            raise NonRetryableProviderError(
+                f"Unexpected non-string response content from {provider_name}"
+            )
+        if block_type is None or block_type == "text":
+            text_parts.append(text)
+
+    if not text_parts:
+        block_types = [
+            b.get("type") if isinstance(b, dict) else type(b).__name__ for b in blocks
+        ]
+        raise ValueError(
+            f"Unexpected response format from {provider_name}: no text block found "
+            f"(block types: {block_types})"
+        )
+
+    return "\n".join(text_parts)
+
+
 def _extract_error_message(response: requests.Response) -> str | None:
     """Extract provider error message from a non-200 response."""
     try:
@@ -257,7 +296,8 @@ def _parse_provider_response(
     content: dict[str, Any],
     provider_name: str,
     response_parser: ResponseParser,
-) -> list[str]:
+    normalize_response: bool = True,
+) -> list[str] | str:
     """Parse and normalize a successful provider payload."""
     try:
         parsed = response_parser(content)
@@ -268,11 +308,18 @@ def _parse_provider_response(
             f"Failed to parse {provider_name} response: {error!s}"
         ) from error
 
-    if not isinstance(parsed, list):
+    if normalize_response:
+        if not isinstance(parsed, list):
+            raise NonRetryableProviderError(
+                f"{provider_name} response parser returned {type(parsed).__name__}, expected list"
+            )
+        return normalize_response_lines(parsed, provider_name)
+
+    if not isinstance(parsed, str):
         raise NonRetryableProviderError(
-            f"{provider_name} response parser returned {type(parsed).__name__}, expected list"
+            f"{provider_name} response parser returned {type(parsed).__name__}, expected str"
         )
-    return normalize_response_lines(parsed, provider_name)
+    return parsed
 
 
 def _decode_provider_response(response: requests.Response, provider_name: str) -> dict[str, Any]:
@@ -402,7 +449,8 @@ def call_http_api_with_retry(
     non_retry_exceptions: tuple[type[Exception], ...] = (),
     usage_sink: UsageSink | None = None,
     usage_parser: UsageParser = extract_chat_completions_usage,
-) -> list[str]:
+    normalize_response: bool = True,
+) -> list[str] | str:
     """Execute an HTTP API request with retry and unified error handling.
 
     When ``usage_sink`` is provided, stale values are cleared before the call
@@ -426,9 +474,11 @@ def call_http_api_with_retry(
             response = post_func(**request_kwargs)
             _raise_for_provider_status(response, provider_name)
             content = _decode_provider_response(response, provider_name)
-            result = _parse_provider_response(content, provider_name, response_parser)
+            result = _parse_provider_response(
+                content, provider_name, response_parser, normalize_response=normalize_response
+            )
             capture_usage(content, usage_sink, usage_parser)
-            write_log(f"Got response with {len(result)} lines")
+            write_log(f"Got response with {len(result) if isinstance(result, list) else 1} lines")
             write_log(f"Raw response from {provider_name}:\n{result}", level="debug")
             return result
 
@@ -474,7 +524,8 @@ def call_openai_compatible_api(
     request_json: bool = False,
     non_retry_exceptions: tuple[type[Exception], ...] = (),
     usage_sink: UsageSink | None = None,
-) -> list[str]:
+    normalize_response: bool = True,
+) -> list[str] | str:
     """Execute a request against an OpenAI-compatible endpoint with retries.
 
     When ``usage_sink`` is provided, it is populated in place with the call's
@@ -488,9 +539,21 @@ def call_openai_compatible_api(
     if extra_headers:
         headers.update(extra_headers)
 
-    parser = response_parser or (
-        lambda content: parse_chat_completions_response(content, provider_name)
-    )
+    if normalize_response:
+        parser = response_parser or (
+            lambda content: parse_chat_completions_response(content, provider_name)
+        )
+    else:
+
+        def _raw_parser(content: dict[str, Any]) -> str:
+            try:
+                return content["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError) as error:
+                raise ValueError(
+                    f"Unexpected response format from {provider_name}: {content}"
+                ) from error
+
+        parser = response_parser or _raw_parser
 
     return call_http_api_with_retry(
         provider_name=provider_name,
@@ -505,4 +568,5 @@ def call_openai_compatible_api(
         request_json=request_json,
         non_retry_exceptions=non_retry_exceptions,
         usage_sink=usage_sink,
+        normalize_response=normalize_response,
     )

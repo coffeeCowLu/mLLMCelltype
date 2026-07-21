@@ -21,7 +21,8 @@ def process_qwen(
     api_key: str,
     base_url: str | None = None,
     usage_sink: UsageSink | None = None,
-) -> list[str]:
+    normalize_response: bool = True,
+) -> list[str] | str:
     """Process request using Alibaba Qwen models with smart endpoint selection.
 
     Args:
@@ -61,4 +62,5 @@ def process_qwen(
         body=body,
         post_func=requests.post,
         usage_sink=usage_sink,
+        normalize_response=normalize_response,
     )

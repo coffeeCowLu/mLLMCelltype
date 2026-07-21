@@ -64,7 +64,8 @@ def process_minimax(
     api_key: str,
     base_url: str | None = None,
     usage_sink: UsageSink | None = None,
-) -> list[str]:
+    normalize_response: bool = True,
+) -> list[str] | str:
     """Process request using MiniMax models.
 
     Args:
@@ -109,4 +110,5 @@ def process_minimax(
         response_parser=_parse_minimax_response,
         non_retry_exceptions=(NonRetryableProviderError,),
         usage_sink=usage_sink,
+        normalize_response=normalize_response,
     )

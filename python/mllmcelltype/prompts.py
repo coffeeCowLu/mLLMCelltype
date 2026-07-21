@@ -50,6 +50,25 @@ Here are the marker genes for each cluster:
 {markers}
 """
 
+# Reasoning prompt template that asks for structured JSON output per cluster
+REASONING_PROMPT_TEMPLATE = """You are an expert single-cell RNA-seq analyst specializing in cell type annotation.
+I need you to identify cell types of {species} cells from {tissue}.
+Below is a list of marker genes for each cluster.
+Please assign the most likely cell type to each cluster based on the marker genes.
+
+For each cluster, return a JSON object with the following fields:
+- "cluster_id": the cluster ID as shown below
+- "cell_type": the annotated cell type
+- "marker_genes": the marker genes from the provided gene set that support this annotation, comma-separated, preserving the original case exactly as shown below
+- "gene_expression": a concise natural-language description of where each provided differential gene is typically expressed across cell types
+
+Return a single JSON array containing one object per cluster, in the same order as the clusters shown below. Do not include markdown formatting or any explanation outside the JSON array.
+
+{context}
+Here are the marker genes for each cluster:
+{markers}
+"""
+
 SUPPORTED_PROMPT_PLACEHOLDERS = ("species", "tissue", "markers", "context")
 
 
@@ -161,6 +180,7 @@ def create_prompt(
     tissue: str | None = None,
     additional_context: str | None = None,
     prompt_template: str | None = None,
+    return_reasoning: bool = False,
 ) -> str:
     """Create a prompt for cell type annotation.
 
@@ -170,6 +190,9 @@ def create_prompt(
         tissue: Tissue name (e.g., 'brain', 'liver')
         additional_context: Additional context to include in the prompt
         prompt_template: Custom prompt template
+        return_reasoning: If True, use the reasoning prompt template that asks
+            for structured JSON output with cell_type, marker_genes, and
+            gene_expression fields per cluster.
 
     Returns:
         str: The generated prompt
@@ -181,7 +204,12 @@ def create_prompt(
     tissue_text = normalize_text(tissue, "tissue") or "unknown tissue"
     additional_context_text = normalize_text(additional_context, "additional_context")
 
-    prompt_template = validate_prompt_template(prompt_template) or DEFAULT_PROMPT_TEMPLATE
+    if prompt_template is None:
+        prompt_template = (
+            REASONING_PROMPT_TEMPLATE if return_reasoning else DEFAULT_PROMPT_TEMPLATE
+        )
+    else:
+        prompt_template = validate_prompt_template(prompt_template)
 
     # Format marker genes text using helper function
     marker_text = _format_marker_genes_for_prompt(marker_genes)

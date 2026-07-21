@@ -66,55 +66,7 @@ AnthropicProcessor <- R6::R6Class("AnthropicProcessor",
     #' @param response HTTP response object
     #' @param model Model identifier
     extract_response_content = function(response, model) {
-      self$logger$debug("Parsing Anthropic API response",
-                       list(provider = self$provider_name, model = model))
-      
-      # Parse the response
-      content <- httr::content(response, "parsed")
-
-      if (is.null(content) || is.null(content$content) || length(content$content) == 0) {
-        self$logger$error("Unexpected response format from Anthropic API",
-                         list(provider = self$provider_name,
-                              model = model,
-                              content_structure = names(content),
-                              content_available = !is.null(content$content)))
-        stop("Unexpected response format from Anthropic API")
-      }
-
-      # Concatenate all text blocks, ignoring non-text blocks (e.g. thinking /
-      # reasoning) so a leading thinking block does not discard the answer.
-      text_blocks <- vapply(
-        content$content,
-        function(block) {
-          if (is.list(block) && !is.null(block$text) && is.character(block$text) &&
-              length(block$text) == 1 &&
-              (is.null(block$type) || identical(block$type, "text"))) {
-            block$text
-          } else {
-            NA_character_
-          }
-        },
-        character(1)
-      )
-      text_blocks <- text_blocks[!is.na(text_blocks)]
-
-      if (length(text_blocks) == 0) {
-        self$logger$error(
-          "Unexpected response format from Anthropic API: no text block found",
-          list(provider = self$provider_name, model = model,
-               content_count = length(content$content))
-        )
-        stop("Unexpected response format from Anthropic API")
-      }
-
-      if (identical(content$stop_reason, "max_tokens")) {
-        self$logger$warn(
-          "Anthropic response was truncated (stop_reason='max_tokens'); trailing clusters may be marked Unknown",
-          list(provider = self$provider_name, model = model)
-        )
-      }
-
-      paste(text_blocks, collapse = "\n")
+      private$extract_messages_content(response, model, "Anthropic")
     },
 
     #' @description

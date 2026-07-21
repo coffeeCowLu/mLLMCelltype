@@ -8,7 +8,7 @@ wait_before_model_retry <- function(seconds) {
 }
 
 dispatch_model_request_once <- function(prompt, model, api_key, provider,
-                                        provider_base_url) {
+                                        provider_base_url, normalize = TRUE) {
   if (exists(provider, envir = custom_providers)) {
     log_debug("Using custom provider", list(provider = provider))
     response <- if (is.null(provider_base_url)) {
@@ -18,15 +18,19 @@ dispatch_model_request_once <- function(prompt, model, api_key, provider,
     }
   } else {
     processor <- new_builtin_provider_processor(provider, provider_base_url)
-    response <- processor$process_request(prompt, model, api_key)
+    response <- processor$process_request(prompt, model, api_key, normalize = normalize)
   }
 
-  tryCatch(
-    normalize_model_response_lines(response),
-    error = function(e) {
-      stop("Invalid response format from provider '", provider, "'")
-    }
-  )
+  if (isTRUE(normalize)) {
+    tryCatch(
+      normalize_model_response_lines(response),
+      error = function(e) {
+        stop("Invalid response format from provider '", provider, "'")
+      }
+    )
+  } else {
+    response
+  }
 }
 
 #' Get response from a specific model
@@ -37,7 +41,8 @@ dispatch_model_request_once <- function(prompt, model, api_key, provider,
 #' @param base_urls Optional shared or provider-specific base URL configuration
 #' @return Provider response as a character vector
 #' @keywords internal
-get_model_response <- function(prompt, model, api_key, base_urls = NULL) {
+get_model_response <- function(prompt, model, api_key, base_urls = NULL,
+                               normalize = TRUE) {
   prompt <- .normalize_required_string(prompt, "prompt")
   model <- .normalize_required_string(model, "model")
   api_key <- .normalize_required_string(api_key, "api_key")
@@ -52,7 +57,8 @@ get_model_response <- function(prompt, model, api_key, base_urls = NULL) {
     provider = provider,
     model = model,
     prompt_length = nchar(prompt),
-    custom_url = !is.null(provider_base_url)
+    custom_url = !is.null(provider_base_url),
+    normalize = normalize
   ))
 
   for (attempt in seq_len(.MODEL_REQUEST_RETRY$MAX_ATTEMPTS)) {
@@ -64,7 +70,8 @@ get_model_response <- function(prompt, model, api_key, base_urls = NULL) {
           model,
           api_key,
           provider,
-          provider_base_url
+          provider_base_url,
+          normalize = normalize
         )
       ),
       error = function(error) list(success = FALSE, error = error)

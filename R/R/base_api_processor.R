@@ -34,7 +34,11 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
     #' @param prompt Prompt text to send
     #' @param model Model identifier
     #' @param api_key Provider API key
-    process_request = function(prompt, model, api_key) {
+    #' @param normalize Logical. If \code{TRUE} (default), the response is
+    #'   normalized into non-empty trimmed lines. If \code{FALSE}, the raw
+    #'   response string is returned instead. Set to \code{FALSE} when the
+    #'   caller needs the original text (e.g., JSON parsing in reasoning mode).
+    process_request = function(prompt, model, api_key, normalize = TRUE) {
       start_time <- Sys.time()
 
       tryCatch({
@@ -47,7 +51,7 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
                         list(model = model, provider = self$provider_name))
 
         # Make the API call and extract response
-        call_result <- private$call_and_extract(prompt, model, api_key)
+        call_result <- private$call_and_extract(prompt, model, api_key, normalize = normalize)
         final_result <- call_result$response
         
         # Log final status using semantic success (not just exception status)
@@ -168,7 +172,7 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
     #
     #
     #
-    call_and_extract = function(prompt, model, api_key) {
+    call_and_extract = function(prompt, model, api_key, normalize = TRUE) {
       # Track progress through stages so the error handler knows what failed
       response <- NULL
 
@@ -244,7 +248,8 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
           NULL
         }
       )
-      return(list(response = normalized_content, usage = usage))
+      final_response <- if (isTRUE(normalize)) normalized_content else content
+      return(list(response = final_response, usage = usage))
     },
 
     build_chat_completions_body = function(chunk_content, model, extra = list()) {
@@ -396,6 +401,71 @@ BaseAPIProcessor <- R6::R6Class("BaseAPIProcessor",
       }
 
       content$choices[[1]]$message$content
+    },
+
+    extract_messages_content = function(response,
+                                        model,
+                                        provider_label = get_builtin_provider_display_name(
+                                          self$provider_name
+                                        )) {
+      self$logger$debug(sprintf("Parsing %s Messages API response", provider_label),
+                       list(provider = self$provider_name, model = model))
+
+      content <- httr::content(response, "parsed")
+
+      if (is.null(content) || is.null(content$content) || length(content$content) == 0) {
+        self$logger$error(sprintf("Unexpected response format from %s Messages API", provider_label),
+                         list(provider = self$provider_name,
+                              model = model,
+                              content_structure = names(content),
+                              content_available = !is.null(content$content)))
+        stop(sprintf("Unexpected response format from %s Messages API", provider_label))
+      }
+
+      text_blocks <- vapply(
+        content$content,
+        function(block) {
+          if (is.list(block) && !is.null(block$text) && is.character(block$text) &&
+              length(block$text) == 1 &&
+              (is.null(block$type) || identical(block$type, "text"))) {
+            return(block$text)
+          }
+          NA_character_
+        },
+        character(1)
+      )
+      text_blocks <- text_blocks[!is.na(text_blocks)]
+
+      if (length(text_blocks) == 0) {
+        block_types <- vapply(
+          content$content,
+          function(block) {
+            if (!is.list(block) || is.null(block$type)) "unknown" else as.character(block$type)
+          },
+          character(1)
+        )
+        self$logger$error(
+          sprintf("Unexpected response format from %s Messages API: no text block found", provider_label),
+          list(provider = self$provider_name,
+               model = model,
+               content_structure = names(content),
+               content_count = length(content$content),
+               content_types = block_types)
+        )
+        stop(sprintf("Unexpected response format from %s Messages API", provider_label))
+      }
+
+      if (identical(content$stop_reason, "max_tokens")) {
+        self$logger$warn(
+          sprintf(
+            "%s response was truncated (stop_reason='max_tokens'); trailing clusters may be marked Unknown",
+            provider_label
+          ),
+          list(provider = self$provider_name, model = model)
+        )
+      }
+
+      paste(text_blocks, collapse = "\n")
     },
 
     extract_usage_fields = function(response,

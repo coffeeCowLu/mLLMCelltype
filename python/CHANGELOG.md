@@ -2,6 +2,32 @@
 
 All notable changes to the Python implementation of mLLMCelltype will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Built-in Kimi provider targeting the Moonshot AI Open Platform
+  (`https://api.moonshot.cn/v1/chat/completions`) via the OpenAI-compatible
+  Chat Completions protocol. Models prefixed with `kimi-` or `moonshot-`
+  resolve automatically (default model `kimi-k2.6`, API key from
+  `MOONSHOT_API_KEY`), and Kimi k2 thinking mode is disabled for deterministic
+  annotation output.
+- The Kimi provider also accepts Kimi Code platform endpoints through
+  `base_urls`: URLs ending in `/messages` (or the Kimi Code base
+  `https://api.kimi.com/coding`) use the Anthropic Messages protocol, while
+  `https://api.kimi.com/coding/v1` and other URLs use OpenAI-compatible Chat
+  Completions.
+- Added `return_reasoning` argument to `annotate_clusters()`. When set to
+  `True`, the function returns a structured dictionary per cluster containing
+  `cell_type`, `marker_genes`, and `gene_expression` fields instead of plain
+  cell-type labels, enabling downstream inspection of the marker genes and
+  expression rationale that support each annotation.
+
+### Fixed
+- Intermittent `Unknown` reasoning records in `annotate_clusters()` when
+  `return_reasoning=True`. The provider pipeline now passes the raw response
+  text through to reasoning JSON parsing instead of normalizing it into lines
+  first, preserving commas and other JSON punctuation.
+
 ## [2.0.6] - 2026-07-15
 
 ### Added

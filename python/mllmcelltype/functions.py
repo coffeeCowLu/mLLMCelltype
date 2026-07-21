@@ -7,8 +7,8 @@ from . import providers as provider_runtime
 from .config import PROVIDER_CONFIGS, get_supported_providers
 from .validation import normalize_text
 
-ProviderFunction = Callable[..., list[str]]
-EXPECTED_PROVIDER_PARAMETERS = ("prompt", "model", "api_key", "base_url", "usage_sink")
+ProviderFunction = Callable[..., list[str] | str]
+EXPECTED_PROVIDER_PARAMETERS = ("prompt", "model", "api_key", "base_url", "usage_sink", "normalize_response")
 
 PROVIDER_MODEL_PREFIXES = {
     provider: config.model_prefixes
