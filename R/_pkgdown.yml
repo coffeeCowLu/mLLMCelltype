@@ -166,6 +166,7 @@ reference:
       - mllmcelltype_cache_dir
       - mllmcelltype_clear_cache
       - create_annotation_prompt
+      - create_reasoning_annotation_prompt
 
 home:
   sidebar:
