@@ -39,6 +39,8 @@ dispatch_model_request_once <- function(prompt, model, api_key, provider,
 #' @param model Non-empty model name
 #' @param api_key Non-empty API key
 #' @param base_urls Optional shared or provider-specific base URL configuration
+#' @param normalize Logical; if \code{TRUE} (default) the response is normalized
+#'   into non-empty lines, otherwise the raw response string is returned.
 #' @return Provider response as a character vector
 #' @keywords internal
 get_model_response <- function(prompt, model, api_key, base_urls = NULL,

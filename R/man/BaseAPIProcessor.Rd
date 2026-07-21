@@ -62,7 +62,7 @@ Initialize the base API processor
 \subsection{Method \code{process_request()}}{
 Main entry point for processing API requests
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{BaseAPIProcessor$process_request(prompt, model, api_key)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{BaseAPIProcessor$process_request(prompt, model, api_key, normalize = TRUE)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
@@ -73,6 +73,11 @@ Main entry point for processing API requests
 \item{\code{model}}{Model identifier}
 
 \item{\code{api_key}}{Provider API key}
+
+\item{\code{normalize}}{Logical. If \code{TRUE} (default), the response is
+normalized into non-empty trimmed lines. If \code{FALSE}, the raw
+response string is returned instead. Set to \code{FALSE} when the
+caller needs the original text (e.g., JSON parsing in reasoning mode).}
 }
 \if{html}{\out{</div>}}
 }

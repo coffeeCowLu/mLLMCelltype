@@ -111,7 +111,7 @@ extract_positional_annotation <- function(line, all_clusters) {
     }
     if (!is.null(resolve_prediction_cluster_id(parsed$cluster_id, all_clusters))) {
       content <- trimws(parsed$annotation)
-    } else if (looks_like_cluster_ref(parsed$cluster_id) && grepl("[:：]", line)) {
+    } else if (looks_like_cluster_ref(parsed$cluster_id) && grepl(":", line, fixed = TRUE)) {
       return(NULL)  # explicit colon label for an unrequested/nonexistent cluster
     }
     # else: part of the annotation ("Neurons: excitatory", "5 - HT neurons")

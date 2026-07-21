@@ -4,7 +4,7 @@
 \alias{get_model_response}
 \title{Get response from a specific model}
 \usage{
-get_model_response(prompt, model, api_key, base_urls = NULL)
+get_model_response(prompt, model, api_key, base_urls = NULL, normalize = TRUE)
 }
 \arguments{
 \item{prompt}{Non-empty prompt string}
@@ -14,6 +14,9 @@ get_model_response(prompt, model, api_key, base_urls = NULL)
 \item{api_key}{Non-empty API key}
 
 \item{base_urls}{Optional shared or provider-specific base URL configuration}
+
+\item{normalize}{Logical; if \code{TRUE} (default) the response is normalized
+into non-empty lines, otherwise the raw response string is returned.}
 }
 \value{
 Provider response as a character vector
