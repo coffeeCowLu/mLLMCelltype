@@ -114,7 +114,7 @@ pip install google-genai
 ### Supported Models
 
 - **OpenAI**: GPT-5.5/GPT-5.4/GPT-5.4-mini ([API Key](https://platform.openai.com/settings/organization/billing/overview))
-- **Anthropic**: Claude-Opus-4.7/Claude-Sonnet-4.6/Claude-Haiku-4.5 ([API Key](https://console.anthropic.com/))
+- **Anthropic**: Claude-Opus-4.7/Claude-Sonnet-4.6/Claude-Haiku-4.5 ([API Key](https://platform.claude.com/))
 - **Google**: Gemini-3.1-Pro-Preview/Gemini-3-Flash-Preview/Gemini-3.1-Flash-Lite ([API Key](https://ai.google.dev/?authuser=2))
 - **Alibaba**: Qwen3.6-Plus/Qwen3.6-Flash/Qwen3.6-Max-Preview ([API Key](https://www.alibabacloud.com/en/product/modelstudio))
 - **DeepSeek**: DeepSeek-V4-Flash/DeepSeek-V4-Pro ([API Key](https://platform.deepseek.com/usage))
